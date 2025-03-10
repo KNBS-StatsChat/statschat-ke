@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 from urllib.parse import urlparse
 import json
+from tqdm import tqdm
 
 # %%
 
@@ -24,7 +25,7 @@ if not DATA_DIR.exists():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     
 # %%
-print("IN PROGRESS.")
+print("IN PROGRESS...")
 
 # %%
 # Initialise empty dict to store url and download links
@@ -38,7 +39,7 @@ all_pdf_links = []
 # select page for downloads to start from
 # with 1 being the latest
 
-page = 1
+page = 37
 base_url = f'https://www.knbs.or.ke/all-reports/page'
 
 continue_search = True
@@ -99,7 +100,11 @@ pdf_page_range = len(all_knbs_pdf_file_links)
 counter = 0 
 
 for i in range(pdf_page_range):
-    for pdf in all_knbs_pdf_file_links[i]:
+    for pdf in tqdm(all_knbs_pdf_file_links[i],
+                    desc="Downloading PDF files",
+                    bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}', 
+                    colour='yellow'):
+
         url = pdf
         parsed_url = urlparse(url)
         pdf_name = parsed_url.path
@@ -113,7 +118,7 @@ for i in range(pdf_page_range):
         if response.status_code == 200:
             with open(file_path, "wb") as file:
                 file.write(response.content)
-                print(f"File {actual_pdf_file_name} downloaded successfully")
+                #print(f"File {actual_pdf_file_name} downloaded successfully")
             
             counter += 1
         
@@ -123,7 +128,7 @@ for i in range(pdf_page_range):
         
         # update dictionary
         url_dict[actual_pdf_file_name] = url
-        print(url_dict[actual_pdf_file_name])
+        #print(url_dict[actual_pdf_file_name])
 
 # Export url link dictionary to json file
 with open(f"{DATA_DIR}/url_dict.json", "w") as json_file:
