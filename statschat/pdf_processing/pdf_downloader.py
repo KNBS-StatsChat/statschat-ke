@@ -14,19 +14,16 @@ PDF_FILES = "SETUP"
 # Set relative paths
 if PDF_FILES == "SETUP":
     DATA_DIR = Path.cwd().joinpath("data/pdf_downloads")
-    print("STARTING DATABASE SETUP. PLEASE WAIT...")
+    print("STARTING DATABASE SETUP. IN PROGRESS...")
     
 elif PDF_FILES == "UPDATE":
     DATA_DIR = Path.cwd().joinpath("data/latest_pdf_downloads")
-    print("STARTING DATABASE UPDATE. PLEASE WAIT...")
+    print("STARTING DATABASE UPDATE. IN PROGRESS...")
 
 # Check if DATA_DIR exists, if not, create the folder
 if not DATA_DIR.exists():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     
-# %%
-print("IN PROGRESS...")
-
 # %%
 # Initialise empty dict to store url and download links
 url_dict = {}
@@ -61,7 +58,7 @@ while continue_search:
     page += 1
     all_pdf_links.append(url)
 
-print('FINISHED COMPILING LINKS AND WILL NOW START DOWNLOADING PDFs')
+print('FINISHED COMPILING LINKS. START DOWNLOADS')
 
 # %%
 # print counter
@@ -95,15 +92,23 @@ for pdf_file in all_pdf_links:
 pdf_page_range = len(all_knbs_pdf_file_links)
 
 # %%
+#total downloads
+total_downloads = []
+    
+for i in range(pdf_page_range):
+    for pdf in all_knbs_pdf_file_links[i]:
+        total_downloads.append(pdf)
+
 # downloads PDFs to relevant folder
 
 counter = 0 
 
 for i in range(pdf_page_range):
     for pdf in tqdm(all_knbs_pdf_file_links[i],
-                    desc="Downloading PDF files",
+                    desc="DOWNLOADING PDF FILES",
                     bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}', 
-                    colour='yellow'):
+                    colour='yellow',
+                    total = len(total_downloads)):
 
         url = pdf
         parsed_url = urlparse(url)
