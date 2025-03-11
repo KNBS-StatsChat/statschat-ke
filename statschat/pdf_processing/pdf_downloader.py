@@ -74,7 +74,10 @@ all_pdf_links
 
 all_knbs_pdf_file_links = []
 
-for pdf_file in all_pdf_links:
+for pdf_file in tqdm(all_pdf_links, 
+                     desc = "OBTAINING WEBPAGES",
+                     bar_format = "[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar}"
+                     ):
     
     url = pdf_file
     response = requests.get(url)
