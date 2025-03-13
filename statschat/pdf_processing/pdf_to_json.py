@@ -326,7 +326,8 @@ if __name__ == "__main__":
     # normalize keys
     normalize_dict_keys(url_dict)
     # Loop through all PDF files and process them
-    for pdf_file_path in tqdm(DATA_DIR.glob("*.pdf"), 
+    for pdf_file_path in tqdm(DATA_DIR.glob("*.pdf"),
+                              desc = "Converting PDF file(s) to json(s)", 
                               total = len(url_dict), 
                               colour = "red",
                               dynamic_ncols=True,
