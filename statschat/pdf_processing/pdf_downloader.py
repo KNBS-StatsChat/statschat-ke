@@ -74,10 +74,7 @@ all_pdf_links
 
 all_knbs_pdf_file_links = []
 
-for pdf_file in tqdm(all_pdf_links, 
-                     desc = "OBTAINING WEBPAGES",
-                     bar_format = "[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar}"
-                     ):
+for pdf_file in all_pdf_links:
     
     url = pdf_file
     response = requests.get(url)
@@ -87,56 +84,42 @@ for pdf_file in tqdm(all_pdf_links,
         a["href"] for a in soup.find_all("a", href=True) if a["href"].endswith(".pdf")
     ]
     
-    all_knbs_pdf_file_links.append(pdf_links)
+    all_knbs_pdf_file_links.extend(pdf_links)
 
 # %%
-# gets page range for PDFs to loop through multiple lists made
-
-pdf_page_range = len(all_knbs_pdf_file_links)
-
-# %%
-#total downloads
-total_downloads = []
-    
-for i in range(pdf_page_range):
-    for pdf in all_knbs_pdf_file_links[i]:
-        total_downloads.append(pdf)
-
-# downloads PDFs to relevant folder
 
 counter = 0 
 
-for i in range(pdf_page_range):
-    for pdf in tqdm(all_knbs_pdf_file_links[i],
-                    desc="DOWNLOADING PDF FILES",
-                    bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}', 
-                    colour='yellow',
-                    total = len(total_downloads)):
+for pdf in tqdm(all_knbs_pdf_file_links,
+                desc="DOWNLOADING PDF FILES",
+                bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}', 
+                colour='yellow',
+                total = len(all_knbs_pdf_file_links),
+                dynamic_ncols=True):
 
-        url = pdf
-        parsed_url = urlparse(url)
-        pdf_name = parsed_url.path
-        actual_pdf_file_name = pdf_name[28:]
+    url = pdf
+    parsed_url = urlparse(url)
+    pdf_name = parsed_url.path
+    actual_pdf_file_name = pdf_name[28:]
 
-        response = requests.get(url)
-        file_path = f"{DATA_DIR}/{actual_pdf_file_name}"
+    response = requests.get(url)
+    file_path = f"{DATA_DIR}/{actual_pdf_file_name}"
 
-        # Save file in binary mode if request is successful,
-        # return error message if request fails.
-        if response.status_code == 200:
-            with open(file_path, "wb") as file:
-                file.write(response.content)
-                #print(f"File {actual_pdf_file_name} downloaded successfully")
+    # Save file in binary mode if request is successful,
+    # return error message if request fails.
+    if response.status_code == 200:
+        with open(file_path, "wb") as file:
+            file.write(response.content)
             
-            counter += 1
+        counter += 1
         
-        else:
-            print(f"ERROR. Failed to download file {actual_pdf_file_name}")
+    else:
+        print(f"ERROR. Failed to download file {actual_pdf_file_name}")
             
         
-        # update dictionary
-        url_dict[actual_pdf_file_name] = url
-        #print(url_dict[actual_pdf_file_name])
+    # update dictionary
+    url_dict[actual_pdf_file_name] = url
+    #print(url_dict[actual_pdf_file_name])
 
 # Export url link dictionary to json file
 with open(f"{DATA_DIR}/url_dict.json", "w") as json_file:
