@@ -3,6 +3,7 @@
 import os
 import json
 from pathlib import Path
+from tqdm import tqdm
 
 
 # %%
@@ -81,7 +82,12 @@ if __name__ == "__main__":
 
     # Loop through all PDF files and process them        
     # Use functions from pdf_to_json to convert new pdfs to jsons
-    for pdf in new_pdfs_to_convert:
+    for pdf in tqdm(new_pdfs_to_convert,
+                    desc = "Converting latest PDF(s) to json(s)",
+                    total = len(new_pdfs_to_convert), 
+                    colour = "red",
+                    dynamic_ncols=True,
+                    bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}'):
         
         pdf_file_path = LATEST_DATA_DIR.joinpath(pdf)
         
@@ -89,6 +95,6 @@ if __name__ == "__main__":
         
         count = build_json(pdf_file_path, pdf_url, count, JSON_DIR)
         
-    print("FINISHED PDF TO JSON CONVERSION")
+    print("FINISHED LATEST PDF TO JSON CONVERSION")
     
     
