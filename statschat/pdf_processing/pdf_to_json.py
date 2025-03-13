@@ -7,6 +7,7 @@ from pathlib import Path
 import datetime
 import numpy as np
 import re
+from tqdm import tqdm
 
 # %%
 # set relative paths
@@ -145,7 +146,8 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
         counter += (
             1  # Increment counter since the system date is being used as a fallback.
         )
-
+        print("No valid creation date found setting as todays date")
+        
     return pdf_creation_date, counter
 
 
@@ -179,7 +181,6 @@ def extract_pdf_modification_date(
     try:
         pdf_modification_date = str(metadata.modification_date)[:10]
     except AttributeError:
-        print(f"An error fetching the modification date occurred for file {filename}")
         pdf_modification_date = pdf_creation_date  # Fallback to creation date
 
     return pdf_modification_date
@@ -255,7 +256,7 @@ def build_json(pdf_file_path: Path, pdf_website_url: str, counter: int, JSON_DIR
     """
     
     # Notify which file is being processed
-    print(f"Processing: {pdf_file_path.name}")
+    #print(f"Processing: {pdf_file_path.name}")
 
     # Extract Metadata & Pre-Process
     file_name, pdf_creation_date, pdf_metadata, counter = extract_pdf_metadata(
@@ -325,7 +326,11 @@ if __name__ == "__main__":
     # normalize keys
     normalize_dict_keys(url_dict)
     # Loop through all PDF files and process them
-    for pdf_file_path in DATA_DIR.glob("*.pdf"):
+    for pdf_file_path in tqdm(DATA_DIR.glob("*.pdf"), 
+                              total = len(url_dict), 
+                              colour = "red",
+                              dynamic_ncols=True,
+                              bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}'):
         pdf_url = url_dict[os.path.basename(pdf_file_path)]
         count = build_json(pdf_file_path, pdf_url, count, JSON_DIR)
 
