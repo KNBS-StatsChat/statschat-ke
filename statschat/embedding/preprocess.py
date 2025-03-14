@@ -50,6 +50,8 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         else:
             self.logger = logger
 
+        print("Please check most recent statschat_preprocess log file")
+        
         # Does the named vector store exist already?
         if not os.path.exists(self.faiss_db_root):
             self.logger.info("Split full article JSONs into sections")
@@ -63,7 +65,10 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
             # self.logger.info("Filtering out duplicate docs")
             # self._drop_redundant_documents()
             self.logger.info("Vectorise docs and commit to physical vector store")
+            self.logger.info("This final process can take some time. Please wait...")
             self._embed_documents()
+            
+            self.logger.info("This next process can take some time. Please wait...")
 
             # Copy the contents of self.faiss_db_root to self.faiss_db_root + "_latest"
             latest_db_root = self.faiss_db_root.replace("_latest", "")
@@ -109,7 +114,7 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         Splits scraped json to multiple json,
         one for each article section
         """
-
+        print("Splitting json files...")
         # create storage folder for split articles
         isExist = os.path.exists(self.split_directory)
         if not isExist:
@@ -156,7 +161,8 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         """
         Loads article section JSONs to memory
         """
-
+        print("""JSON splitting finished. Now editing metadata""")
+        
         def metadata_func(record: dict, metadata: dict) -> dict:
             """
             Helper, instructs on how to fetch metadata.  Here I take
@@ -203,6 +209,7 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         """
         Loads embedding model to memory
         """
+     
         if self.embedding_model_name == "textembedding-gecko@001":
             model = "sentence-transformers/all-mpnet-base-v2"
             self.embeddings = HuggingFaceEmbeddings(model_name=model)
@@ -231,6 +238,9 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         """
         Splits documents into chunks
         """
+        
+        print("Splitting docs into chunks")
+        
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.split_length,
             chunk_overlap=self.split_overlap,
@@ -247,6 +257,9 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         Tokenise all document chunks and commit to vector store,
         persisting in local memory for efficiency of reproducibility
         """
+        
+        print("Starting document embedding. Please wait this final process takes time...")
+        
         if not os.path.exists(self.faiss_db_root):
             self.db = FAISS.from_documents(self.chunks, self.embeddings)
             self.db.save_local(self.faiss_db_root)
