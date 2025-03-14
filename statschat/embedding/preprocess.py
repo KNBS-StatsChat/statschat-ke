@@ -5,6 +5,7 @@ import toml
 import os
 from pathlib import Path
 from datetime import datetime
+from tqdm import tqdm
 from langchain_community.document_loaders import DirectoryLoader, JSONLoader
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -116,10 +117,14 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
 
         found_articles = glob.glob(f"{self.directory}/*.json")
         self.logger.info(f"Found {len(found_articles)} articles for splitting")
-
+        
         # extract metadata from each article section
         # and store as separate JSON
-        for filename in found_articles:
+        for filename in tqdm(found_articles, 
+                             desc="Finding articles", 
+                             bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
+                             total = len(found_articles)):
+            
             try:
                 with open(filename) as file:
                     json_file = json.load(file)
@@ -129,7 +134,10 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
                         publication_meta = {
                             i: json_file[i] for i in json_file if i != "content"
                         }
-                        for num, section in enumerate(json_file["content"]):
+                        for num, section in enumerate(tqdm(json_file["content"], 
+                                                           desc=f"Split {filename}",
+                                                           bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
+                                                           total = len(json_file["content"]))):
                             section_json = {**section, **publication_meta}
 
                             # Check that there's text extracted for this section
