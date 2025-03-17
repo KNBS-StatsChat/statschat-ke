@@ -140,18 +140,24 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
 
         # extract metadata from each article section
         # and store as separate JSON
-        for filename in found_articles:
+        for filename in tqdm(found_articles, 
+                             desc="Finding articles", 
+                             bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
+                             total = len(found_articles)):
+            
             try:
                 with open(filename) as file:
                     json_file = json.load(file)
                     if (not (self.latest_only)) or json_file["latest"]:
-                        id = json_file["id"][:60]
+                        id = json_file["id"]
 
                         publication_meta = {
                             i: json_file[i] for i in json_file if i != "content"
                         }
-                        for num, section in enumerate(json_file["content"]):
-                            section_json = {**section, **publication_meta}
+                        for num, section in enumerate(tqdm(json_file["content"], 
+                                                           desc=f"Split {filename}",
+                                                           bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
+                                                           total = len(json_file["content"]))):
 
                             # Check that there's text extracted for this section
                             if len(section["page_text"]) > 5:
