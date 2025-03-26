@@ -1,5 +1,5 @@
 # %%
-from transformers import pipeline, AutoTokenizer
+from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 from dotenv import load_dotenv
 import os
 
@@ -55,3 +55,18 @@ swahili_to_english(swahili_text)
 # seems like prompts can't be added to this to finetune
 
 # https://dataloop.ai/library/model/rogendo_sw-en/#capabilities
+
+# transformers                  4.48.1
+
+# %%
+model_name = "facebook/nllb-200-distilled-600M"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+tokenizer.src_lang = "rus_Cyrl"
+inputs = tokenizer(text="поля озарились утренним солнцем", return_tensors="pt")
+translated_tokens = model.generate(
+    **inputs, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn")
+)
+print(tokenizer.decode(translated_tokens[0], skip_special_tokens=True))
+# %%
