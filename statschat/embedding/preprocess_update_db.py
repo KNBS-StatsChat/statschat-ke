@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 from datetime import datetime
-
+from tqdm import tqdm
 from langchain_community.document_loaders import JSONLoader, DirectoryLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings, VertexAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -129,7 +129,8 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         Splits scraped json to multiple json,
         one for each article section
         """
-
+        print("Splitting json files...")
+        
         # create storage folder for split articles
         isExist = os.path.exists(self.split_temp_directory)
         if not isExist:
@@ -175,6 +176,7 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         """
         Loads article section JSONs to memory
         """
+        print("""JSON splitting finished. Now editing metadata""")
 
         def metadata_func(record: dict, metadata: dict) -> dict:
             """
@@ -248,6 +250,8 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         """
         Splits documents into chunks
         """
+        print("Splitting docs into chunks")
+        
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.split_length,
             chunk_overlap=self.split_overlap,
@@ -264,6 +268,8 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         Tokenise all document chunks and commit to vector store,
         persisting in local memory for efficiency of reproducibility
         """
+        print("Starting document embedding. Please wait this final process takes time...")
+        
         self.temp_db = FAISS.from_documents(self.chunks, self.embeddings)
 
         return None
@@ -325,3 +331,4 @@ if __name__ == "__main__":
 
     prepper = UpdateVectorStore(**config["db"], **config["preprocess_latest"])
     logger.info("Vector store updated...")
+    print("update of docstore should be complete.")
