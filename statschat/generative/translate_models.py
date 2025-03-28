@@ -8,6 +8,8 @@ import os
 load_dotenv()
 sec_key = os.getenv("HF_TOKEN")
 
+# %%
+
 #english_text = "Where can I find the registered births by age of mother and county?"
 english_text = "How is core inflation calculated?"
 
@@ -27,7 +29,8 @@ def english_to_swahili(english_text):
 english_to_swahili(english_text)
 
 # %%
-swahili_text = "Ninaweza kupata wapi watoto walioandikishwa wakati wa umri wa mama na jimbo?"
+#swahili_text = "Ninaweza kupata wapi watoto walioandikishwa wakati wa umri wa mama na jimbo?"
+swahili_text = "Hakuna jibu linalofaa linaloweza kupatikana hata ikiwa habari inayofaa inaweza kupatikana katika shirika la PDF"
 
 def swahili_to_english(swahili_text):
     
@@ -66,8 +69,29 @@ model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 #prompt = "You are AI assistant who is translating swahili to english"
 
 tokenizer.src_lang = "swh_Latn"
-inputs = tokenizer(text="Ninaweza kupata wapi watoto walioandikishwa wakati wa umri wa mama na jimbo?", return_tensors="pt")
+inputs = tokenizer(text="Bei ya mafuta ya gari ilikuwaje 2023?", return_tensors="pt")
 translated_tokens = model.generate(
     **inputs, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn")
 )
 print(tokenizer.decode(translated_tokens[0], skip_special_tokens=True))
+# %%
+text="Bei ya mafuta ya gari ilikuwaje 2023?"
+
+def sw_to_en(text):
+    
+    model_name = "facebook/nllb-200-distilled-600M"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+    #prompt = "You are AI assistant who is translating swahili to english"
+
+    tokenizer.src_lang = "swh_Latn"
+    inputs = tokenizer(text, return_tensors="pt")
+    translated_tokens = model.generate(
+        **inputs, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn")
+    )
+    
+    return print(tokenizer.decode(translated_tokens[0], skip_special_tokens=True))
+
+sw_to_en(text)
+# %%
