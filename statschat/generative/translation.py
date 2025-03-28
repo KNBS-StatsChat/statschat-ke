@@ -15,7 +15,7 @@ from statschat.generative.prompts import (
 from functools import lru_cache
 from statschat.generative.utils import deduplicator, highlighter
 from statschat.embedding.latest_flag_helpers import time_decay
-
+from transformers import pipeline # For translation
 
 class Inquirer:
     """
@@ -63,7 +63,11 @@ class Inquirer:
         self.extractive_prompt = EXTRACTIVE_PROMPT_PYDANTIC
         self.stuff_document_prompt = STUFF_DOCUMENT_PROMPT
 
-        # Load the token for Hugging Face
+        # Create Swahili-to-English and English-to-Swahili translation pipelines using pre trained model
+        self.sw_to_en_translator = pipeline("translation", model="Helsinki-NLP/opus-mt-en-sw")
+        self.en_to_sw_translator = pipeline("translation", model="Helsinki-NLP/opus-mt-en-sw")
+
+       # Load the token for Hugging Face
         load_dotenv()
         sec_key = os.getenv("HF_TOKEN")
 
@@ -90,7 +94,37 @@ class Inquirer:
             faiss_db_root_latest, embeddings, allow_dangerous_deserialization=True
         )
 
-        return None
+    def translate_to_english(self, text: str) -> str:
+        """
+        Translates Swahili text to English.
+
+        Args:
+            text (str): Swahili text to translate.
+
+        Returns:
+            str: Translated English text, or "Translation failed." if an error occurs.
+        """
+        try:
+            return self.sw_to_en_translator(text, src_lang = "sw", tgt_lang="en")[0]['translation_text']
+        except Exception as e:
+            self.logger.error(f"Error translating to English: {e}")
+            return "Translation failed."
+    
+    def translate_to_swahili(self, text:str) -> str:
+        """
+        Translates English text to Swahili.
+
+        Args:
+            text (str): English text to translate.
+
+        Returns:
+            str: Translated Swahili text, or "Translation failed." if an error occurs.
+        """
+        try:
+            return self.en_to_sw_translator(text)[0]['translation_text']
+        except Exception as e:
+            self.logger.error(f"Error translating to Swahili: {e}")
+            return "Translation failed."
 
     @staticmethod
     def flatten_meta(d):
@@ -210,6 +244,7 @@ class Inquirer:
     def make_query(
         self,
         question: str,
+        language: str = "en", # default language is english
         latest_filter: str = "on",
         highlighting: bool = True,
         latest_weight: float = 1,
@@ -234,6 +269,23 @@ class Inquirer:
             LlmResponse: Generated response to query (pydantic model)
         """
         self.logger.info(f"Search query: {question}")
+        self.logger.info(f"Language preference: {language}") # Inform language used
+
+        # Translate question to English if it is in Swahili
+        # If it's in English don't translate
+        if language == "sw":
+            try:
+                # Attempt to translate the Swahili question to English.
+                english_query = self.sw_to_en_translator(question)
+                self.logger.info(f"Translated question to English: {english_query}")
+            except Exception as e:
+                # If translation fails, log the error and return an error message.
+                self.logger.error(f"Error translating to English: {e}")
+                return [], "Samahani, kuna tatizo katika utafsiri wa swali lako.", None
+        else:
+            # If the question is not in Swahili, use the original question.
+            english_query = question
+
         docs1 = self.similarity_search(
             question, latest_filter=latest_filter in ["On", "on", "true", "True", False]
         )
@@ -264,7 +316,7 @@ class Inquirer:
             + f" with top distance {docs[0]['score'] if docs else 'Inf'}"
         )
 
-        validated_response = self.query_texts(question, docs)
+        validated_response = self.query_texts(english_query, docs)
         self.logger.info(f"QAPAIR - Question: {question}, Answer: {validated_response}")
 
         if highlighting:
@@ -286,23 +338,33 @@ class Inquirer:
         if docs[0]['score'] > self.answer_threshold:
             answer_str = "No suitable answer found however relevant information may be found in a PDF. Please check the link(s) provided"
             
-        else:
-            answer_str = answer_str
-               
-        if docs[0]['score'] > self.document_threshold:
+        # If the highest-scoring document does not meet the threshold, handle the fallback response
+        elif docs[0]['score'] > self.document_threshold:
+         
+            # Set a clear response message indicating no suitable PDFs were found
+            answer_str = "No suitable PDFs found. Please refer to context."
             
-            document_string = "No suitable PDFs found. Please refer to context"
-            
-            context_string = "No context available. Please refer to response"
-            
+            # Remove any previously retrieved documents to prevent incorrect results
             docs.clear()
             
-            docs.extend([document_string, context_string])
-            
+            # Append structured fallback messages directly to docs 
+            docs.extend(["No suitable PDFs found.", "No context available."])
+
+        # Otherwise keep docs as is  
         else:
             docs = docs
         
-                 
+        # Translate English response back to Swahili if original question was Swahili
+        if language == "sw":
+            # Attempt to translate the English answer string to Swahili.
+            try:
+                answer_str = self.en_to_sw_translator(answer_str)[0]['translation_text']
+                self.logger.info(f"Answer in Swahili/Jibu: {answer_str}")
+            # If translation fails, log the error and provide a Swahili error message
+            except Exception as e:
+                self.logger.error(f"Error translating answer to Swahili: {e}")
+                answer_str = "Samahani, kuna tatizo, hatuwezi kutafsiri jibu kwa Kiswahili kwa sasa."
+
         return docs, answer_str, validated_response
 
 
@@ -315,11 +377,11 @@ if __name__ == "__main__":
     # initiate Statschat AI and start the app
     inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
 
-    question = "Was there a change in average prices of premium and light diesel oil in 2023?"
-    # question = "What is the sample size of the Real Estate Survey?"
-    # question = "How is core inflation calculated?"
-    # question = "What was inflation in Kenya in December 2021?"
-    # question = "What is football?"
+    question = "Bei ya mafuta ya gari ilikuwaje 2023?" # "How were vehicle fuel prices in 2023?"
+    # question = "Watu wangapi walikuwa wameajiriwa 2023?" # "What was employment rate in 2023?"
+    # question = "Kaunti gani ilikuwa na wahalifu wengi zaidi 2022?" # "Which County had the highest number of criminals in 2022?"
+    # question = "2022 kulikuwa na wafanyikazi wangapi wa kawaida?" # "How many regular female employees were there in the year 2022?"
+    # question = "Joto la wastani la Nairobi lilipanda au kushuka 2021" # "Did the average maximum temperatures for Nairobi increase or drop in 2021"
 
     docs, answer, response = inquirer.make_query(
         question,
