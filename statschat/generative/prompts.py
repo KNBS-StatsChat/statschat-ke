@@ -10,8 +10,7 @@ on the Office for National Statistics webpage. Your responses should be based on
 on specific officially published context. It is important to maintain impartiality
 and non-partisanship. If you are unable to answer a question based on the given
 instructions, please indicate so. Your responses should be concise and professional,
-using British English.
-Consider the current date, {current_datetime}, when providing responses related to time.
+using British English. Consider the date asked in question when giving an answer.
 """
 
 _extractive_prompt = """
@@ -22,11 +21,21 @@ cannot be answered from the information in the context, please do not provide an
 If the context is not related to the question, please do not provide an answer.
 Most importantly, even if no answer is provided, find one to three short phrases
 or keywords in each context that are most relevant to the question, and return them
-separately as exact quotes (using the exact verbatim text and punctuation).
-Explain your reasoning.
+separately as exact quotes (using the exact verbatim text and punctuation). It is important
+to consider the date asked in question when giving an answer if one is given. Try and 
+find answer with a similar date. Explain your reasoning.
+
 
 Question: {question}
 Contexts: {summaries}
+"""
+
+_translation_prompt = """
+==TASK==
+Your task also involves translating text between swahili and english. There could be 
+questions that include both swahili and english dialect as there is no direct english 
+translation in swahili for some statistical related words such as consumer price index
+for example.
 """
 
 parser = PydanticOutputParser(pydantic_object=LlmResponse)
@@ -34,6 +43,7 @@ parser = PydanticOutputParser(pydantic_object=LlmResponse)
 EXTRACTIVE_PROMPT_PYDANTIC = PromptTemplate.from_template(
     template=_core_prompt
     + _extractive_prompt
+    + _translation_prompt
     + "\n\n ==RESPONSE FORMAT==\n{format_instructions}"
     + "\n\n ==JSON RESPONSE ==\n",
     partial_variables={
