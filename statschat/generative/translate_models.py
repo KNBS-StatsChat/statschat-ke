@@ -74,6 +74,7 @@ translated_tokens = model.generate(
     **inputs, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn")
 )
 print(tokenizer.decode(translated_tokens[0], skip_special_tokens=True))
+
 # %%
 text="Bei ya mafuta ya gari ilikuwaje 2023?"
 
@@ -91,7 +92,11 @@ def sw_to_en(text):
         **inputs, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn")
     )
     
-    return print(tokenizer.decode(translated_tokens[0], skip_special_tokens=True))
+    translation = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+    
+    return translation
 
 sw_to_en(text)
+
+
 # %%
