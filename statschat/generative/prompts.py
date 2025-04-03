@@ -30,20 +30,11 @@ Question: {question}
 Contexts: {summaries}
 """
 
-_translation_prompt = """
-==TASK==
-Your task also involves translating text between swahili and english. There could be 
-questions that include both swahili and english dialect as there is no direct english 
-translation in swahili for some statistical related words such as consumer price index
-for example.
-"""
-
 parser = PydanticOutputParser(pydantic_object=LlmResponse)
 
 EXTRACTIVE_PROMPT_PYDANTIC = PromptTemplate.from_template(
     template=_core_prompt
     + _extractive_prompt
-    + _translation_prompt
     + "\n\n ==RESPONSE FORMAT==\n{format_instructions}"
     + "\n\n ==JSON RESPONSE ==\n",
     partial_variables={
