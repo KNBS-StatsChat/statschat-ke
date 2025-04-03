@@ -158,7 +158,8 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
                                                            desc=f"Split {filename}",
                                                            bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
                                                            total = len(json_file["content"]))):
-
+                            section_json = {**section, **publication_meta}
+                            
                             # Check that there's text extracted for this section
                             if len(section["page_text"]) > 5:
                                 with open(
@@ -176,7 +177,7 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         """
         Loads article section JSONs to memory
         """
-        print("""JSON splitting finished. Now editing metadata""")
+        print("""JSON splitting finished. Now editing metadata please wait...""")
 
         def metadata_func(record: dict, metadata: dict) -> dict:
             """
