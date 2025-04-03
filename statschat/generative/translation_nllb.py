@@ -376,6 +376,7 @@ class Inquirer:
 
 if __name__ == "__main__":
     from statschat import load_config
+    from statschat.generative.translate_models import sw_to_en #needed temporarily
 
     logger = logging.getLogger(__name__)
     # Config file to load
@@ -383,8 +384,11 @@ if __name__ == "__main__":
     # initiate Statschat AI and start the app
     inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
 
+    # question = "What was the price of car fuel in 2023?"
+    question = "What was the price of automobile fuel in 2023?"
+    # question = "Bei ya mafuta ya magari ilikuwa nini mwaka wa 2023?" #"What was the price of car fuel in 2023?"
     #question = "What were vehicle fuel prices in 2023?"
-    question = "Bei ya mafuta ya gari ilikuwaje 2023?" # "How were vehicle fuel prices in 2023?"
+    # question = "Bei ya mafuta ya gari ilikuwaje 2023?" # "How were vehicle fuel prices in 2023?"
     # question = "Watu wangapi walikuwa wameajiriwa 2023?" # "What was employment rate in 2023?"
     # question = "How many people were employed in 2023?"
     # question = "Kaunti gani ilikuwa na wahalifu wengi zaidi 2022?" # "Which County had the highest number of criminals in 2022?"
@@ -405,6 +409,7 @@ if __name__ == "__main__":
     
     if test_thresholds == "YES":
         print(answer)
+        print(f"translated answer: {sw_to_en(answer)}")
         
     elif test_thresholds == "NO":
         print(answer)
