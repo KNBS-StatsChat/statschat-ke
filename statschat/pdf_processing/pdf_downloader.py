@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import json
 from statschat import load_config
+from tqdm import tqdm
 
 # %% Configuration
 
@@ -103,7 +104,15 @@ if PDF_FILES == "UPDATE":
 
 # %% Download PDFs and Update URL Dictionary
 
-for pdf_url in all_pdf_links:
+format = "[{elapsed}<{remaining}]{n_fmt}/{total_fmt}|{l_bar}{bar} {rate_fmt}{postfix}"
+for pdf_url in tqdm(
+    all_pdf_links,
+    desc="DOWNLOADING PDF FILES",
+    bar_format=format,
+    colour="yellow",
+    total=len(all_pdf_links),
+    dynamic_ncols=True,
+):
     parsed_url = urlparse(pdf_url)
     pdf_name = Path(parsed_url.path).name  # Extract the actual filename
 
@@ -115,7 +124,6 @@ for pdf_url in all_pdf_links:
     if response.status_code == 200:
         with open(file_path, "wb") as file:
             file.write(response.content)
-            print(f"Downloaded: {pdf_name} -> {file_path}")
 
         url_dict[pdf_name] = pdf_url  # Store only new entries
     else:
