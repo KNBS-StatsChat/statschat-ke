@@ -103,7 +103,7 @@ class Inquirer:
             translate_to (str): Language text to be translated to.
 
         Returns:
-            str: Translated English or Swahili text
+            translate_text: Translated English or Swahili text
         """
         
         model_name = "facebook/nllb-200-distilled-600M"
