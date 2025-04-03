@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 from datetime import datetime
-
+from tqdm import tqdm
 from langchain_community.document_loaders import JSONLoader, DirectoryLoader
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.embeddings import VertexAIEmbeddings
@@ -128,7 +128,8 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         Splits scraped json to multiple json,
         one for each article section
         """
-
+        print("Splitting json files...")
+        
         # create storage folder for split articles
         isExist = os.path.exists(self.latest_split_directory)
         if not isExist:
@@ -139,18 +140,24 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
 
         # extract metadata from each article section
         # and store as separate JSON
-        for filename in found_articles:
+        for filename in tqdm(found_articles, 
+                             desc="Finding articles", 
+                             bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
+                             total = len(found_articles)):
+            
             try:
                 with open(filename) as file:
                     json_file = json.load(file)
                     if (not (self.latest_only)) or json_file["latest"]:
-                        id = json_file["id"][:60]
+                        id = json_file["id"]
 
                         publication_meta = {
                             i: json_file[i] for i in json_file if i != "content"
                         }
-                        for num, section in enumerate(json_file["content"]):
-                            section_json = {**section, **publication_meta}
+                        for num, section in enumerate(tqdm(json_file["content"], 
+                                                           desc=f"Split {filename}",
+                                                           bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
+                                                           total = len(json_file["content"]))):
 
                             # Check that there's text extracted for this section
                             if len(section["page_text"]) > 5:
@@ -169,6 +176,7 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         """
         Loads article section JSONs to memory
         """
+        print("""JSON splitting finished. Now editing metadata""")
 
         def metadata_func(record: dict, metadata: dict) -> dict:
             """
@@ -244,6 +252,8 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         """
         Splits documents into chunks
         """
+        print("Splitting docs into chunks")
+        
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.split_length,
             chunk_overlap=self.split_overlap,
@@ -260,6 +270,8 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         Tokenise all document chunks and commit to vector store,
         persisting in local memory for efficiency of reproducibility
         """
+        print("Starting document embedding. Please wait this final process takes time...")
+        
         self.temp_db = FAISS.from_documents(self.chunks, self.embeddings)
 
         return None

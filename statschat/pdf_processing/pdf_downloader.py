@@ -87,6 +87,7 @@ while True:
 
 print(f"Total PDFs found: {len(all_pdf_links)}")
 
+
 # %% If in UPDATE mode, filter only new PDFs
 
 if PDF_FILES == "UPDATE":
@@ -103,7 +104,6 @@ if PDF_FILES == "UPDATE":
     all_pdf_links = new_pdf_links  # Replace with filtered list
 
 # %% Download PDFs and Update URL Dictionary
-
 format = "[{elapsed}<{remaining}]{n_fmt}/{total_fmt}|{l_bar}{bar} {rate_fmt}{postfix}"
 for pdf_url in tqdm(
     all_pdf_links,
