@@ -92,11 +92,13 @@ def sw_to_en(text):
         **inputs, forced_bos_token_id=tokenizer.convert_tokens_to_ids("eng_Latn")
     )
     
-    translation = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+    translation = str(tokenizer.decode(translated_tokens[0], skip_special_tokens=True))
     
     return translation
 
-sw_to_en(text)
-
+# %%
+translation = sw_to_en(text)
 
 # %%
+print(f"Translation: {translation}")
+print(type(translation))
