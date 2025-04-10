@@ -6,7 +6,8 @@ from pathlib import Path
 from datetime import datetime
 from tqdm import tqdm
 from langchain_community.document_loaders import JSONLoader, DirectoryLoader
-from langchain_community.embeddings import HuggingFaceEmbeddings, VertexAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import VertexAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
@@ -49,8 +50,6 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         self.redundant_similarity_threshold = redundant_similarity_threshold
         self.faiss_db_root = faiss_db_root + ("_latest" if latest_only else "")
         self.latest_only = latest_only
-        self.temp_directory = os.path.join(self.latest_directory, "temp")
-        self.split_temp_directory = os.path.join(self.latest_directory, "temp", "split")
         self.temp_faiss_db_root = "temp_faiss_db"
 
         # Initialise logger
@@ -62,7 +61,7 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
 
         # Only if temp latest_directory exists i.e. new inbound
         # articles have been webscraped and stored
-        if os.path.exists(self.temp_directory):
+        if os.path.exists(self.latest_directory):
             if self.latest_only:
                 self.logger.info("Treating 'latest' flags")
                 self._treat_latest()
@@ -80,8 +79,6 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
             self._embed_documents()
             self.logger.info("Merging into existing FAISS DB")
             self._merge_faiss_db()
-            self.logger.info("Cleaning up folders")
-            self._cleaning_up()
 
         else:
             self.logger.info("Aborting: no new documents to be added")
@@ -101,7 +98,9 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         self.logger.info(f"Number of outdated latest flags: {len(former_latest)}")
 
         embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model_name)
-        db = FAISS.load_local(self.faiss_db_root, embeddings, allow_dangerous_deserialization=True)
+        db = FAISS.load_local(
+            self.faiss_db_root, embeddings, allow_dangerous_deserialization=True
+        )
         db_dict = db.docstore._dict
         self.logger.info(
             f"Number of chunks in vector store PRE-edit: {len(db.docstore._dict)}"
@@ -132,11 +131,11 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         print("Splitting json files...")
         
         # create storage folder for split articles
-        isExist = os.path.exists(self.split_temp_directory)
+        isExist = os.path.exists(self.latest_split_directory)
         if not isExist:
-            os.makedirs(self.split_temp_directory)
+            os.makedirs(self.latest_split_directory)
 
-        found_articles = glob.glob(f"{self.temp_directory}/*.json")
+        found_articles = glob.glob(f"{self.latest_directory}/*.json")
         self.logger.info(f"Found {len(found_articles)} articles for splitting")
 
         # extract metadata from each article section
@@ -159,11 +158,13 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
                                                            desc=f"Split {filename}",
                                                            bar_format='[{elapsed}<{remaining}] {n_fmt}/{total_fmt} | {l_bar}{bar} {rate_fmt}{postfix}',
                                                            total = len(json_file["content"]))):
-
+                            section_json = {**section, **publication_meta}
+                            
                             # Check that there's text extracted for this section
                             if len(section["page_text"]) > 5:
                                 with open(
-                                    f"{self.split_temp_directory}/{id}_{num}.json", "w"
+                                    f"{self.latest_split_directory}/{id}_{num}.json",
+                                    "w",
                                 ) as new_file:
                                     json.dump(section_json, new_file, indent=4)
 
@@ -176,7 +177,7 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         """
         Loads article section JSONs to memory
         """
-        print("""JSON splitting finished. Now editing metadata""")
+        print("""JSON splitting finished. Now editing metadata please wait...""")
 
         def metadata_func(record: dict, metadata: dict) -> dict:
             """
@@ -206,9 +207,9 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
             "content_key": "page_text",
             "metadata_func": metadata_func,
         }
-        self.logger.info(f"Loading data from {self.split_temp_directory}")
+        self.logger.info(f"Loading data from {self.latest_split_directory}")
         self.loader = DirectoryLoader(
-            self.split_temp_directory,
+            self.latest_split_directory,
             glob="*.json",
             use_multithreading=True,
             show_progress=True,
@@ -228,7 +229,9 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
             self.embeddings = VertexAIEmbeddings()
 
         else:
-            self.embeddings = HuggingFaceEmbeddings(model_name=self.embedding_model_name)
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name=self.embedding_model_name
+            )
 
         return None
 
@@ -279,9 +282,9 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         Merge temporary vector store for new articles into
         existing permanent vector store
         """
-        db = FAISS.load_local(self.faiss_db_root, 
-                              self.embeddings, 
-                              allow_dangerous_deserialization=True)
+        db = FAISS.load_local(
+            self.faiss_db_root, self.embeddings, allow_dangerous_deserialization=True
+        )
         db.merge_from(self.temp_db)
         db.save_local(self.faiss_db_root)
         self.logger.info(
@@ -295,14 +298,14 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
         Move all articles and article sections from temporary
         folders to permanent; remove temporary folders
         """
-        path = f"{self.temp_directory}/*.json"
+        path = f"{self.latest_directory}/*.json"
         all_files = glob.glob(path)
         for FILE in all_files:
-            file = FILE.split("/")[-1]
+            file = FILE.split("\\")[-1]
             dst_path = os.path.join(self.latest_directory, file)
             os.rename(FILE, dst_path)
 
-        path = f"{self.split_temp_directory}/*.json"
+        path = f"{self.latest_split_directory}/*.json"
         split_files = glob.glob(path)
         for FILE in split_files:
             file = FILE.split("/")[-1]
@@ -310,7 +313,7 @@ class UpdateVectorStore(DirectoryLoader, JSONLoader):
             os.rename(FILE, dst_path)
 
         # remove all temporary files
-        shutil.rmtree(self.temp_directory)
+        shutil.rmtree(self.latest_directory)
 
         return None
 
