@@ -316,13 +316,13 @@ if __name__ == "__main__":
     # initiate Statschat AI and start the app
     inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
 
-    #question = "Where can I find the registered births by age of mother and county?"
+    # question = "Where can I find the registered births by age of mother and county?"
     #question = "What is the sample size of the Real Estate Survey?"
     # question = "How is core inflation calculated?"
-    #question = "What was the consumer price index in Kenya in December 2024?"
+    question = "What was the consumer price index in Kenya in December 2024?"
     #question = "What is football?"
     #question = "What is the PPI for Kenya in 2023?"
-    question = "What is the employment in Kenya 2024?"
+    #question = "What is the employment in Kenya 2024?"
   
 
     docs, answer, response = inquirer.make_query(
@@ -330,7 +330,7 @@ if __name__ == "__main__":
         latest_filter="off",
     )
     
-    test_thresholds = "YES"
+    test_thresholds = "NO"
     
     print("-------------------- ANSWER --------------------")
     
