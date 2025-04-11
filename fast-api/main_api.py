@@ -45,7 +45,7 @@ app = FastAPI(
     version="0.0.2",
     contact={
         "name": "Kenya National Bureau of Statistics",
-        "email": "test@knbs.com",
+        "email": "datarequest@knbs.com",
     },
 )
 
