@@ -1,14 +1,15 @@
 import logging
-import os
-from dotenv import load_dotenv
-from langchain_huggingface import HuggingFaceEndpoint
+import torch
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain.docstore.document import Document
-from langchain.chains.qa_with_sources import load_qa_with_sources_chain
 from langchain.output_parsers import PydanticOutputParser
+from langchain_huggingface.llms import HuggingFacePipeline
+from langchain.chains import LLMChain
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
 from statschat.generative.response_model import LlmResponse
-from statschat.generative.prompts import (
+from statschat.generative.prompts_local import (
     EXTRACTIVE_PROMPT_PYDANTIC,
     STUFF_DOCUMENT_PROMPT,
 )
@@ -32,7 +33,7 @@ class Inquirer:
         k_docs: int = 10,
         k_contexts: int = 3,
         similarity_threshold: float = 2.0,  # higher threshold for smaller corpus
-        logger: logging.Logger = None,
+        logger: logging.Logger = True,
         llm_temperature: float = 0.0,
         llm_max_tokens: int = 1024,
         verbose: bool = False,
@@ -63,19 +64,20 @@ class Inquirer:
         self.extractive_prompt = EXTRACTIVE_PROMPT_PYDANTIC
         self.stuff_document_prompt = STUFF_DOCUMENT_PROMPT
 
-        # Load the token for Hugging Face
-        load_dotenv()
-        sec_key = os.getenv("HF_TOKEN")
-
-        # Load LLM with text2text-generation specifications
-        self.llm = HuggingFaceEndpoint(
-            repo_id=generative_model_name,
-            model_kwargs={
-                "max_length": 512,
-            },
-            temperature=0.1,
-            token=sec_key,
+        # Load local model
+        tokenizer = AutoTokenizer.from_pretrained(generative_model_name)
+        model = AutoModelForCausalLM.from_pretrained(
+            generative_model_name, device_map="auto"
         )
+        pipe = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            max_new_tokens=1000,
+            # device_map="auto",
+            torch_dtype=torch.float16,
+        )
+        self.llm = HuggingFacePipeline(pipeline=pipe)
 
         # Embeddings
         embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
@@ -170,17 +172,15 @@ class Inquirer:
         ]
         self.logger.info(f"Passing top {len(top_matches)} results for QA")
 
-        # stuff all above documents to the model
-        chain = load_qa_with_sources_chain(
-            self.llm,
-            chain_type="stuff",
-            prompt=self.extractive_prompt,
-            document_prompt=self.stuff_document_prompt,
+        chain = LLMChain(
+            prompt=self.extractive_prompt + self.stuff_document_prompt,
+            # document_prompt=self.stuff_document_prompt,
             verbose=self.verbose,
+            # chain_type = "stuff",
+            llm=self.llm,
         )
 
-        # parameter values
-        response = chain.invoke(
+        response = chain.run(
             {"input_documents": top_matches, "question": query},
             return_only_outputs=True,
         )
@@ -203,7 +203,7 @@ class Inquirer:
                 highlighting3=[],
                 reasoning=f"Cannot parse response: {e} /n/n  response: {response}",
             )
-
+        print(f"check: {validated_answer}")
         return validated_answer
 
     @lru_cache()
@@ -287,7 +287,7 @@ class Inquirer:
             answer_str = (
                 "No suitable answer found."
                 + "However relevant information may be found in a PDF."
-                + "Please check the link(s) provided."
+                + "Please check the link(s) provided"
             )
 
         else:
@@ -317,10 +317,10 @@ if __name__ == "__main__":
     # initiate Statschat AI and start the app
     inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
 
-    question = "Where can I find the registered births by age of mother and county?"
+    # question = "Where can I find the registered births by age of mother and county?"
     # question = "What is the sample size of the Real Estate Survey?"
-    # question = "How is core inflation calculated?"
-    question = "What was inflation in Kenya in December 2021?"
+    question = "How is core inflation calculated?"
+    # question = "What was inflation in Kenya in December 2021?"
     # question = "What is football?"
 
     docs, answer, response = inquirer.make_query(
@@ -328,7 +328,7 @@ if __name__ == "__main__":
         latest_filter="off",
     )
 
-    test_thresholds = "NO"
+    test_thresholds = "YES"
 
     print("-------------------- ANSWER --------------------")
 
