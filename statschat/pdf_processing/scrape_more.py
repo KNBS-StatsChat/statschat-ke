@@ -43,3 +43,23 @@ Nairobi City contributed a notably large share of the total GVA at 27.5 per cent
 Kiambu, Nakuru, and Mombasa also have substantial contributions, accounting for 5.6 per cent, 5.2 per cent, 
 and 4.8 per cent, respectively. However, a total of 33 counties, each contributed less than 2.0 per cent of the overall GVA. 
 Gross County Product – 2024 Share This Page """
+
+# %%
+
+# Define the start and end substrings
+start = "About Report"
+end = "Share This Page"
+
+# Find the index of the start substring
+idx1 = text.find(start)
+
+idx2 = text.find(end, idx1 + len(start))
+
+# Check if both delimiters are found and extract the substring between them
+if idx1 != -1 and idx2 != -1:
+    substring = text[idx1 + len(start):idx2]
+    print(substring)  # Output: world
+else:
+    print("Delimiters not found")
+    
+# %%
