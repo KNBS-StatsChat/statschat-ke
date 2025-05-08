@@ -9,7 +9,7 @@ url = "https://www.knbs.or.ke/reports/2025-economic-survey/"
 
 def get_abstract_metadata(url = url):
     
-    """Extracts file name and metadata from PDF
+    """Extracts metadata from KNBS website for PDFs
 
     Args:
         url (path): url of chosen KNBS PDF
