@@ -6,14 +6,14 @@ import json
 from urllib.request import Request, urlopen
 
 # %% Scrape PDF links from KNBS website
-base_url = "https://www.knbs.or.ke/reports/gross-county-product-2024/"
+url = "https://www.knbs.or.ke/reports/2025-economic-survey/"
 
 # %%
 # works to avoid 403 error
-req = Request(base_url, headers={'User-Agent': 'Mozilla/5.0'})
+req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
 web_byte = urlopen(req).read()
 
-#html = urlopen(base_url).read()
+#html = urlopen(url).read()
 soup = BeautifulSoup(web_byte, features="html.parser")
 
 # kill all script and style elements
@@ -83,7 +83,6 @@ else:
     print("Delimiters not found")
     
 # %% 
-# put publication info in list to stop coming on separate lines
 publication_info_split = publication_info.split()
 #print(publication_info_split)
 
@@ -92,10 +91,12 @@ publication_date = ' '.join(publication_info_split[-2:])
 print(publication_date)
 
 # publication area
-publication_area = ' '.join(publication_info_split[1:-2])
-print(publication_area)
+publication_theme = ' '.join(publication_info_split[1:-2])
+print(publication_theme)
 
 # publication type 
 publication_type = ' '.join(publication_info_split[:1])
 print(publication_type)
 
+# create empty dictionary
+url_dict_abstract = {}
