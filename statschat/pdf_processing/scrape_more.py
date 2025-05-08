@@ -23,7 +23,7 @@ for script in soup(["script", "style"]):
 # get text
 text = soup.body.get_text(separator=' ')
 
-print(text)
+#print(text)
 # %%
 # need to extract these sentences from text or split based one these
 
@@ -45,21 +45,42 @@ and 4.8 per cent, respectively. However, a total of 33 counties, each contribute
 Gross County Product – 2024 Share This Page """
 
 # %%
-
+# Get relevant substring of text on PDF from more page
 # Define the start and end substrings
-start = "About Report"
+start = "About Report "
 end = "Share This Page"
 
 # Find the index of the start substring
-idx1 = text.find(start)
+index_1 = text.find(start)
 
-idx2 = text.find(end, idx1 + len(start))
+index_2 = text.find(end, index_1 + len(start))
 
 # Check if both delimiters are found and extract the substring between them
-if idx1 != -1 and idx2 != -1:
-    substring = text[idx1 + len(start):idx2]
-    print(substring)  # Output: world
+if index_1 != -1 and index_2 != -1:
+    pdf_substring = text[index_1 + len(start):index_2]
+    #print(pdf_substring) 
 else:
     print("Delimiters not found")
     
-# %%
+# %% 
+# Get relevant substring of text on PDF from more page
+# Publication substring
+
+start = "Publications "
+end = " Overview"
+
+# Find the index of the start substring
+index_1 = pdf_substring.find(start)
+
+index_2 = pdf_substring.find(end, index_1 + len(start))
+
+# Check if both delimiters are found and extract the substring between them
+if index_1 != -1 and index_2 != -1:
+    publication_info = pdf_substring[index_1 + len(start):index_2]
+    print(publication_info) 
+else:
+    print("Delimiters not found")
+
+# need to add strings in for reference points separate
+
+# add one at start "about report", one at end "share page", one before "overview"
