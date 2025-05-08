@@ -47,10 +47,9 @@ def get_abstract_metadata(url = url):
     if index_1 != -1 and index_2 != -1:
         pdf_substring = text[index_1 + len(start):index_2]
         
-        # add str to start of text variable as anchor point for substring extraction
-        # add str to end of text variable as anchor point for substring extraction
+        # add str to start and end of text variable as anchor point for substring extraction
         pdf_substring = "About-Report" + " " + pdf_substring + "Overview-End"
-        #print(pdf_substring)
+        
     else:
         print("Delimiters not found")
 
@@ -68,7 +67,7 @@ def get_abstract_metadata(url = url):
     # Check if both delimiters are found and extract the substring between them
     if index_1 != -1 and index_2 != -1:
         publication_info = pdf_substring[index_1 + len(start):index_2]
-        #print(publication_info) 
+        
     else:
         print("Delimiters not found")
 
@@ -90,7 +89,6 @@ def get_abstract_metadata(url = url):
         print("Delimiters not found")
         
     publication_info_split = publication_info.split()
-    #print(publication_info_split)
 
     # publication date
     publication_date = ' '.join(publication_info_split[-2:])
