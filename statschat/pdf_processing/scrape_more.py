@@ -77,6 +77,21 @@ index_2 = pdf_substring.find(end, index_1 + len(start))
 # Check if both delimiters are found and extract the substring between them
 if index_1 != -1 and index_2 != -1:
     overview_info = pdf_substring[index_1 + len(start):index_2]
-    print(overview_info) 
+    #print(overview_info) 
 else:
     print("Delimiters not found")
+    
+# %% 
+# put publication info in list to stop coming on separate lines
+publication_info_split = publication_info.split()
+#print(publication_info_split)
+
+# publication type
+publication_type = ' '.join(publication_info_split[:-2])
+print(publication_type)
+
+# publication date
+publication_date = ' '.join(publication_info_split[-2:])
+print(publication_date)
+# %% 
+
