@@ -100,3 +100,10 @@ print(publication_type)
 
 # create empty dictionary
 url_dict_abstract = {}
+
+# add keys and values for metadata
+url_dict_abstract["pdf_url"] = url
+url_dict_abstract["overview"] = overview_info
+url_dict_abstract["date"] = publication_date
+url_dict_abstract["publication_type"] = publication_type
+url_dict_abstract["publication_theme"] = publication_theme
