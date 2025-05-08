@@ -38,8 +38,9 @@ index_2 = text.find(end, index_1 + len(start))
 if index_1 != -1 and index_2 != -1:
     pdf_substring = text[index_1 + len(start):index_2]
     
+    # add str to start of text variable as anchor point for substring extraction
     # add str to end of text variable as anchor point for substring extraction
-    pdf_substring = pdf_substring + "Overview-End"
+    pdf_substring = "About-Report" + " " + pdf_substring + "Overview-End"
     #print(pdf_substring)
 else:
     print("Delimiters not found")
@@ -48,7 +49,7 @@ else:
 # Get relevant substring of text on PDF from "more" page
 # Publication substring
 
-start = "Publications "
+start = "About-Report"
 end = " Overview"
 
 # Find the index of the start substring
@@ -77,7 +78,7 @@ index_2 = pdf_substring.find(end, index_1 + len(start))
 # Check if both delimiters are found and extract the substring between them
 if index_1 != -1 and index_2 != -1:
     overview_info = pdf_substring[index_1 + len(start):index_2]
-    #print(overview_info) 
+    print(overview_info) 
 else:
     print("Delimiters not found")
     
@@ -86,12 +87,15 @@ else:
 publication_info_split = publication_info.split()
 #print(publication_info_split)
 
-# publication type
-publication_type = ' '.join(publication_info_split[:-2])
-print(publication_type)
-
 # publication date
 publication_date = ' '.join(publication_info_split[-2:])
 print(publication_date)
-# %% 
+
+# publication area
+publication_area = ' '.join(publication_info_split[1:-2])
+print(publication_area)
+
+# publication type 
+publication_type = ' '.join(publication_info_split[:1])
+print(publication_type)
 
