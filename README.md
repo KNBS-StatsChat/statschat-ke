@@ -49,17 +49,28 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 
 `PDF_FILES_MODE = "UPDATE"` -> Will only scrape the latest 5 pages of PDF files from the KNBS website, compare existing PDF files in the vector store with those downloaded and only process new files - appending these to the database and "flushing" the latest data folders ready for a new run. This will need to be done as new PDFs are added to the KNBS website.
 
-## Step 2: Usage
+## Step 2: Usage via script
 
 #### Run the sample questions manually (backend)
 
 This assumes the [vector store](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md) has already been created otherwise this will need to be done before.
-Make sure that you're terminal is running from **`statschat-ke`**. Then use the **`llm.py`** 
-script and change the **question** parameter with the desired question:
+Make sure that you're terminal is running from **`statschat-ke`**. 
+
+Use the script **generate_local.py** as this doesn't require any tokens from huggingface due to being a local model. Type the question you want answered.
+
+![image](https://github.com/user-attachments/assets/53dae532-0192-4953-a201-4d29d62b3555)
+
+If wanting to change the model then edit here.
+
+![image](https://github.com/user-attachments/assets/36c19f47-d42b-41de-8893-ad5316dcb9da)
+
+If you have an **api key** from huggingface then the **`llm.py`** script can be used. Change the **question** parameter with the desired question:
 
 ![image](https://github.com/user-attachments/assets/83e2e4e8-1ecf-43e1-bcdc-e8f39e5d5e12)
 
 The answer, context and response will be output in the terminal.
+
+## Step 3: Usage via API
 
 #### Run interactive Statschat API
 This main module statschat can be either called directly or deployed as an API (using fastapi).
