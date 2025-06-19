@@ -31,5 +31,7 @@ This guide explains the configuration options for StatsChat. The configuration f
 ## `[app]`
 
 - **latest_max**: Maximum number of latest documents to consider (commonly 0, 1, or 2).
+- **page_start**: Sets where to start looking for downloads. Higher the number the older the publications.
+- **page_end**: Sets where to stop looking for downloads. Higher the number the older the publications.
 
 Adjust these settings to fit your data and use case. Save your changes and restart the application for them to take effect.

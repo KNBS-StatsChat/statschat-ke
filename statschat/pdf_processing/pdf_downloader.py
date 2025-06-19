@@ -49,9 +49,10 @@ elif PDF_FILES == "UPDATE":
     url_dict = {}  # This will store only new entries
 
 
-page = 1  # Higher the number the older the publications
-# Set max pages for UPDATE mode
-max_pages = 100 if PDF_FILES == "SETUP" else 37  # Limit to 5 for updates
+page = page_start = config["app"]["page_start"]
+page_end = page_start = config["app"]["page_end"]
+
+max_pages = 100 if PDF_FILES == "SETUP" else page_end  # Limit to 5 for updates
 
 # %% Scrape intermediate report pages and extract PDF links
 all_pdf_entries = {}  # {"pdf_url": "report_page", ...}
