@@ -18,7 +18,7 @@ python -m pip install .
 > python -m pip install -e ".[dev]"
 > ```
 
-## Installation on Windows (WIP)
+## Installation on Windows
 
 The project requires specific versions of some packages so it is recommended to
 set up a virtual environment.
@@ -131,4 +131,3 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 > [!NOTE]
 > YOU WILL ONLY NEED TO DO THE VECTORE STORE SETUP ONCE
 > AFTERWARDS IT WILL ONLY NEED TO BE UPDATED
-

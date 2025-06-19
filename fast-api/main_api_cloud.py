@@ -8,7 +8,7 @@ from datetime import datetime
 from markupsafe import escape
 
 from statschat import load_config
-from statschat.generative.llm import Inquirer
+from statschat.generative.cloud_llm import Inquirer
 from statschat.embedding.latest_flag_helpers import get_latest_flag
 
 
@@ -42,7 +42,7 @@ app = FastAPI(
     ),
     summary="""Experimental search of Kenya National Bureau of Statistics publications.
         Using retrieval augmented generation (RAG).""",
-    version="0.1.0",
+    version="0.1.1",
     contact={
         "name": "Kenya National Bureau of Statistics",
         "email": "test@knbs.com",
@@ -67,13 +67,13 @@ async def search(
     content_type: Union[str, None] = "latest",
     debug: bool = True,
 ):
-    """Search KNBS articles and bulletins for a question.
+    """Search KNBS publications and bulletins for a question.
 
     Args:
-        q (str): Question to be answered based on KNBS articles and bulletins.
+        q (str): Question to be answered based on KNBS publications and bulletins.
         content_type (Union[str, None], optional): Type of content to be searched.
             Currently accepted values: 'latest' to search the latest bulletins only
-            or 'all' to search any articles and bulletins.
+            or 'all' to search any publications and bulletins.
             Optional, defaults to 'latest'.
         debug (bool, optional): Flag to return debug information (full LLM response).
             Optional, defaults to True.

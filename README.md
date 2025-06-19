@@ -19,7 +19,7 @@
 
 ## Introduction
 
-This is an experimental application for semantic search of KNBS statistical publications.
+This is an experimental application for semantic search of KNBS [statistical publications](https://www.knbs.or.ke/all-reports/).
 It uses LangChain to implement a fairly simple Retriaval Augmented Generation (RAG) using embedding search
 and QA information retrieval process.
 
@@ -29,19 +29,24 @@ Next, the relevant text is passed to a Large Language Model (LLM),
 which is prompted to write an answer to the original question, if it can,
 using only the information contained within the documents.
 
-For this prototype, relevant web pages are scraped and the data stored in `data/bulletins`,
-the docstore / embedding store that is created is likewise in local folders and files,
-and the LLM is either run in memory or accessed through VertexAI.
+For this prototype, relevant web pages with PDF's are scraped and the data stored in `data/pdf_downloads`,
+the docstore / embedding store that is created is likewise and stored in `data/db_langchain` after SETUP and then
+also in `data/db_langchain_latest` after UPDATE. The LLM is either run locally with `local_llm.py` or an 
+API with `main_api_local.py` (both backend).
 
 ## Step 1: Vector store
 > [!NOTE]
 > **Before setting up or updating the vector store ensure the [virtual or conda environment has been created.](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md)**
 
-Before running `pdf_runner.py` ensure that the PDF_FILES_MODE (in `main.toml`) is set to the desired option.
+Before running `pdf_runner.py` in an integrated development environment (IDE) ensure that the PDF_FILES_MODE (in `main.toml`) 
+is set to the desired option. It can also be run in the command line as below.
 
     ```shell
-    python statschat/pdf_runner.py
+    python3 statschat/pdf_runner.py
     ```
+
+> [!NOTE]
+> If the above doesn't work then use `python statschat/pdf_runner.py`
 
 This script will webscrape PDF documents from the KNBS website, convert them to JSON files and either append or replace the vector store - based on the `PDF_FILES_MODE` parameter.
 
@@ -54,10 +59,11 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 #### Run the sample questions manually (backend)
 
 This assumes the [vector store](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md) has already been created otherwise this will need to be done before.
-Make sure that you're terminal is running from **`statschat-ke`**. Then use the **`llm.py`** 
-script and change the **question** parameter with the desired question:
+Make sure that you're terminal is running from **`statschat-ke`**. Then use the **`cloud_llm.py`** 
+(requires huggingface api token) or **`local_llm.py`** script and change the **question** parameter 
+with the desired question:
 
-![image](https://github.com/user-attachments/assets/83e2e4e8-1ecf-43e1-bcdc-e8f39e5d5e12)
+![image](https://github.com/user-attachments/assets/36ec03e4-2d6a-4814-9220-8cc478196e52)
 
 The answer, context and response will be output in the terminal.
 
@@ -82,7 +88,7 @@ Then you will need to make sure your terminal is on the **`statschat-ke`** folde
 From there, you can generate the synthetic "server" locally from your terminal:
 
 ```shell
-uvicorn fast-api.main_api:app --reload
+uvicorn fast-api.main_api_local:app --reload
 ```
 
 The fastapi is set to respond to http requests on a particular port.
@@ -92,7 +98,8 @@ You will see this in your terminal line, something like:
  Uvicorn running on http://127.0.0.1:8000
  ```
 
-Your port might be slightly different to 127.0.0.1:8000
+> [!NOTE]
+> **Your port might be slightly different to 127.0.0.1:8000**
 
 After a few seconds you should be able to go to your browser and ask questions.
 On the search bar type something like:
