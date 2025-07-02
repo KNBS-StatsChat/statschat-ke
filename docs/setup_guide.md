@@ -128,6 +128,12 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 
 **PDF_FILES_MODE** = **"SETUP"** -> Will scrape all pdf files from the KNBS website and reset the vector store, creating a new one from the PDF documents that are scraped and processed into JSON files.
 
+### SSL error fix
+If you get an error related to SSL: Certificates after running **`pdf_runner.py`** then:
+```
+pip install pip_system_certs
+```
+
 > [!NOTE]
 > YOU WILL ONLY NEED TO DO THE VECTORE STORE SETUP ONCE
 > AFTERWARDS IT WILL ONLY NEED TO BE UPDATED
