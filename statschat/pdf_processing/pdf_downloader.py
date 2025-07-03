@@ -70,7 +70,7 @@ while True:
 
     # Visit each page and extract report links
     url = f"{base_url}{page}/"
-    response = requests.get(url)
+    response = requests.get(url, verify=False)
 
     if response.status_code != 200:
         print(f"Failed to access {url}. Stopping search.")
