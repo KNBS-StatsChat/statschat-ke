@@ -101,7 +101,7 @@ while True:
             continue  # Skip already visited report pages
 
         visited_report_pages.add(report_url)
-        report_response = requests.get(report_url)
+        report_response = requests.get(report_url, verify=False)
 
         if report_response.status_code != 200:
             print(f"Failed to access report page: {report_url}")
