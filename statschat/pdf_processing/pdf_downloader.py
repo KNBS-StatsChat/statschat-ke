@@ -59,7 +59,7 @@ all_pdf_entries = {}  # {"pdf_url": "report_page", ...}
 visited_report_pages = set()
 
 # Set base URL for KNBS reports
-base_url = "https://www.knbs.or.ke/all-reports/page"
+base_url = "https://www.knbs.or.ke/all-reports/"
 
 print("IN PROGRESS.")
 while True:
