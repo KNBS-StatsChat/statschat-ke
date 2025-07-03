@@ -163,7 +163,7 @@ for pdf, report_page in tqdm(
     file_path = DATA_DIR / pdf_name
 
     # Download PDF
-    response = requests.get(pdf_url)
+    response = requests.get(pdf_url, verify=False)
 
     if response.status_code == 200:
         with open(file_path, "wb") as file:
