@@ -8,6 +8,10 @@ from tqdm import tqdm
 from statschat import load_config
 import re
 
+# Disable SSL warnings for requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # %% Configuration
 
 # Load configuration
@@ -50,7 +54,7 @@ elif PDF_FILES == "UPDATE":
 
 
 page = page_start = config["app"]["page_start"]
-page_end = page_start = config["app"]["page_end"]
+page_end = config["app"]["page_end"]
 
 max_pages = 100 if PDF_FILES == "SETUP" else page_end  # Limit to 5 for updates
 
@@ -59,10 +63,10 @@ all_pdf_entries = {}  # {"pdf_url": "report_page", ...}
 visited_report_pages = set()
 
 # Set base URL for KNBS reports
-base_url = "https://www.knbs.or.ke/all-reports/"
+base_url = "https://www.knbs.or.ke/all-reports/page/"
 
 print("IN PROGRESS.")
-while True:
+while page <= page_end:
     # Trigger page limit for UPDATE mode
     if max_pages and page > max_pages:
         print(f"Reached page limit ({max_pages}) for UPDATE mode. Stopping search.")
@@ -93,6 +97,7 @@ while True:
         break
 
     # print(report_links)
+
     print(f"Found {len(report_links)} report pages on page {page}")
 
     # Step 2: Visit each report page and extract PDF links
