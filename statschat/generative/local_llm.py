@@ -143,7 +143,7 @@ if __name__ == "__main__":
     #question = "How is inflation calculated?"
     
     # Get the most relevant text chunks
-    relevant_texts = similarity_search(question, latest_filter=True)
+    relevant_texts = similarity_search(question, latest_filter=False)
     
 
     if verbose:
