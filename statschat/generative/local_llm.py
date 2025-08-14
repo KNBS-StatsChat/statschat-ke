@@ -26,7 +26,7 @@ def flatten_meta(d):
 
 
 def similarity_search(
-    query: str, latest_filter: bool = True, return_dicts: bool = True
+    query: str, latest_filter: bool = False, return_dicts: bool = True
 ) -> list[dict]:
     """
     Returns k document chunks with the highest relevance to the
@@ -143,7 +143,7 @@ if __name__ == "__main__":
     #question = "How is inflation calculated?"
     
     # Get the most relevant text chunks
-    relevant_texts = similarity_search(question, latest_filter=False)
+    relevant_texts = similarity_search(question)
     
 
     if verbose:
