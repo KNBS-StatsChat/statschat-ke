@@ -4,6 +4,51 @@ Guide on how to solve server issues.
 
 ## How to get server running independently
 
+### **Nginx service** 
+
+Create file called `statschat-api`
+
+```
+sudo nano /etc/nginx/sites-available/statschat-api
+```
+
+```
+server { 
+listen 80; 
+server_name [put in the ip]; 
+location ~* /(admin|login|config|password|php|boaform) { 
+deny all; 
+return 403; 
+} 
+location / { 
+proxy_pass http://127.0.0.1:8000; 
+proxy_set_header Host $host; 
+proxy_set_header X-Real-IP $remote_addr; 
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
+proxy_set_header X-Forwarded-Proto $scheme; 
+proxy_read_timeout 300s; 
+proxy_connect_timeout 300s; 
+proxy_send_timeout 300s; 
+} 
+access_log /home/user1/statschat-ke/statschat/log/nginx-access.log; 
+error_log /home/user1/statschat-ke/statschat/log/nginx-error.log; 
+}
+```
+
+To start `nginx` run the commands below one by one: 
+```
+sudo apt install nginx
+```
+```
+sudo nginx -t 
+```
+```
+sudo systemctl start nginx 
+```
+```
+sudo systemctl status nginx
+```
+
 ### **Api service file** 
 
 Create service file called `statschat-api.service`
@@ -50,47 +95,3 @@ To check logs:
 ```
 tail -f /home/user1/statschat-ke/statschat/log/statschat-api-error.log
 ```
-
-### **Nginx service** 
-
-Create file called `statschat-api`
-
-```
-sudo nano /etc/nginx/sites-available/statschat-api
-```
-
-```
-server { 
-listen 80; 
-server_name [put in the ip]; 
-location ~* /(admin|login|config|password|php|boaform) { 
-deny all; 
-return 403; 
-} 
-location / { 
-proxy_pass http://127.0.0.1:8000; 
-proxy_set_header Host $host; 
-proxy_set_header X-Real-IP $remote_addr; 
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; 
-proxy_set_header X-Forwarded-Proto $scheme; 
-proxy_read_timeout 300s; 
-proxy_connect_timeout 300s; 
-proxy_send_timeout 300s; 
-} 
-access_log /home/user1/statschat-ke/statschat/log/nginx-access.log; 
-error_log /home/user1/statschat-ke/statschat/log/nginx-error.log; 
-}
-```
-
-To start `nginx` run the commands below one by one: 
-```
-sudo apt install nginx
-```
-```
-sudo nginx -t 
-```
-```
-sudo systemctl start nginx 
-```
-```
-sudo systemctl status nginx
