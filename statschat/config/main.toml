@@ -1,5 +1,5 @@
 [db]
-faiss_db_root = "db_langchain"
+faiss_db_root = "/home/mokero/statschat-ke/fast-api/data/db_langchain"
 embedding_model_name = "sentence-transformers/all-mpnet-base-v2" #all-mpnet-base-v2" #all-MiniLM-L6-v2" #"sentence-transformers/all-mpnet-base-v2"  # "textembedding-gecko@001" "sentence-transformers/paraphrase-MiniLM-L3-v2"
 
 [preprocess]
@@ -10,10 +10,10 @@ directory = "json_conversions"
 split_directory = "json_split"
 split_length = 2000
 split_overlap = 200
-latest_only = true
+latest_only = false
 
 [search]
-generative_model_name = "mistralai/Mistral-7B-Instruct-v0.3"  # "text-unicorn" "text-bison@001" "google/flan-t5-large" "lmsys/fastchat-t5-3b-v1.0" "google/flan-t5-large" "google/flan-ul2"
+generative_model_name = "meta-llama/Llama-3.2-3B-Instruct" # "mistralai/Mistral-7B-Instruct-v0.3" # "text-unicorn" "text-bison@001" "google/flan-t5-large" "lmsys/fastchat-t5-3b-v1.0" "google/flan-t5-large" "google/flan-ul2"
 k_docs = 2
 k_contexts = 5
 similarity_threshold = 2.0     # Threshold score below which a document is returned in a search
@@ -24,4 +24,4 @@ document_threshold = 0.9 # Threshold score below which a document is returned in
 [app]
 latest_max = 2    # Takes value int >= 0, commonly 0, 1 or 2
 page_start = 1    # Sets where to start looking for downloads. Higher the number the older the publications.
-page_end = 5      # Sets where to stop looking for downloads. Higher the number the older the publications
+page_end = 3      # Sets where to stop looking for downloads. Higher the number the older the publications

@@ -15,7 +15,7 @@ from statschat.generative.prompts_local import (
     _core_prompt,
     _format_instructions,
 )
-
+import time
 # pip install 'accelerate>=0.26.0'
 # install sentencepiece
 
@@ -26,7 +26,7 @@ def flatten_meta(d):
 
 
 def similarity_search(
-    query: str, latest_filter: bool = True, return_dicts: bool = True
+    query: str, latest_filter: bool = False, return_dicts: bool = True
 ) -> list[dict]:
     """
     Returns k document chunks with the highest relevance to the
@@ -43,27 +43,43 @@ def similarity_search(
         
     logger = logging.getLogger(__name__)
     logger.info("Retrieving most relevant text chunks")
-    faiss_db_root = "data/db_langchain"
+    # Resolve base dir relative to this file (statschat/generative/)
+    BASE_DIR = Path(__file__).resolve().parent.parent.parent  # → /home/mokero/statschat-ke/statschat
+    DATA_DIR = BASE_DIR / "data"
+
+    DB_LANGCHAIN_DIR = DATA_DIR / "db_langchain"
+    DB_LANGCHAIN_UPDATE_DIR = DATA_DIR / "db_langchain_update"
+
+    if DB_LANGCHAIN_UPDATE_DIR.exists():
+        faiss_db_root_latest = DATA_DIR / "db_langchain_latest"
+    elif DB_LANGCHAIN_DIR.exists():
+        faiss_db_root_latest = DB_LANGCHAIN_DIR
+    else:
+        raise FileNotFoundError(f"No FAISS index directory found under {DATA_DIR}")
+
+    faiss_db_root = DB_LANGCHAIN_DIR  # fallback
+
+   # faiss_db_root = "data/db_langchain"
     
     # Check directories exist in "SETUP" MODE to avoid error
-    BASE_DIR = Path.cwd().joinpath("data")
-    DB_LANGCHAIN_DIR = BASE_DIR.joinpath("db_langchain")
-    DB_LANGCHAIN_UPDATE_DIR = BASE_DIR.joinpath("db_langchain_update")
+   # BASE_DIR = Path.cwd().joinpath("data")
+   # DB_LANGCHAIN_DIR = BASE_DIR.joinpath("db_langchain")
+   # DB_LANGCHAIN_UPDATE_DIR = BASE_DIR.joinpath("db_langchain_update")
     
-    if DB_LANGCHAIN_UPDATE_DIR.exists():
-        faiss_db_root_latest = "data/db_langchain_latest"
+   # if DB_LANGCHAIN_UPDATE_DIR.exists():
+    #    faiss_db_root_latest = "data/db_langchain_latest"
         
-    elif DB_LANGCHAIN_DIR.exists():
-        faiss_db_root_latest = "data/db_langchain"
+   # elif DB_LANGCHAIN_DIR.exists():
+    #    faiss_db_root_latest = "data/db_langchain"
         
     k_docs = 3
     similarity_threshold = 2.0
     embedding_model_name = "sentence-transformers/all-mpnet-base-v2"
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
-
+    start = time.perf_counter()
     if latest_filter:
         db_latest = FAISS.load_local(
-            faiss_db_root_latest, embeddings, allow_dangerous_deserialization=True
+            faiss_db_root, embeddings, allow_dangerous_deserialization=True
         )
         top_matches = db_latest.similarity_search_with_score(query=query, k=k_docs)
     else:
@@ -71,7 +87,8 @@ def similarity_search(
             faiss_db_root, embeddings, allow_dangerous_deserialization=True
         )
         top_matches = db.similarity_search_with_score(query=query, k=k_docs)
-
+    elapsed = time.perf_counter() -start
+    logger.info(f"FAISS retrieval took {elapsed:.3f} seconds")
     # filter to document matches with similarity scores less than...
     # i.e. closest cosine distances to query
     top_matches = [x for x in top_matches if x[-1] <= similarity_threshold]
@@ -100,10 +117,9 @@ def generate_response(question: str, model: str, tokenizer) -> str:
     print("Generating input tokens...")
     input_ids = tokenizer(question, return_tensors="pt").input_ids.to(model.device)
     print("Generating response...")
-    output = model.generate(input_ids, max_new_tokens=1000)
+    output = model.generate(input_ids, max_new_tokens=400)
     raw_response = tokenizer.decode(output[0], skip_special_tokens=True)
     return raw_response
-
 
 # Define a function to format the response
 def format_response(raw_response: str) -> dict:
@@ -143,7 +159,7 @@ if __name__ == "__main__":
     #question = "How is inflation calculated?"
     
     # Get the most relevant text chunks
-    relevant_texts = similarity_search(question, latest_filter=True)
+    relevant_texts = similarity_search(question, latest_filter=False)
     
 
     if verbose:
@@ -166,8 +182,11 @@ if __name__ == "__main__":
     
 
     # Choose your model (e.g., Mistral-7B, DeepSeek, Llama-3, etc.)
-    MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
+   # MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
+    MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"  
+   # MODEL_ID = "amd/Instella-3B-Instruct"
     # Load model and tokenizer
+   # bnb_config = BitsAndBytesConfig(load_in_4bit=True)
     print("Building the tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
@@ -175,7 +194,8 @@ if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=torch.float16,  # Use float16 for efficiency if using a GPU
-        device_map="auto",  # Automatically selects GPU if available
+        #quantization_config=bnb_config, # load in 8-bit or 4-bit quantization
+        device_map="cpu",  # Automatically selects GPU if available
     )
     print("Model loaded successfully.")
     specific_prompt = _extractive_prompt.format(
@@ -187,7 +207,7 @@ if __name__ == "__main__":
 
     if verbose:
         print(user_input)
-
+    
     raw_response = generate_response(user_input, model, tokenizer)
     formatted_response = format_response(raw_response)
     

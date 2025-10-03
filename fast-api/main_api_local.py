@@ -114,7 +114,7 @@ async def search(
     )
 
     # Get the most relevant text chunks
-    relevant_texts = similarity_search(question, latest_filter=True)
+    relevant_texts = similarity_search(question, latest_filter=False)
 
     specific_prompt = _extractive_prompt.format(
         QuestionPlaceholder=question,
