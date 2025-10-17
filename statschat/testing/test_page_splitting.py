@@ -38,17 +38,24 @@ def get_pdf_page_counts(directory: Path):
     Returns:
         dict: Dictionary with PDF filenames as keys and page counts as values.
     """
+    # Initialize an empty dictionary to store page counts for each PDF
     pdf_page_counts = {}
 
+    # Iterate over all PDF files in the specified directory
     for pdf_file in directory.glob("*.pdf"):
         print(f"Getting page count for: {pdf_file.name}")
         try:
+            # Open the PDF file in binary read mode
             with open(pdf_file, "rb") as f:
+                # Create a PdfReader object to read the PDF
                 reader = PyPDF2.PdfReader(f)
+                # Store the number of pages in the dictionary using the filename as the key
                 pdf_page_counts[pdf_file.name] = len(reader.pages)
         except Exception as e:
+            # Print an error message if the file couldn't be read
             print(f"Error reading {pdf_file.name}: {e}")
 
+    # Return the dictionary containing filenames and their corresponding page counts
     return pdf_page_counts
 
 # %%
@@ -81,29 +88,36 @@ def validate_page_splitting(json_folder: Path, expected_page_counts: dict):
     """
     results = []
 
+    # Iterate over all JSON files in the specified folder
     for json_file in json_folder.glob("*.json"):
         print(f"Validate page splitting for JSON file: {json_file.name}")
         try:
+            # Open and load the JSON file
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
+            # Extract the 'url' and 'content' fields from the JSON
             url = data.get("url", "")
             content = data.get("content", [])
+
+            # Get the last page number from the 'content' list, if available
             last_page = content[-1]["page_number"] if content else None
 
-            # Extract filename from URL
+            # Extract the filename from the URL (assumes it's the last segment)
             filename_from_url = url.split("/")[-1]
 
-            # Try to match expected filename using substring logic
+            # Attempt to find a matching expected filename using substring logic
             matched_filename = None
             for expected_name in expected_page_counts:
                 base_name = expected_name.replace(".pdf", "")
                 if base_name in filename_from_url:
                     matched_filename = expected_name
-                    break
+                    break  # Stop at the first match
 
+            # Retrieve the expected page count for the matched filename
             expected_pages = expected_page_counts.get(matched_filename)
 
+            # Append the validation result for this JSON file
             results.append({
                 "json_file": json_file.name,
                 "pdf_filename_in_json": filename_from_url,
@@ -115,12 +129,15 @@ def validate_page_splitting(json_folder: Path, expected_page_counts: dict):
             })
 
         except Exception as e:
+            # If an error occurs, record it in the results
             results.append({
                 "json_file": json_file.name,
                 "error": str(e)
             })
 
+    # Return the list of validation results
     return results
+
 
 # %%
 if __name__ == "__main__":
