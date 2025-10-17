@@ -7,6 +7,7 @@ from spellchecker import SpellChecker
 import unicodedata
 from difflib import unified_diff
 import re
+import pandas as pd
 
 # %% Configuration
 # Load configuration
@@ -170,7 +171,103 @@ def check_folders_text_extraction(data_dir: Path, json_dir: Path):
             check_file_pair_text(pdf_path=pdf_file, json_path=json_file)
         else:
             print(f"⚠️ JSON file missing for {pdf_file.name}")
+            
+def json_to_csv(json_dir: Path, output_for_csv: Path): 
+    """
+    Converts multiple JSON audit reports in a directory into a single CSV summary.
+
+    Args:
+        json_dir (Path): Directory containing JSON files.
+        output_csv (Path): Path to the output CSV file to be created.
+
+    Returns:
+        None. Writes the combined CSV file to disk.
+    """
+    rows = []
+
+    for json_file in json_dir.glob("*.json"):
+        with json_file.open('r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        for page_num, page_data in data['pages'].items():
+            rows.append({
+                "pdf_file": data["pdf_file"],
+                "json_file": data["json_file"],
+                "page": page_num,
+                "diff_count": page_data["diff_count"],
+                "misspelled": ", ".join(page_data["misspelled"]),
+                "irregular_chars": ", ".join(page_data["irregular_chars"])
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_csv(output_for_csv, index=False)
+    print(f"✅ Saved combined CSV to {output_for_csv}")
+    
+# %%
+def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
+    """
+    Combines all JSON audit reports in a directory into a single Markdown file.
+
+    Each report includes:
+        - PDF and JSON filenames
+        - Page-by-page summary of differences
+        - Misspelled words
+        - Irregular characters
+        - Sample diff lines (formatted as code blocks)
+
+    Args:
+        json_dir (Path): Directory containing JSON audit reports.
+        output_md (Path): Path to the combined Markdown file to be created.
+
+    Returns:
+        None. Writes the combined Markdown file to disk.
+    """
+    # Collect all markdown content
+    all_lines = ["# Combined Audit Report\n"]
+
+    # Loop through each JSON file
+    for json_file in json_dir.glob("*.json"):
+        with json_file.open('r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        all_lines.append(f"\n---\n\n## File: `{data['pdf_file']}`")
+        all_lines.append(f"**JSON Source**: `{data['json_file']}`")
+
+        # Loop through each page in the report
+        for page_num, page_data in data['pages'].items():
+            all_lines.append(f"\n### Page {page_num}")
+            all_lines.append(f"- **Differences Found**: {page_data['diff_count']}")
+
+            if page_data['diff_examples']:
+                all_lines.append("- **Examples:**")
+                all_lines.append("```diff")
+                for line in page_data['diff_examples']:
+                    all_lines.append(line)
+                all_lines.append("```")
+
+            if page_data['misspelled']:
+                all_lines.append(f"- **Misspelled Words**: {', '.join(page_data['misspelled'])}")
+            if page_data['irregular_chars']:
+                all_lines.append(f"- **Irregular Characters**: {', '.join(page_data['irregular_chars'])}")
+
+    # Write all content to a single Markdown file
+    with output_md.open("w", encoding="utf-8") as out:
+        out.write("\n".join(all_lines))
+
+    print(f"✅ Saved combined Markdown report to {output_md}")
+
 
 if __name__ == "__main__":
+    
     check_folders_text_extraction(DATA_DIR, JSON_DIR)
+    
+    json_to_csv(
+        json_dir=TEST_OUTPUT_DIR, 
+        output_csv = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.csv"
+    )
 
+    combine_json_reports_to_markdown(
+        json_dir=TEST_OUTPUT_DIR, output_md = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.md"
+        )
+    
+    # maybe add to wipe TEST_OUTPUT_DIR of JSON files after finishing
