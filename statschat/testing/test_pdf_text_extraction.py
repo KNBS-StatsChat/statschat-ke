@@ -63,8 +63,12 @@ def compare_texts(json_text, pdf_text):
         list or None: A list of differing lines (excluding numeric ones), or None if no differences.
     """
     # Generate unified diff and filter out lines containing digits
+    
     diff = list(unified_diff(pdf_text.splitlines(), json_text.splitlines()))
-    filtered = [line for line in diff if not re.search(r'\d', line)]
+    filtered = [
+        line for line in diff
+        if not re.search(r'\d', line) and line.strip() not in ("---", "+++")
+    ]
     return filtered if filtered else None
 
 def check_json_text(text):
