@@ -96,6 +96,7 @@ def check_file_pair_text(pdf_path: Path, json_path: Path):
         - Differences (excluding numeric lines)
         - Misspelled words
         - Irregular characters
+        - Word-level extraction accuracy (%)
     Saves the report to tests/outputs/ as a JSON file.
 
     Args:
@@ -105,37 +106,34 @@ def check_file_pair_text(pdf_path: Path, json_path: Path):
     print(f"\n🔍 Checking: {pdf_path.name} and {json_path.name}")
     pdf_texts = extract_pdf_text(pdf_path)
 
-    # Load JSON content
     with json_path.open('r', encoding='utf-8') as f:
         json_data = json.load(f)
 
-    # Initialize report structure
     file_report = {
         "pdf_file": pdf_path.name,
         "json_file": json_path.name,
         "pages": {}
     }
 
-    # Loop through each page in the JSON
     for page in json_data['content']:
         page_num = page['page_number']
         json_text = page['page_text']
         pdf_text = pdf_texts.get(page_num, '')
 
-        # Initialize page-level report
         page_report = {
             "diff_count": 0,
             "diff_examples": [],
             "diff_occurrences": {},
             "misspelled": [],
-            "irregular_chars": []
+            "irregular_chars": [],
+            "accuracy_percent": None
         }
 
         # Compare text and record differences
         diff = compare_texts(json_text, pdf_text)
         if diff:
             page_report["diff_count"] = len(diff)
-            page_report["diff_examples"] = diff[:5]  # Limit to first 5 examples
+            page_report["diff_examples"] = diff[:5] # Limits to first 5 examples
             for line in diff:
                 page_report["diff_occurrences"][line] = page_report["diff_occurrences"].get(line, 0) + 1
 
@@ -144,15 +142,23 @@ def check_file_pair_text(pdf_path: Path, json_path: Path):
         page_report["misspelled"] = list(misspelled)
         page_report["irregular_chars"] = irregular
 
+        # Calculate word-level matches
+        json_words = json_text.split()
+        pdf_words = set(pdf_text.split())
+        matched = [word for word in json_words if word in pdf_words]
+        total = len(json_words)
+        accuracy = (len(matched) / total * 100) if total > 0 else 0
+        page_report["accuracy_percent"] = round(accuracy, 2)
+
         # Add page report to file report
         file_report["pages"][str(page_num)] = page_report
 
-    # Save report to output directory
     output_path = TEST_OUTPUT_DIR / f"{pdf_path.stem}_report.json"
     with output_path.open("w", encoding="utf-8") as out:
         json.dump(file_report, out, indent=2, ensure_ascii=False)
 
     print(f"✅ Saved report to {output_path}")
+
 
 def check_folders_text_extraction(data_dir: Path, json_dir: Path):
     """
@@ -172,36 +178,50 @@ def check_folders_text_extraction(data_dir: Path, json_dir: Path):
         else:
             print(f"⚠️ JSON file missing for {pdf_file.name}")
             
-def json_to_csv(json_dir: Path, output_for_csv: Path): 
+def json_to_csv(json_dir: Path, output_for_csv: Path):
     """
     Converts multiple JSON audit reports in a directory into a single CSV summary.
 
+    Each row represents one page from one report and includes:
+        - PDF and JSON filenames
+        - Page number
+        - Diff count
+        - Misspelled words
+        - Irregular characters
+        - Accuracy percentage
+
     Args:
         json_dir (Path): Directory containing JSON files.
-        output_csv (Path): Path to the output CSV file to be created.
+        output_for_csv (Path): Path to the output CSV file to be created.
 
     Returns:
         None. Writes the combined CSV file to disk.
     """
-    rows = []
+    rows = []  # List to hold all page-level summary rows
 
+    # Loop through each JSON file in the directory
     for json_file in json_dir.glob("*.json"):
         with json_file.open('r', encoding='utf-8') as f:
             data = json.load(f)
 
+        # Loop through each page in the report
         for page_num, page_data in data['pages'].items():
+            # Build a row with relevant metrics
             rows.append({
                 "pdf_file": data["pdf_file"],
                 "json_file": data["json_file"],
                 "page": page_num,
                 "diff_count": page_data["diff_count"],
                 "misspelled": ", ".join(page_data["misspelled"]),
-                "irregular_chars": ", ".join(page_data["irregular_chars"])
+                "irregular_chars": ", ".join(page_data["irregular_chars"]),
+                "word_matches_from_extraction": page_data.get("accuracy_percent", "")
             })
 
+    # Convert to DataFrame and save as CSV
     df = pd.DataFrame(rows)
     df.to_csv(output_for_csv, index=False)
     print(f"✅ Saved combined CSV to {output_for_csv}")
+
     
 # %%
 def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
@@ -210,10 +230,12 @@ def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
 
     Each report includes:
         - PDF and JSON filenames
-        - Page-by-page summary of differences
-        - Misspelled words
-        - Irregular characters
-        - Sample diff lines (formatted as code blocks)
+        - Page-by-page summary of:
+            - Diff count
+            - Misspelled words
+            - Irregular characters
+            - Accuracy percentage
+            - Sample diff lines (formatted as code blocks)
 
     Args:
         json_dir (Path): Directory containing JSON audit reports.
@@ -222,14 +244,14 @@ def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
     Returns:
         None. Writes the combined Markdown file to disk.
     """
-    # Collect all markdown content
-    all_lines = ["# Combined Audit Report\n"]
+    all_lines = ["# Combined Audit Report\n"]  # Start with a top-level heading
 
-    # Loop through each JSON file
+    # Loop through each JSON file in the directory
     for json_file in json_dir.glob("*.json"):
         with json_file.open('r', encoding='utf-8') as f:
             data = json.load(f)
 
+        # Add file-level heading
         all_lines.append(f"\n---\n\n## File: `{data['pdf_file']}`")
         all_lines.append(f"**JSON Source**: `{data['json_file']}`")
 
@@ -237,7 +259,9 @@ def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
         for page_num, page_data in data['pages'].items():
             all_lines.append(f"\n### Page {page_num}")
             all_lines.append(f"- **Differences Found**: {page_data['diff_count']}")
+            all_lines.append(f"- **Word Matches**: {page_data.get('accuracy_percent', 'N/A')}%")
 
+            # Include diff examples if available
             if page_data['diff_examples']:
                 all_lines.append("- **Examples:**")
                 all_lines.append("```diff")
@@ -245,12 +269,15 @@ def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
                     all_lines.append(line)
                 all_lines.append("```")
 
+            # Include misspelled words if any
             if page_data['misspelled']:
                 all_lines.append(f"- **Misspelled Words**: {', '.join(page_data['misspelled'])}")
+
+            # Include irregular characters if any
             if page_data['irregular_chars']:
                 all_lines.append(f"- **Irregular Characters**: {', '.join(page_data['irregular_chars'])}")
 
-    # Write all content to a single Markdown file
+    # Write all collected lines to the Markdown file
     with output_md.open("w", encoding="utf-8") as out:
         out.write("\n".join(all_lines))
 
@@ -263,7 +290,7 @@ if __name__ == "__main__":
     
     json_to_csv(
         json_dir=TEST_OUTPUT_DIR, 
-        output_csv = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.csv"
+        output_for_csv = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.csv"
     )
 
     combine_json_reports_to_markdown(
