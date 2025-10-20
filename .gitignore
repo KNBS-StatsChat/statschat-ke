@@ -19,6 +19,8 @@ __pycache__/
 *.faiss
 *.pdf
 
+# Directories
+/outputs/tests
 
 # Distribution / packaging
 .Python
