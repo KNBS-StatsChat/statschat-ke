@@ -8,6 +8,8 @@ import unicodedata
 from difflib import unified_diff
 import re
 import pandas as pd
+import pdfplumber
+from PyPDF2 import PdfReader
 
 # %% Configuration
 # Load configuration
@@ -38,18 +40,37 @@ TEST_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 # Initialize spell checker
 spell = SpellChecker()
 
-def extract_pdf_text(pdf_path):
+def extract_pdf_text(pdf_path: Path, method: str = "fitz") -> dict:
     """
-    Extracts text from each page of a PDF file using PyMuPDF.
+    Extracts text from each page of a PDF using the specified method.
+
+    Supported methods:
+        - 'fitz' (PyMuPDF)
+        - 'pypdf2'
+        - 'pdfplumber'
 
     Args:
         pdf_path (Path): Path to the PDF file.
+        method (str): Extraction method to use.
 
     Returns:
-        dict: A dictionary mapping page numbers (1-based) to their extracted text.
+        dict: Page number (1-based) mapped to extracted text.
     """
-    doc = fitz.open(pdf_path)
-    return {page.number + 1: page.get_text() for page in doc}
+    if method == "fitz":
+        doc = fitz.open(pdf_path)
+        return {page.number + 1: page.get_text() for page in doc}
+
+    elif method == "pypdf2":
+        reader = PdfReader(str(pdf_path))
+        return {i + 1: page.extract_text() or "" for i, page in enumerate(reader.pages)}
+
+    elif method == "pdfplumber":
+        with pdfplumber.open(pdf_path) as pdf:
+            return {i + 1: page.extract_text() or "" for i, page in enumerate(pdf.pages)}
+
+    else:
+        raise ValueError(f"Unsupported extraction method: {method}")
+
 
 def compare_texts(json_text, pdf_text):
     """
@@ -72,6 +93,7 @@ def compare_texts(json_text, pdf_text):
     ]
     return filtered if filtered else None
 
+
 def check_json_text(text):
     """
     Checks a block of text for spelling errors and irregular (non-Latin) characters.
@@ -89,6 +111,7 @@ def check_json_text(text):
     irregular_chars = [c for c in text if ord(c) > 127 and not unicodedata.name(c, '').startswith('LATIN')]
     return misspelled, irregular_chars
 
+
 def check_file_pair_text(pdf_path: Path, json_path: Path):
     """
     Compares the text content of a PDF file and its corresponding JSON file.
@@ -97,7 +120,7 @@ def check_file_pair_text(pdf_path: Path, json_path: Path):
         - Misspelled words
         - Irregular characters
         - Word-level extraction accuracy (%)
-    Saves the report to tests/outputs/ as a JSON file.
+    Saves the report to outputs/tests/ as a JSON file.
 
     Args:
         pdf_path (Path): Path to the PDF file.
@@ -178,7 +201,8 @@ def check_folders_text_extraction(data_dir: Path, json_dir: Path):
         else:
             print(f"⚠️ JSON file missing for {pdf_file.name}")
             
-def json_to_csv(json_dir: Path, output_for_csv: Path):
+
+def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = "fitz"):
     """
     Converts multiple JSON audit reports in a directory into a single CSV summary.
 
@@ -192,7 +216,8 @@ def json_to_csv(json_dir: Path, output_for_csv: Path):
 
     Args:
         json_dir (Path): Directory containing JSON files.
-        output_for_csv (Path): Path to the output CSV file to be created.
+        output_dir (Path): Directory where the CSV file will be saved.
+        pdf_extractor_name (str): Name of the extractor used (e.g., 'fitz', 'pypdf2', 'pdfplumber').
 
     Returns:
         None. Writes the combined CSV file to disk.
@@ -217,12 +242,14 @@ def json_to_csv(json_dir: Path, output_for_csv: Path):
                 "word_matches_from_extraction": page_data.get("accuracy_percent", "")
             })
 
+    # Define output filename using extractor name
+    output_csv = output_dir / f"pdf_to_json_text_extraction_{pdf_extractor_name}_summary.csv"
+
     # Convert to DataFrame and save as CSV
     df = pd.DataFrame(rows)
-    df.to_csv(output_for_csv, index=False)
-    print(f"✅ Saved combined CSV to {output_for_csv}")
-
-    
+    df.to_csv(output_csv, index=False)
+    print(f"✅ Saved combined CSV to {output_csv}")
+  
 # %%
 def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
     """
@@ -283,18 +310,93 @@ def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
 
     print(f"✅ Saved combined Markdown report to {output_md}")
 
+def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extractor_name: str = "fitz"):
+    """
+    Combines all JSON audit reports in a directory into a single Markdown file.
+
+    Each report includes:
+        - PDF and JSON filenames
+        - Page-by-page summary of:
+            - Diff count
+            - Misspelled words
+            - Irregular characters
+            - Accuracy percentage
+            - Sample diff lines (formatted as code blocks)
+
+    Args:
+        json_dir (Path): Directory containing JSON audit reports.
+        output_dir (Path): Directory where the Markdown file will be saved.
+        pdf_extractor_name (str): Name of the extractor used (e.g., 'fitz', 'pypdf2', 'pdfplumber').
+
+    Returns:
+        None. Writes the combined Markdown file to disk.
+    """
+    all_lines = [f"# Combined Audit Report ({pdf_extractor_name})\n"]  # Top-level heading with extractor name
+
+    # Loop through each JSON file in the directory
+    for json_file in json_dir.glob("*.json"):
+        with json_file.open('r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # Add file-level heading
+        all_lines.append(f"\n---\n\n## File: `{data['pdf_file']}`")
+        all_lines.append(f"**JSON Source**: `{data['json_file']}`")
+
+        # Loop through each page in the report
+        for page_num, page_data in data['pages'].items():
+            all_lines.append(f"\n### Page {page_num}")
+            all_lines.append(f"- **Differences Found**: {page_data['diff_count']}")
+            all_lines.append(f"- **Word Matches**: {page_data.get('accuracy_percent', 'N/A')}%")
+
+            # Include diff examples if available
+            if page_data['diff_examples']:
+                all_lines.append("- **Examples:**")
+                all_lines.append("```diff")
+                for line in page_data['diff_examples']:
+                    all_lines.append(line)
+                all_lines.append("```")
+
+            # Include misspelled words if any
+            if page_data['misspelled']:
+                all_lines.append(f"- **Misspelled Words**: {', '.join(page_data['misspelled'])}")
+
+            # Include irregular characters if any
+            if page_data['irregular_chars']:
+                all_lines.append(f"- **Irregular Characters**: {', '.join(page_data['irregular_chars'])}")
+
+    # Define output Markdown filename using extractor name
+    output_md = output_dir / f"pdf_to_json_text_extraction_{pdf_extractor_name}_summary.md"
+
+    # Write all collected lines to the Markdown file
+    with output_md.open("w", encoding="utf-8") as out:
+        out.write("\n".join(all_lines))
+
+    print(f"✅ Saved combined Markdown report to {output_md}")
+
 
 if __name__ == "__main__":
     
     check_folders_text_extraction(DATA_DIR, JSON_DIR)
     
+    # json_to_csv(
+    #     json_dir=TEST_OUTPUT_DIR, 
+    #     output_for_csv = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.csv"
+    # )
+    
     json_to_csv(
-        json_dir=TEST_OUTPUT_DIR, 
-        output_for_csv = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.csv"
+        json_dir=Path("outputs/tests"), 
+        output_dir=Path("outputs/tests"), 
+        pdf_extractor_name="pypdf2"
     )
 
-    combine_json_reports_to_markdown(
-        json_dir=TEST_OUTPUT_DIR, output_md = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.md"
-        )
+
+    # combine_json_reports_to_markdown(
+    #     json_dir=TEST_OUTPUT_DIR, output_md = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.md"
+    # )
     
+    combine_json_reports_to_markdown(
+        json_dir=Path("outputs/tests"),
+        output_dir=Path("outputs/tests"),
+        pdf_extractor_name='pypdf2'
+    )
     # maybe add to wipe TEST_OUTPUT_DIR of JSON files after finishing
