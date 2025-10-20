@@ -8,10 +8,6 @@ from tqdm import tqdm
 from statschat import load_config
 import re
 
-# Disable SSL warnings for requests
-import urllib3
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # %% Configuration
 
 # Load configuration
@@ -74,7 +70,7 @@ while page <= page_end:
 
     # Visit each page and extract report links
     url = f"{base_url}{page}/"
-    response = requests.get(url, verify=False)
+    response = requests.get(url)
 
     if response.status_code != 200:
         print(f"Failed to access {url}. Stopping search.")
@@ -106,7 +102,7 @@ while page <= page_end:
             continue  # Skip already visited report pages
 
         visited_report_pages.add(report_url)
-        report_response = requests.get(report_url, verify=False)
+        report_response = requests.get(report_url)
 
         if report_response.status_code != 200:
             print(f"Failed to access report page: {report_url}")
@@ -168,7 +164,7 @@ for pdf, report_page in tqdm(
     file_path = DATA_DIR / pdf_name
 
     # Download PDF
-    response = requests.get(pdf_url, verify=False)
+    response = requests.get(pdf_url)
 
     if response.status_code == 200:
         with open(file_path, "wb") as file:

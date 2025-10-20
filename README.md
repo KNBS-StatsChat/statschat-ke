@@ -34,6 +34,10 @@ the docstore / embedding store that is created is likewise and stored in `data/d
 also in `data/db_langchain_latest` after UPDATE. The LLM is either run locally with `local_llm.py` or an 
 API with `main_api_local.py` (both backend).
 
+## Overview
+<img width="1661" height="580" alt="image" src="https://github.com/user-attachments/assets/34eb5fbd-0965-48f8-acd3-bcc7ee945de2" />
+
+
 ## Step 1: Vector store
 > [!NOTE]
 > **Before setting up or updating the vector store ensure the [virtual or conda environment has been created.](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md)**
