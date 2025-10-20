@@ -378,25 +378,24 @@ if __name__ == "__main__":
     
     check_folders_text_extraction(DATA_DIR, JSON_DIR)
     
-    # json_to_csv(
-    #     json_dir=TEST_OUTPUT_DIR, 
-    #     output_for_csv = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.csv"
-    # )
-    
     json_to_csv(
         json_dir=Path("outputs/tests"), 
         output_dir=Path("outputs/tests"), 
         pdf_extractor_name="pypdf2"
     )
 
-
-    # combine_json_reports_to_markdown(
-    #     json_dir=TEST_OUTPUT_DIR, output_md = TEST_OUTPUT_DIR / "pdf_to_json_text_extraction_summary.md"
-    # )
     
     combine_json_reports_to_markdown(
         json_dir=Path("outputs/tests"),
         output_dir=Path("outputs/tests"),
         pdf_extractor_name='pypdf2'
     )
-    # maybe add to wipe TEST_OUTPUT_DIR of JSON files after finishing
+    
+    # Cleanup: delete all JSON files in TEST_OUTPUT_DIR
+    TEST_OUTPUT_DIR = Path("outputs/tests")
+    for json_file in TEST_OUTPUT_DIR.glob("*.json"):
+        try:
+            json_file.unlink()
+            print(f"🗑️ Deleted {json_file.name}")
+        except Exception as e:
+            print(f"⚠️ Could not delete {json_file.name}: {e}")
