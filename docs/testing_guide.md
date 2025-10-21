@@ -21,7 +21,7 @@ This guide outlines essential testing strategies for new users working with a Py
 
 ### 1. Text Extraction Accuracy
 
-**Purpose:** Validate that extracted text matches the original content of the PDF.
+**Purpose:** Check that extracted text matches the original content of the PDF.
 
 **Test Strategy:**
 - Compare extracted text against ground-truth data from sample PDFs.
@@ -85,10 +85,10 @@ This guide outlines essential testing strategies for new users working with a Py
 ### 5. Page and Section Splitting
 
 ```
-pytest tests/e2e
+pytest tests/e2e/test_page_splitting.py -s
 ```
 
-**Purpose:** Validate that documents are segmented correctly.
+**Purpose:** Check that documents are segmented correctly.
 
 **Test Strategy:**
 - Confirm that splitting logic divides content by page as expected.

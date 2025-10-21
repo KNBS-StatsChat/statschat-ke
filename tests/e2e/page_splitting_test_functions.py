@@ -90,7 +90,7 @@ def validate_page_splitting(json_folder: Path, expected_page_counts: dict):
 
     # Iterate over all JSON files in the specified folder
     for json_file in json_folder.glob("*.json"):
-        print(f"Validate page splitting for JSON file: {json_file.name}")
+        print(f"Checking page splitting for JSON file: {json_file.name}")
         try:
             # Open and load the JSON file
             with open(json_file, "r", encoding="utf-8") as f:
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     # Get expected page counts from PDF files before conversion to JSON files
     expected_page_counts = get_pdf_page_counts(DATA_DIR)
 
-    # Validate JSON conversions against expected page counts
+    # Checking JSON conversions against expected page counts
     validation_results = validate_page_splitting(JSON_DIR, expected_page_counts)
 
     # Print results
