@@ -6,8 +6,6 @@ from pathlib import Path
 from datetime import datetime
 from statschat import load_config
 from pdf_text_extraction_test_functions import check_folders_text_extraction
-import pdfplumber
-
 
 # ----------------------------
 # Logging Configuration
