@@ -3,19 +3,17 @@ This script tests scraping logic and behaviour of 'pdf_downloader.py' when in "S
 --------------------------------
 1) Gets sample PDF with metadata using a public URL from py-pdf/sample-files GitHub repository. 
 
-2) Tests metadata extracted correctly using pypdf
+2) Checks metadata status of PDF
 
-3) Checks metadata stored in dictionary structure that matches SETUP mode behavior
+3) Each expected metadata field is logged as FOUND or MISSING.
 
 4) PDF saved to tests/test_data/pdf_downloads/ to mirror production logic.
 
-5) Each expected metadata field is logged as FOUND or MISSING.
+5) Mirrors behavior of pdf_downloader.py and keeps test environment consistent
 
-6) Mirrors behavior of pdf_downloader.py and keeps test environment consistent
+6) Creates a url_dict.json file in tests/test_data/pdf_downloads with the correct structure - but with dummy report_url
 
-7) Creates a url_dict.json file in tests/test_data/pdf_downloads with the correct structure - but with dummy report_url
-
-8) Doesn't take into account "get_abstract_metadata" function if PDF metadata in missing
+7) Doesn't take into account "get_abstract_metadata" function if PDF metadata in missing
 --------------------------------
 '''
 import requests
