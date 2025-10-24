@@ -13,7 +13,9 @@ This script tests scraping logic and behaviour of 'pdf_downloader.py' when in "S
 
 6) Mirrors behavior of pdf_downloader.py and keeps test environment consistent
 
-7) Doesn't take into account "get_abstract_metadata" function if PDF metadata in missing
+7) Creates a url_dict.json file in tests/test_data/pdf_downloads with the correct structure - but with dummy report_url
+
+8) Doesn't take into account "get_abstract_metadata" function if PDF metadata in missing
 --------------------------------
 '''
 import requests
@@ -21,9 +23,9 @@ import logging
 import pytest
 from pathlib import Path
 from datetime import datetime
-# from pypdf import PdfReader
 import PyPDF2
 from statschat import load_config
+import json
 
 # ----------------------------
 # Logging Configuration
@@ -82,13 +84,11 @@ def test_setup_mode_for_metadata(data_dir):
     
     pdf_url = "https://github.com/py-pdf/sample-files/raw/main/001-trivial/minimal-document.pdf" # maybe change to KNBS PDF
     pdf_name = "minimal-document.pdf"
-
-    report_url = "https://www.knbs.or.ke/reports/sample-report-page/"
+    report_url = "https://github.com/reports/minimal-document.pdf" # "https://www.knbs.or.ke/reports/sample-report-page/" # doesn't exist for this sample PDF or for KNBS PDF
     
   # 'report_url' variable:
   # 1) Helps document the expected structure of a real url_dict entry.
   # 2) Mirrors production logic, which includes report_page.
-  # 3) Not accessed
 
     pdf_path = data_dir / pdf_name
 
@@ -109,6 +109,21 @@ def test_setup_mode_for_metadata(data_dir):
         "creation_date", "modification_date"
     ]
 
+    # Create url_dict entry
+    url_dict = {
+        pdf_name: {
+            "pdf_url": pdf_url,
+            "report_page": report_url
+        }
+    }
+
+    # Save to url_dict.json in the same folder
+    url_dict_path = data_dir / "url_dict.json"
+    with open(url_dict_path, "w", encoding="utf-8") as f:
+        json.dump(url_dict, f, indent=4)
+
+    logger.info(f"Saved url_dict.json to {url_dict_path}")
+    
     logger.info(f"Metadata check for SETUP mode: {pdf_name}")
     for field in expected_fields:
         value = getattr(meta, field, None)
