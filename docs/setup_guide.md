@@ -118,7 +118,7 @@ helping to maintain a clean and consistent codebase.
 
 ## Setup Vector Store
 
-To web scrape the source documents run **`pdf_runner.py`**. Ensure that the **`PDF_FILES_MODE`** (in `main.toml`) is set to the desired option **"SETUP"**.
+To web scrape the source documents run **`pdf_runner.py`**. Ensure that the **`MODE`** (in `main.toml`) is set to the desired option **"SETUP"**.
 
     ```shell
     python statschat/pdf_runner.py
@@ -135,5 +135,5 @@ pip install pip_system_certs
 ```
 
 > [!NOTE]
-> YOU WILL ONLY NEED TO DO THE VECTORE STORE SETUP ONCE
+> YOU WILL ONLY NEED TO DO THE VECTOR STORE SETUP ONCE
 > AFTERWARDS IT WILL ONLY NEED TO BE UPDATED
