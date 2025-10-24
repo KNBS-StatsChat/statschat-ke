@@ -76,11 +76,12 @@ def data_dir(config):
 # Test Function
 # ----------------------------
 
-def test_setup_mode_for_metadata(data_dir):
+def test_setup_mode(data_dir):
     """
     Downloads a sample PDF and logs which metadata fields are present or missing.
     """
     # May need to adapt if wanting to work with PDFs on KNBS website as gets missing metadata from another page
+    logger.info("Starting test: SETUP mode")
     
     pdf_url = "https://github.com/py-pdf/sample-files/raw/main/001-trivial/minimal-document.pdf" # maybe change to KNBS PDF
     pdf_name = "minimal-document.pdf"
