@@ -5,16 +5,19 @@ set up a virtual or conda environment.  Using venv and pip:
 
 ```shell
 python3.11 -m venv env
+source env/bin/activate
 ```
 
 or 
 
 ```shell
 conda create -n env python=3.11
+conda activate env
 ```
 
+then
+
 ```shell
-source env/bin/activate
 python -m pip install --upgrade pip
 python -m pip install .
 ```
