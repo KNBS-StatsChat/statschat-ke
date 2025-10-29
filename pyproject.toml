@@ -54,7 +54,7 @@ dev = [
 homepage = "https://github.com/KNBS-StatsChat/statschat-ke"
 
 [build-system]
-requires = ["setuptools>=62"]
+requires = ["setuptools>=62,<75"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.dynamic]
