@@ -1,5 +1,5 @@
 '''
-This script tests scraping logic and behaviour of 'pdf_downloader.py' when in "SETUP" mode with "pytest tests/e2e/test_pdf_downloader_setup.py"
+This script tests scraping logic and behaviour of 'pdf_downloader.py' when in "SETUP" mode
 --------------------------------
 1) Gets sample PDF with metadata using a public URL from py-pdf/sample-files GitHub repository. 
 
@@ -14,6 +14,9 @@ This script tests scraping logic and behaviour of 'pdf_downloader.py' when in "S
 6) Creates a url_dict.json file in tests/test_data/pdf_downloads with the correct structure - but with dummy report_url
 
 7) Doesn't take into account "get_abstract_metadata" function if PDF metadata in missing
+
+Run:
+    pytest tests/unit/test_pdf_downloader_setup.py
 --------------------------------
 '''
 import requests
