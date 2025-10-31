@@ -20,6 +20,7 @@ similarity_threshold = 2.0     # Threshold score below which a document is retur
 llm_temperature = 0.0
 answer_threshold = 0.5 # Threshold score below which a answer is returned in a search
 document_threshold = 0.9 # Threshold score below which a document is returned in a search
+provider = "openrouter"  # or "openai", "huggingface_inference"
 
 [app]
 latest_max = 2    # Takes value int >= 0, commonly 0, 1 or 2
