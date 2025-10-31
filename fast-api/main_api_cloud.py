@@ -11,10 +11,6 @@ from statschat import load_config
 from statschat.generative.cloud_llm import Inquirer
 from statschat.embedding.latest_flag_helpers import get_latest_flag
 
-
-# Config file to load
-CONFIG = load_config(name="main")
-
 # define session_id that will be used for log file and feedback
 SESSION_NAME = f"statschat_api_{format(datetime.now(), '%Y_%m_%d_%H:%M')}"
 
@@ -27,8 +23,20 @@ logging.basicConfig(
     filemode="a",
 )
 
+# Config file to load
+CONFIG = load_config(name="main")
+
 # initiate Statschat AI and start the app
-inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
+provider = CONFIG["search"].get("provider", "openrouter")
+inquirer = Inquirer(
+    generative_model_name=CONFIG["search"]["generative_model_name"],
+    llm_max_tokens=CONFIG["app"]["llm_max_tokens"],
+    llm_temperature=CONFIG["app"]["llm_temperature"],
+    provider=provider,
+    **CONFIG["db"],
+    **CONFIG["search"],
+    logger=logger,
+)
 
 app = FastAPI(
     title="KNBS StatsChat API",
