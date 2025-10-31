@@ -78,7 +78,7 @@ def similarity_search(
 
     if return_dicts:
         return [
-            flatten_meta(doc[0].dict()) | {"score": float(doc[1])}
+            flatten_meta(doc[0].model_dump()) | {"score": float(doc[1])}
             for doc in top_matches
         ]
     return top_matches
