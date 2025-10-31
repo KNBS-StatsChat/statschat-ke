@@ -1,4 +1,5 @@
 # %%
+import sys
 import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
@@ -48,7 +49,7 @@ def main():
                 print(f"Loaded existing url_dict.json from {ORIGINAL_URL_DICT_PATH}")
         else:
             print("No existing url_dict.json found in pdf_downloads. Exiting update mode.")
-            exit()  # Nothing to update if there's no record
+            sys.exit(1)  # Nothing to update if there's no record
 
         url_dict = {}  # This will store only new entries
 
@@ -145,7 +146,7 @@ def main():
 
         if not new_entries:
             print("No new PDFs found. Exiting update process.")
-            exit()
+            sys.exit(0)
 
         print(f"Found {len(new_entries)} new PDFs to download.")
         all_pdf_entries = new_entries  # Replace with filtered dictionary
