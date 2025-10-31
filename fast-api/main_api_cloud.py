@@ -1,6 +1,7 @@
+# %%
 from pydantic import BaseModel, Field
 from typing import Union, Optional
-
+# %%
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 import logging
@@ -10,6 +11,7 @@ from markupsafe import escape
 from statschat import load_config
 from statschat.generative.cloud_llm import Inquirer
 from statschat.embedding.latest_flag_helpers import get_latest_flag
+# %%
 
 # define session_id that will be used for log file and feedback
 SESSION_NAME = f"statschat_api_{format(datetime.now(), '%Y_%m_%d_%H:%M')}"
@@ -23,16 +25,15 @@ logging.basicConfig(
     filemode="a",
 )
 
+# %%
 # Config file to load
 CONFIG = load_config(name="main")
+# %%
 
 # initiate Statschat AI and start the app
 provider = CONFIG["search"].get("provider", "openrouter")
+
 inquirer = Inquirer(
-    generative_model_name=CONFIG["search"]["generative_model_name"],
-    llm_max_tokens=CONFIG["app"]["llm_max_tokens"],
-    llm_temperature=CONFIG["app"]["llm_temperature"],
-    provider=provider,
     **CONFIG["db"],
     **CONFIG["search"],
     logger=logger,

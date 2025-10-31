@@ -18,6 +18,7 @@ k_docs = 2
 k_contexts = 5
 similarity_threshold = 2.0     # Threshold score below which a document is returned in a search
 llm_temperature = 0.0
+llm_max_tokens = 1024
 answer_threshold = 0.5 # Threshold score below which a answer is returned in a search
 document_threshold = 0.9 # Threshold score below which a document is returned in a search
 provider = "openrouter"  # or "openai", "huggingface_inference"
