@@ -101,6 +101,12 @@ From there, you can generate the synthetic "server" locally from your terminal:
 uvicorn fast-api.main_api_local:app --reload
 ```
 
+or
+
+```shell
+uvicorn fast-api.main_api_cloud:app --reload
+```
+
 The fastapi is set to respond to http requests on a particular port.
 You will see this in your terminal line, something like:
 
