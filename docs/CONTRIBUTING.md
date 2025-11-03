@@ -56,7 +56,16 @@ This installs:
 - Frontend tools (`Flask`, `gunicorn`)
 - Development tools (`ipykernel`, `pre-commit`)
 
-### 4. Set Up Pre-commit Hooks
+### 4. Configure Environment Variables
+
+Before running the application, you must set up your API credentials:
+
+**See the [Environment Setup Guide](./environment_setup.md) for detailed instructions** on:
+- Creating the `.env` file
+- Getting API keys (OpenRouter, OpenAI, or HuggingFace)
+- Configuring your chosen LLM provider
+
+### 5. Set Up Pre-commit Hooks
 
 ```bash
 # Pre-commit hooks help maintain code quality
@@ -106,14 +115,20 @@ For Mac users using pyenv, see the comprehensive [pyenv Installation Guide](./do
 
 ### Additional Resources
 
-- [Setup Guide](./docs/setup_guide.md) - Detailed installation for Mac and Windows
-- [SSL Fix Report](./docs/ssl_fix_report.md) - Complete SSL troubleshooting documentation
+- [Setup Guide](./setup_guide.md) - Detailed installation for Mac and Windows
+- [Environment Setup Guide](./environment_setup.md) - Configure API credentials and `.env` file
+- [SSL Fix Report](./ssl_fix_report.md) - Complete SSL troubleshooting documentation
 
 ## Running the Application
 
 ### 1. Set Up the Vector Store (First Time Only)
 
-Before running the application, you need to create the vector store:
+Before running the application, ensure you have:
+- Created and activated your virtual environment
+- Installed all dependencies
+- **[Set up your `.env` file with API credentials](./environment_setup.md)**
+
+Then create the vector store:
 
 ```bash
 python statschat/pdf_runner.py
