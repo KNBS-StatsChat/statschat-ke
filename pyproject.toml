@@ -7,6 +7,7 @@ license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dynamic = ["version"]
 dependencies = [
+    "accelerate>=0.26.0",
     "bs4==0.0.1",
     "faiss-cpu==1.9.0.post1",
     "google-cloud-aiplatform==1.38.1",
@@ -19,11 +20,13 @@ dependencies = [
     "pandas==2.2.2",
     "pdfplumber==0.11.7",
     "pyspellchecker==0.8.3",
+    "protobuf>=3.20.0",
     "pydantic==2.10.3",
     "PyPDF2==3.0.1",
     "rapidfuzz==3.1.1",
     "requests==2.31.0",
     "sentence_transformers==3.3.1",
+    "sentencepiece>=0.1.99",
     "toml==0.10.2",
     "typing==3.7.4.3",
 ]
@@ -53,7 +56,7 @@ dev = [
 homepage = "https://github.com/KNBS-StatsChat/statschat-ke"
 
 [build-system]
-requires = ["setuptools>=62"]
+requires = ["setuptools>=62,<75"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.dynamic]

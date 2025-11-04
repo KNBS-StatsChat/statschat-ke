@@ -1,12 +1,23 @@
 ## Installation on Mac
 
 The project requires specific versions of some packages so it is recommended to
-set up a virtual environment.  Using venv and pip:
+set up a virtual or conda environment.  Using venv and pip:
 
 ```shell
 python3.11 -m venv env
 source env/bin/activate
+```
 
+or 
+
+```shell
+conda create -n env python=3.11
+conda activate env
+```
+
+then
+
+```shell
 python -m pip install --upgrade pip
 python -m pip install .
 ```
@@ -17,6 +28,34 @@ python -m pip install .
 > ```shell
 > python -m pip install -e ".[dev]"
 > ```
+
+### Troubleshooting Installation Issues
+
+**SSL Certificate Errors**
+
+If you encounter SSL certificate errors during installation, configure pip to trust PyPI domains:
+
+```bash
+mkdir -p ~/.config/pip
+cat > ~/.config/pip/pip.conf << 'EOF'
+[global]
+trusted-host = pypi.org
+               pypi.python.org
+               files.pythonhosted.org
+EOF
+```
+
+For more details, see [SSL Fix Report](./ssl_fix_report.md) and [pyenv Python Installation Guide](./pyenv_python_installation_guide.md).
+
+**setuptools Build Errors**
+
+If you get errors related to `setuptools` or `distutils`, ensure you're using a compatible version:
+
+```bash
+pip install "setuptools>=62,<75"
+```
+
+This issue has been fixed in `pyproject.toml`, but you may need to manually install the correct version if you're using an older checkout of the repository.
 
 ## Installation on Windows
 
@@ -79,6 +118,33 @@ pip install .
 > pip install -e .
 > ```
 
+### Troubleshooting Installation Issues (Windows)
+
+**SSL Certificate Errors**
+
+If you encounter SSL certificate errors during installation, configure pip to trust PyPI domains:
+
+```bash
+# Create the pip config directory
+mkdir %APPDATA%\pip
+
+# Create pip.ini file with the following content:
+[global]
+trusted-host = pypi.org
+               pypi.python.org
+               files.pythonhosted.org
+```
+
+**setuptools Build Errors**
+
+If you get errors related to `setuptools` or `distutils`, ensure you're using a compatible version:
+
+```bash
+pip install "setuptools>=62,<75"
+```
+
+This issue has been fixed in `pyproject.toml`, but you may need to manually install the correct version if you're using an older checkout of the repository.
+
 ## Pre-commit actions
 
 This repository contains a configuration of pre-commit hooks. These are
@@ -118,7 +184,7 @@ helping to maintain a clean and consistent codebase.
 
 ## Setup Vector Store
 
-To web scrape the source documents run **`pdf_runner.py`**. Ensure that the **`PDF_FILES_MODE`** (in `main.toml`) is set to the desired option **"SETUP"**.
+To web scrape the source documents run **`pdf_runner.py`**. Ensure that the **`MODE`** (in `main.toml`) is set to the desired option **"SETUP"**.
 
     ```shell
     python statschat/pdf_runner.py
@@ -128,12 +194,6 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 
 **PDF_FILES_MODE** = **"SETUP"** -> Will scrape all pdf files from the KNBS website and reset the vector store, creating a new one from the PDF documents that are scraped and processed into JSON files.
 
-### SSL error fix
-If you get an error related to SSL: Certificates after running **`pdf_runner.py`** then:
-```
-pip install pip_system_certs
-```
-
 > [!NOTE]
-> YOU WILL ONLY NEED TO DO THE VECTORE STORE SETUP ONCE
+> YOU WILL ONLY NEED TO DO THE VECTOR STORE SETUP ONCE
 > AFTERWARDS IT WILL ONLY NEED TO BE UPDATED
