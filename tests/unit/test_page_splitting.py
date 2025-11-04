@@ -1,4 +1,4 @@
-"""Run tests for page splitting functionality when converting PDF to JSON with `pytest tests/e2e/test_page_splitting.py -s`"""
+"""Run tests for page splitting functionality when converting PDF to JSON with `pytest tests/unit/test_page_splitting.py -s`"""
 
 # %%
 import pytest
