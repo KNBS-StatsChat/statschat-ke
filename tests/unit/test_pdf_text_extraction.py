@@ -1,4 +1,4 @@
-"""Run tests for PDF text extraction and comparison with `pytest tests/e2e/test_pdf_text_extraction.py -s`"""
+"""Run tests for PDF text extraction and comparison with `pytest tests/unit/test_pdf_text_extraction.py -s`"""
 
 import pytest
 import logging
