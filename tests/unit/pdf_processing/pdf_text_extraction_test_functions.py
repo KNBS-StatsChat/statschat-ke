@@ -11,7 +11,7 @@ from difflib import unified_diff
 import re
 import pandas as pd
 import pdfplumber
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 
 # %% Configuration
 # Load configuration
