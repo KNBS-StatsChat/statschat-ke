@@ -1,4 +1,4 @@
-"""Run tests for page splitting functionality when converting PDF to JSON with `pytest tests/unit/test_page_splitting.py -s`"""
+"""Run tests for page splitting functionality when converting PDF to JSON with `pytest tests/unit/pdf_processing/test_page_splitting.py -s`"""
 
 # %%
 import pytest
@@ -6,7 +6,7 @@ from pathlib import Path
 import logging
 from datetime import datetime
 from statschat import load_config
-from page_splitting_test_functions import get_pdf_page_counts, validate_page_splitting
+from .page_splitting_test_functions import get_pdf_page_counts, validate_page_splitting
 
 # %%
 # ----------------------------

@@ -1,11 +1,11 @@
-"""Run tests for PDF text extraction and comparison with `pytest tests/unit/test_pdf_text_extraction.py -s`"""
+"""Run tests for PDF text extraction and comparison with `pytest tests/unit/pdf_processing/test_pdf_text_extraction.py -s`"""
 
 import pytest
 import logging
 from pathlib import Path
 from datetime import datetime
 from statschat import load_config
-from pdf_text_extraction_test_functions import check_folders_text_extraction
+from .pdf_text_extraction_test_functions import check_folders_text_extraction
 
 # ----------------------------
 # Logging Configuration
