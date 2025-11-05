@@ -18,6 +18,8 @@ dependencies = [
     "langchain-core==0.3.31",
     "langchain-huggingface==0.1.2",
     "pandas==2.2.2",
+    "pdfplumber==0.11.7",
+    "pyspellchecker==0.8.3",
     "protobuf>=3.20.0",
     "pydantic==2.10.3",
     "PyPDF2==3.0.1",
@@ -28,6 +30,7 @@ dependencies = [
     "toml==0.10.2",
     "torch==2.7.1",
     "typing==3.7.4.3",
+    "PyMuPDF==1.24.4",
 ]
 
 [project.optional-dependencies]
