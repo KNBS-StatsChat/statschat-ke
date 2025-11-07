@@ -1,4 +1,4 @@
-"""Run tests for page splitting functionality when converting PDF to JSON with `pytest tests/unit/pdf_processing/test_page_splitting.py -s`"""
+"""Run tests for page splitting functionality when converting PDF to JSON with `pytest tests/unit/pdf_processing/test_page_splitting.py -s -W always`"""
 
 # %%
 import pytest
@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from statschat import load_config
 from .page_splitting_test_functions import get_pdf_page_counts, validate_page_splitting
+import warnings
 
 # %%
 # ----------------------------
@@ -76,6 +77,7 @@ def test_validate_page_splitting(json_dir, data_dir):
     expected_counts = get_pdf_page_counts(data_dir)
     results = validate_page_splitting(json_dir, expected_counts)
     logger.info(f"Validated {len(results)} JSON files")
+
     for result in results:
         logger.info(
             f"{result['json_file']}: match_found={result.get('filename_match_found')}, "
@@ -84,3 +86,10 @@ def test_validate_page_splitting(json_dir, data_dir):
         assert "json_file" in result
         assert "filename_match_found" in result
         assert "page_count_matches" in result
+
+        if not result.get("page_count_matches"):
+            warnings.warn(
+                f"page count mismatch for {result['json_file']}",
+                UserWarning
+            )
+
