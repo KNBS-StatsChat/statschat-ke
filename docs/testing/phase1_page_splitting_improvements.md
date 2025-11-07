@@ -20,7 +20,6 @@ Phase 1 focused on foundational improvements to the PDF page splitting tests, in
 - `pyproject.toml` - Updated dependency from `PyPDF2==3.0.1` to `pypdf==5.1.0`
 - `statschat/pdf_processing/pdf_to_json.py` - Updated all imports and docstrings
 - `tests/unit/pdf_processing/page_splitting_test_functions.py` - Updated imports
-- `tests/unit/pdf_processing/pdf_text_extraction_test_functions.py` - Updated imports
 
 **Changes**:
 ```python
