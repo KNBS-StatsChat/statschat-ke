@@ -85,7 +85,7 @@ This guide outlines essential testing strategies for new users working with a Py
 ### 5. Page and Section Splitting
 
 ```
-pytest tests/e2e/test_page_splitting.py -s
+pytest tests/
 ```
 
 **Purpose:** Check that documents are segmented correctly.
@@ -115,14 +115,5 @@ pytest tests/e2e/test_page_splitting.py -s
 
 **Relevant Module:**
 - `pdf_to_json.py`
-
----
-
-## Tips for New Users
-
-- Begin testing with small, well-structured PDFs.
-- Gradually introduce corrupted files.
-- Monitor logs for unexpected behavior.
-- Use `pytest` options like `--maxfail=1` and `--disable-warnings` for focused debugging.
 
 ---
