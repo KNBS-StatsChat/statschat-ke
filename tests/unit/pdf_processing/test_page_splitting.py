@@ -1,4 +1,9 @@
-"""Run tests for page splitting functionality when converting PDF to JSON with `pytest tests/unit/pdf_processing/test_page_splitting.py -s -W always`"""
+"""
+Test for page splitting functionality when converting PDF to JSON 
+
+Run:
+    `pytest tests/unit/pdf_processing/test_page_splitting.py -s -W always`
+"""
 
 # %%
 import pytest
