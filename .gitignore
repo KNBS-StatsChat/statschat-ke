@@ -22,6 +22,9 @@ __pycache__/
 # Directories
 /outputs/tests
 
+# Log files and directories
+log/
+
 # Distribution / packaging
 .Python
 build/

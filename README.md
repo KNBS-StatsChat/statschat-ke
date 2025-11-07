@@ -17,6 +17,45 @@
 - **Peer-reviewed**
 - **Depends on external API's**
 
+## Quick Start
+
+### Prerequisites
+- Python 3.11 (3.10+ supported, but 3.11 recommended)
+- pip 25.2 or later
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/KNBS-StatsChat/statschat-ke.git
+   cd statschat-ke
+   ```
+
+2. **Create and activate a virtual environment:**
+   ```bash
+   python3.11 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. **Install the package with all dependencies:**
+   ```bash
+   pip install --upgrade pip
+   pip install -e .              # Basic installation
+   # OR
+   pip install -e ".[dev]"       # For development (includes testing, backend, and frontend)
+   ```
+
+> [!TIP]
+> **Having installation issues?** See [Setup Guide](./docs/setup_guide.md) for detailed troubleshooting, including:
+> - SSL certificate errors → [SSL Fix Report](./docs/ssl_fix_report.md)
+> - Python installation with pyenv → [pyenv Installation Guide](./docs/pyenv_python_installation_guide.md)
+> - setuptools build errors (already fixed in `pyproject.toml`)
+
+### Documentation
+- **[Setup Guide](./docs/setup_guide.md)** - Detailed installation instructions for Mac and Windows
+- **[SSL Fix Report](./docs/ssl_fix_report.md)** - Comprehensive SSL troubleshooting
+- **[pyenv Installation Guide](./docs/pyenv_python_installation_guide.md)** - Installing Python with pyenv
+
 ## Introduction
 
 This is an experimental application for semantic search of KNBS [statistical publications](https://www.knbs.or.ke/all-reports/).
@@ -34,9 +73,13 @@ the docstore / embedding store that is created is likewise and stored in `data/d
 also in `data/db_langchain_latest` after UPDATE. The LLM is either run locally with `local_llm.py` or an 
 API with `main_api_local.py` (both backend).
 
+## Overview
+<img width="1661" height="580" alt="image" src="https://github.com/user-attachments/assets/34eb5fbd-0965-48f8-acd3-bcc7ee945de2" />
+
+
 ## Step 1: Vector store
 > [!NOTE]
-> **Before setting up or updating the vector store ensure the [virtual or conda environment has been created.](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md)**
+> **Before setting up or updating the vector store ensure the [virtual or conda environment has been created](./docs/setup_guide.md).**
 
 Before running `pdf_runner.py` in an integrated development environment (IDE) ensure that the PDF_FILES_MODE (in `main.toml`) 
 is set to the desired option. It can also be run in the command line as below.
