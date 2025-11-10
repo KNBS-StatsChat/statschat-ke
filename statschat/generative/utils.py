@@ -1,5 +1,5 @@
 from statschat.generative.response_model import LlmResponse
-
+from datetime import datetime
 
 def deduplicator(records: list[dict], keys: list[str]) -> list[dict]:
     """
@@ -90,3 +90,24 @@ def trim_context(context: str) -> str:
     if len(fixed) == 0:
         return context
     return fixed
+
+
+def time_decay(date_str: str, latest: float = 1.0) -> float:
+    """
+    Applies a decay factor to a document's score based on its age.
+
+    Args:
+        date_str (str): Date string in ISO format (e.g., '2021-12-01').
+        latest (float): Weighting factor for recency. Higher = more emphasis on newer docs.
+
+    Returns:
+        float: Decay multiplier (lower = newer, higher = older).
+    """
+    try:
+        doc_date = datetime.fromisoformat(date_str)
+        days_old = (datetime.now() - doc_date).days
+        decay = 1 + (days_old / 365.0) * latest
+        return decay
+    except Exception:
+        # If date is missing or malformed, return neutral decay
+        return 1.0
