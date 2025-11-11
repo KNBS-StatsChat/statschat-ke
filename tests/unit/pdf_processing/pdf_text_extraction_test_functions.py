@@ -12,6 +12,7 @@ import re
 import pandas as pd
 import pdfplumber
 from pypdf import PdfReader
+import textwrap
 
 # %% Configuration
 # Load configuration
@@ -42,6 +43,16 @@ OUTPUT_TESTS_DIR.mkdir(exist_ok=True, parents=True)
 # Initialize spell checker
 spell = SpellChecker()
 
+#--------------------
+# LOCAL SCRIPT CONFIG
+#--------------------
+method = "pypdf2" # Options: 'fitz', 'pypdf2', 'pdfplumber'
+max_diff_examples = 3 # Number of diff lines to include per page
+max_files_to_process = "2" # Can be an integer to specify certain number or "all"
+
+#---------------
+# PDF EXTRACTOR
+#---------------
 def extract_pdf_text(pdf_path: Path, method: str = "pypdf2") -> dict:
     """
     Extracts text from each page of a PDF using the specified method.
@@ -73,8 +84,18 @@ def extract_pdf_text(pdf_path: Path, method: str = "pypdf2") -> dict:
     else:
         raise ValueError(f"Unsupported extraction method: {method}")
 
-
-def compare_texts(json_text, pdf_text, page_num=None, pdf_file=None, json_file=None, log_dir=None):
+#---------------
+# COMPARISONS
+#---------------
+def compare_texts(
+    json_text,
+    pdf_text,
+    page_num=None,
+    pdf_file=None,
+    json_file=None,
+    log_dir=None,
+    method: str = "unknown"
+):
     """
     Compares two text strings line-by-line and returns their differences,
     excluding lines that contain numeric characters. Also prints and logs the source texts.
@@ -86,21 +107,24 @@ def compare_texts(json_text, pdf_text, page_num=None, pdf_file=None, json_file=N
         pdf_file (str, optional): Name of the PDF file.
         json_file (str, optional): Name of the JSON file.
         log_dir (Path, optional): Directory to save the log file.
+        method (str): Extraction method used (e.g., 'fitz', 'pypdf2', 'pdfplumber').
 
     Returns:
         list or None: A list of differing lines (excluding numeric ones), or None if no differences.
     """
-    header = f"\nComparing Page {page_num} of PDF: {pdf_file} vs JSON: {json_file}\n"
-    pdf_section = f"----- PDF Text -----\n{pdf_text.strip() or '[Empty]'}\n"
-    json_section = f"----- JSON Text -----\n{json_text.strip() or '[Empty]'}\n"
+    # Wrap JSON text to match PDF formatting
+    wrapped_json = textwrap.fill(json_text, width=80)
+    wrapped_pdf = textwrap.fill(pdf_text, width=80)
 
-    # Print to console
+    header = f"\n📄 Comparing Page {page_num} of PDF: {pdf_file} vs JSON: {json_file}\n"
+    pdf_section = f"----- PDF Text -----\n{wrapped_pdf or '[Empty]'}\n"
+    json_section = f"----- JSON Text -----\n{wrapped_json or '[Empty]'}\n"
+
     print(header + pdf_section + json_section)
 
     if log_dir:
-    # Create a single log file per PDF
-        log_path = log_dir / f"{pdf_file}_comparison.txt"
-        with log_path.open("a", encoding="utf-8") as log_file:  # Use "a" to append
+        log_path = log_dir / f"{pdf_file.name}_comparison_for_{method}.txt"
+        with log_path.open("a", encoding="utf-8") as log_file:
             log_file.write(header + pdf_section + json_section + "\n\n")
 
     # Generate unified diff and filter out lines containing digits
@@ -130,7 +154,7 @@ def check_json_text(text):
     return misspelled, irregular_chars
 
 
-def check_file_pair_text(pdf_path: Path, json_path: Path, max_diff_examples: int = 5):
+def check_file_pair_text(pdf_path: Path, json_path: Path, method: str = "pypdf2", max_diff_examples: int = 5):
     """
     Compares the text content of a PDF file and its corresponding JSON file.
     Generates a structured report including:
@@ -143,16 +167,17 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, max_diff_examples: int
     Args:
         pdf_path (Path): Path to the PDF file.
         json_path (Path): Path to the corresponding JSON file.
+        method (str): Extraction method used (e.g., 'fitz', 'pypdf2', 'pdfplumber').
         max_diff_examples (int): Maximum number of diff lines to include per page.
     """
-    print(f"\n🔍 Checking: {pdf_path.name} and {json_path.name}")
-    pdf_texts = extract_pdf_text(pdf_path)
+    print(f"\n🔍 Checking: {pdf_path.name} and {json_path.name} using method: {method}")
+    pdf_texts = extract_pdf_text(pdf_path, method=method)
 
     with json_path.open('r', encoding='utf-8') as f:
         json_data = json.load(f)
 
-    # Clear existing log file for this PDF
-    log_path = OUTPUT_TESTS_DIR / f"{pdf_path.name}_comparison.txt"
+    # Clear existing log file for this PDF and method
+    log_path = OUTPUT_TESTS_DIR / f"{pdf_path.name}_comparison_for_{method}.txt"
     log_path.write_text("")
 
     file_report = {
@@ -180,9 +205,10 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, max_diff_examples: int
             json_text=json_text,
             pdf_text=pdf_text,
             page_num=page_num,
-            pdf_file=pdf_path.name,
-            json_file=json_path.name,
-            log_dir=OUTPUT_TESTS_DIR
+            pdf_file=pdf_path,
+            json_file=json_path,
+            log_dir=OUTPUT_TESTS_DIR,
+            method=method
         )
         if diff:
             page_report["diff_count"] = len(diff)
@@ -212,34 +238,36 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, max_diff_examples: int
 
     print(f"✅ Saved report to {output_path}")
 
-
-def check_folders_text_extraction(data_dir: Path, json_dir: Path, max_files: int | str = 2):
+def check_folders_text_extraction(data_dir: Path, json_dir: Path, max_files_to_process: int | str = 2):
     """
     Iterates through PDF files in a directory and checks them against their
-    corresponding JSON files. Limits processing to `max_files` pairs unless set to 'all'.
+    corresponding JSON files. Limits processing to `max_files_to_process` pairs unless set to 'all'.
 
     Args:
         data_dir (Path): Directory containing PDF files.
         json_dir (Path): Directory containing JSON files.
-        max_files (int or str): Maximum number of PDF–JSON pairs to process.
+        max_files_to_process (int or str): Maximum number of PDF–JSON pairs to process.
                                 Use 'all' to process everything.
     """
     pdf_files = list(data_dir.glob('*.pdf'))
     processed_count = 0
 
     for pdf_file in pdf_files:
-        if max_files != "all" and processed_count >= int(max_files):
-            print(f"⏹️ Limit reached: Only processing {max_files} PDF files.")
+        if max_files_to_process != "all" and processed_count >= int(max_files_to_process):
+            print(f"⏹️ Limit reached: Only processing {max_files_to_process} PDF files.")
             break
 
         json_file = json_dir / (pdf_file.stem + '.json')
         if json_file.exists():
-            check_file_pair_text(pdf_path=pdf_file, json_path=json_file, max_diff_examples=3)
+            check_file_pair_text(pdf_path=pdf_file, json_path=json_file, method=method, max_diff_examples=max_diff_examples)
+
             processed_count += 1
         else:
             print(f"⚠️ JSON file missing for {pdf_file.name}")
             
-
+#-----------------
+# OUTPUT SUMMARIES
+#-----------------
 def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = "fitz"):
     """
     Converts multiple JSON audit reports in a directory into a single CSV summary.
@@ -288,66 +316,6 @@ def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = "fit
     df.to_csv(output_csv, index=False)
     print(f"✅ Saved combined CSV to {output_csv}")
   
-# %%
-def combine_json_reports_to_markdown(json_dir: Path, output_md: Path):
-    """
-    Combines all JSON audit reports in a directory into a single Markdown file.
-
-    Each report includes:
-        - PDF and JSON filenames
-        - Page-by-page summary of:
-            - Diff count
-            - Misspelled words
-            - Irregular characters
-            - Accuracy percentage
-            - Sample diff lines (formatted as code blocks)
-
-    Args:
-        json_dir (Path): Directory containing JSON audit reports.
-        output_md (Path): Path to the combined Markdown file to be created.
-
-    Returns:
-        None. Writes the combined Markdown file to disk.
-    """
-    all_lines = ["# Combined Audit Report\n"]  # Start with a top-level heading
-
-    # Loop through each JSON file in the directory
-    for json_file in json_dir.glob("*.json"):
-        with json_file.open('r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        # Add file-level heading
-        all_lines.append(f"\n---\n\n## File: `{data['pdf_file']}`")
-        all_lines.append(f"**JSON Source**: `{data['json_file']}`")
-
-        # Loop through each page in the report
-        for page_num, page_data in data['pages'].items():
-            all_lines.append(f"\n### Page {page_num}")
-            all_lines.append(f"- **Differences Found**: {page_data['diff_count']}")
-            all_lines.append(f"- **Word Matches**: {page_data.get('accuracy_percent', 'N/A')}%")
-
-            # Include diff examples if available
-            if page_data['diff_examples']:
-                all_lines.append("- **Examples:**")
-                all_lines.append("```diff")
-                for line in page_data['diff_examples']:
-                    all_lines.append(line)
-                all_lines.append("```")
-
-            # Include misspelled words if any
-            if page_data['misspelled']:
-                all_lines.append(f"- **Misspelled Words**: {', '.join(page_data['misspelled'])}")
-
-            # Include irregular characters if any
-            if page_data['irregular_chars']:
-                all_lines.append(f"- **Irregular Characters**: {', '.join(page_data['irregular_chars'])}")
-
-    # Write all collected lines to the Markdown file
-    with output_md.open("w", encoding="utf-8") as out:
-        out.write("\n".join(all_lines))
-
-    print(f"✅ Saved combined Markdown report to {output_md}")
-
 def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extractor_name: str = "fitz"):
     """
     Combines all JSON audit reports in a directory into a single Markdown file.
@@ -409,13 +377,13 @@ def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extra
     with output_md.open("w", encoding="utf-8") as out:
         out.write("\n".join(all_lines))
 
-    print(f"✅ Saved combined Markdown report to {output_md}")
+    print(f"Saved combined Markdown report to {output_md}")
 
 
 if __name__ == "__main__":
     
     # Process only 3 files
-    check_folders_text_extraction(DATA_DIR, JSON_DIR, max_files=2)
+    check_folders_text_extraction(DATA_DIR, JSON_DIR, max_files_to_process=max_files_to_process)
     
     json_to_csv(
         json_dir=Path("outputs/tests"), 
@@ -434,6 +402,6 @@ if __name__ == "__main__":
     for json_file in OUTPUT_TESTS_DIR.glob("*.json"):
         try:
             json_file.unlink()
-            print(f"🗑️ Deleted {json_file.name}")
+            print(f"Deleted {json_file.name}")
         except Exception as e:
             print(f"⚠️ Could not delete {json_file.name}: {e}")
