@@ -42,7 +42,7 @@ OUTPUT_TESTS_DIR.mkdir(exist_ok=True, parents=True)
 # Initialize spell checker
 spell = SpellChecker()
 
-def extract_pdf_text(pdf_path: Path, method: str = "fitz") -> dict:
+def extract_pdf_text(pdf_path: Path, method: str = "pypdf2") -> dict:
     """
     Extracts text from each page of a PDF using the specified method.
 
@@ -74,20 +74,36 @@ def extract_pdf_text(pdf_path: Path, method: str = "fitz") -> dict:
         raise ValueError(f"Unsupported extraction method: {method}")
 
 
-def compare_texts(json_text, pdf_text):
+def compare_texts(json_text, pdf_text, page_num=None, pdf_file=None, json_file=None, log_dir=None):
     """
     Compares two text strings line-by-line and returns their differences,
-    excluding lines that contain numeric characters.
+    excluding lines that contain numeric characters. Also prints and logs the source texts.
 
     Args:
         json_text (str): Text extracted from the JSON file.
         pdf_text (str): Text extracted directly from the PDF.
+        page_num (int, optional): Page number being compared.
+        pdf_file (str, optional): Name of the PDF file.
+        json_file (str, optional): Name of the JSON file.
+        log_dir (Path, optional): Directory to save the log file.
 
     Returns:
         list or None: A list of differing lines (excluding numeric ones), or None if no differences.
     """
+    header = f"\nComparing Page {page_num} of PDF: {pdf_file} vs JSON: {json_file}\n"
+    pdf_section = f"----- PDF Text -----\n{pdf_text.strip() or '[Empty]'}\n"
+    json_section = f"----- JSON Text -----\n{json_text.strip() or '[Empty]'}\n"
+
+    # Print to console
+    print(header + pdf_section + json_section)
+
+    if log_dir:
+    # Create a single log file per PDF
+        log_path = log_dir / f"{pdf_file}_comparison.txt"
+        with log_path.open("a", encoding="utf-8") as log_file:  # Use "a" to append
+            log_file.write(header + pdf_section + json_section + "\n\n")
+
     # Generate unified diff and filter out lines containing digits
-    
     diff = list(unified_diff(pdf_text.splitlines(), json_text.splitlines()))
     filtered = [
         line for line in diff
@@ -114,7 +130,7 @@ def check_json_text(text):
     return misspelled, irregular_chars
 
 
-def check_file_pair_text(pdf_path: Path, json_path: Path):
+def check_file_pair_text(pdf_path: Path, json_path: Path, max_diff_examples: int = 5):
     """
     Compares the text content of a PDF file and its corresponding JSON file.
     Generates a structured report including:
@@ -127,12 +143,17 @@ def check_file_pair_text(pdf_path: Path, json_path: Path):
     Args:
         pdf_path (Path): Path to the PDF file.
         json_path (Path): Path to the corresponding JSON file.
+        max_diff_examples (int): Maximum number of diff lines to include per page.
     """
     print(f"\n🔍 Checking: {pdf_path.name} and {json_path.name}")
     pdf_texts = extract_pdf_text(pdf_path)
 
     with json_path.open('r', encoding='utf-8') as f:
         json_data = json.load(f)
+
+    # Clear existing log file for this PDF
+    log_path = OUTPUT_TESTS_DIR / f"{pdf_path.name}_comparison.txt"
+    log_path.write_text("")
 
     file_report = {
         "pdf_file": pdf_path.name,
@@ -155,10 +176,17 @@ def check_file_pair_text(pdf_path: Path, json_path: Path):
         }
 
         # Compare text and record differences
-        diff = compare_texts(json_text, pdf_text)
+        diff = compare_texts(
+            json_text=json_text,
+            pdf_text=pdf_text,
+            page_num=page_num,
+            pdf_file=pdf_path.name,
+            json_file=json_path.name,
+            log_dir=OUTPUT_TESTS_DIR
+        )
         if diff:
             page_report["diff_count"] = len(diff)
-            page_report["diff_examples"] = diff[:5] # Limits to first 5 examples
+            page_report["diff_examples"] = diff[:max_diff_examples]
             for line in diff:
                 page_report["diff_occurrences"][line] = page_report["diff_occurrences"].get(line, 0) + 1
 
@@ -185,21 +213,29 @@ def check_file_pair_text(pdf_path: Path, json_path: Path):
     print(f"✅ Saved report to {output_path}")
 
 
-def check_folders_text_extraction(data_dir: Path, json_dir: Path):
+def check_folders_text_extraction(data_dir: Path, json_dir: Path, max_files: int | str = 2):
     """
-    Iterates through all PDF files in a directory and checks them against their
-    corresponding JSON files. Each pair is analyzed and a report is generated.
+    Iterates through PDF files in a directory and checks them against their
+    corresponding JSON files. Limits processing to `max_files` pairs unless set to 'all'.
 
     Args:
         data_dir (Path): Directory containing PDF files.
         json_dir (Path): Directory containing JSON files.
+        max_files (int or str): Maximum number of PDF–JSON pairs to process.
+                                Use 'all' to process everything.
     """
     pdf_files = list(data_dir.glob('*.pdf'))
+    processed_count = 0
 
     for pdf_file in pdf_files:
+        if max_files != "all" and processed_count >= int(max_files):
+            print(f"⏹️ Limit reached: Only processing {max_files} PDF files.")
+            break
+
         json_file = json_dir / (pdf_file.stem + '.json')
         if json_file.exists():
-            check_file_pair_text(pdf_path=pdf_file, json_path=json_file)
+            check_file_pair_text(pdf_path=pdf_file, json_path=json_file, max_diff_examples=3)
+            processed_count += 1
         else:
             print(f"⚠️ JSON file missing for {pdf_file.name}")
             
@@ -378,7 +414,8 @@ def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extra
 
 if __name__ == "__main__":
     
-    check_folders_text_extraction(DATA_DIR, JSON_DIR)
+    # Process only 3 files
+    check_folders_text_extraction(DATA_DIR, JSON_DIR, max_files=2)
     
     json_to_csv(
         json_dir=Path("outputs/tests"), 
@@ -386,7 +423,6 @@ if __name__ == "__main__":
         pdf_extractor_name="pypdf2"
     )
 
-    
     combine_json_reports_to_markdown(
         json_dir=Path("outputs/tests"),
         output_dir=Path("outputs/tests"),
