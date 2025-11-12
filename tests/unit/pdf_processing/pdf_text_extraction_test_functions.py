@@ -1,4 +1,13 @@
-"""Script to check text extraction word matches between PDFs and their JSON conversions with different extraction methods."""
+"""
+Checks text extraction word matches between PDFs and their JSON conversions.
+
+- Can check with different extraction methods.
+- Normalizes text before comparison and ignores numeric differences.
+- Saves detailed reports per file and combined summaries in CSV and Markdown formats.
+
+Run:
+    python tests/unit/pdf_processing/pdf_text_extraction_test_functions.py
+"""
 
 # %%
 from pathlib import Path
@@ -53,9 +62,9 @@ spell = SpellChecker()
 #--------------------
 method = "pypdf2" # Options: 'fitz', 'pypdf2', 'pdfplumber'
 max_files_to_process = "2" # Can be an integer to specify certain number or "all" to do whole directory
-diff_lines_per_page = 2 # Controls how many diff lines per page are shown in the markdown report 
+diff_lines_per_page = 10 # Controls how many diff lines per page are shown in the markdown report 
                         # If page has 20 differing lines, only first 2 shown in report
-number_pages_to_view = "3"
+number_pages_to_view = "all" # Can be an integer to specify certain number or "all" for whole document
 
 #---------------
 # PDF EXTRACTOR
@@ -90,6 +99,24 @@ def extract_pdf_text(pdf_path: Path, method: str = method) -> dict:
 
     else:
         raise ValueError(f"Unsupported extraction method: {method}")
+    
+#-------------------
+# TEXT NORMALISER
+#-------------------
+
+def normalize_text(text: str) -> str:
+    """
+    Normalize text for fair comparison:
+      - Unicode normalization (NFKC)
+      - Lowercasing
+      - Remove punctuation
+      - Collapse whitespace
+    """
+    text = unicodedata.normalize("NFKC", text)
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", "", text)   # strip punctuation
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 #---------------
 # COMPARISONS
@@ -127,10 +154,10 @@ def compare_texts(
     pdf_section = f"----- PDF Text -----\n{wrapped_pdf or '[Empty]'}\n"
     json_section = f"----- JSON Text -----\n{wrapped_json or '[Empty]'}\n"
 
-    print(header + pdf_section + json_section)
+    # print(header + pdf_section + json_section)
 
     if log_dir:
-        log_path = log_dir / f"{pdf_file.name}_comparison_for_{method}.txt"
+        log_path = log_dir / f"{pdf_file.name}_comparison_with_{method}.txt"
         with log_path.open("a", encoding="utf-8") as log_file:
             log_file.write(header + pdf_section + json_section + "\n\n")
 
@@ -160,7 +187,6 @@ def check_json_text(text):
     irregular_chars = [c for c in text if ord(c) > 127 and not unicodedata.name(c, '').startswith('LATIN')]
     return misspelled, irregular_chars
 
-
 def check_file_pair_text(pdf_path: Path, json_path: Path, method: str = method, number_pages_to_view: int | str = number_pages_to_view):
     """
     Compares the text content of a PDF file and its corresponding JSON file.
@@ -178,7 +204,7 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, method: str = method, 
         json_data = json.load(f)
 
     # Clear existing log file for this PDF and method
-    log_path = OUTPUT_TESTS_DIR / f"{pdf_path.name}_comparison_for_{method}.txt"
+    log_path = OUTPUT_TESTS_DIR / f"{pdf_path.name}_comparison_with_{method}.txt"
     log_path.write_text("")
 
     file_report = {
@@ -187,14 +213,19 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, method: str = method, 
         "pages": {}
     }
 
-    # ✅ Handle integer vs "all"
+    # Handle integer vs "all"
     for i, page in enumerate(json_data['content']):
         if number_pages_to_view != "all" and i >= int(number_pages_to_view):
             break
 
         page_num = page['page_number']
-        json_text = page['page_text']
-        pdf_text = pdf_texts.get(page_num, '')
+
+        #  Normalize both JSON and PDF text before comparison
+        raw_json_text = page['page_text']
+        raw_pdf_text = pdf_texts.get(page_num, '')
+
+        json_text = normalize_text(raw_json_text)
+        pdf_text = normalize_text(raw_pdf_text)
 
         page_report = {
             "diff_count": 0,
@@ -221,7 +252,7 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, method: str = method, 
             for line in diff:
                 page_report["diff_occurrences"][line] = page_report["diff_occurrences"].get(line, 0) + 1
 
-        # Check spelling and irregular characters
+        # Check spelling and irregular characters (on normalized JSON text)
         misspelled, irregular = check_json_text(json_text)
         page_report["misspelled"] = list(misspelled)
         page_report["irregular_chars"] = irregular
@@ -238,11 +269,11 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, method: str = method, 
         file_report["pages"][str(page_num)] = page_report
 
     output_path = OUTPUT_TESTS_DIR / f"{pdf_path.stem}_report.json"
-    
     with output_path.open("w", encoding="utf-8") as out:
         json.dump(file_report, out, indent=2, ensure_ascii=False)
 
-    print(f"✅ Saved report to {output_path}")
+    print(f"Saved report to {output_path}")
+
 
 def check_folders_text_extraction(data_dir: Path, json_dir: Path, max_files_to_process: int | str = 2):
     """
@@ -260,7 +291,7 @@ def check_folders_text_extraction(data_dir: Path, json_dir: Path, max_files_to_p
 
     for pdf_file in pdf_files:
         if max_files_to_process != "all" and processed_count >= int(max_files_to_process):
-            print(f"⏹️ Limit reached: Only processing {max_files_to_process} PDF files.")
+            print(f"Limit reached: Only processing {max_files_to_process} PDF files.")
             break
 
         json_file = json_dir / (pdf_file.stem + '.json')
@@ -320,7 +351,7 @@ def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = meth
     # Convert to DataFrame and save as CSV
     df = pd.DataFrame(rows)
     df.to_csv(output_csv, index=False)
-    print(f"✅ Saved combined CSV to {output_csv}")
+    print(f"Saved combined CSV to {output_csv}")
   
 def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extractor_name: str = method):
     """
@@ -384,7 +415,6 @@ def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extra
         out.write("\n".join(all_lines))
 
     print(f"Saved combined Markdown report to {output_md}")
-
 
 if __name__ == "__main__":
     
