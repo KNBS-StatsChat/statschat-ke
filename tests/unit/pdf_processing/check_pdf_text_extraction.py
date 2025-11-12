@@ -6,7 +6,7 @@ Checks text extraction word matches between PDFs and their JSON conversions.
 - Saves detailed reports per file and combined summaries in CSV and Markdown formats.
 
 Run:
-    python tests/unit/pdf_processing/pdf_text_extraction_test_functions.py
+    python tests/unit/pdf_processing/check_pdf_text_extraction.py
 """
 
 # %%
@@ -61,9 +61,12 @@ spell = SpellChecker()
 # LOCAL SCRIPT CONFIG
 #--------------------
 method = "pypdf2" # Options: 'fitz', 'pypdf2', 'pdfplumber'
-max_files_to_process = "2" # Can be an integer to specify certain number or "all" to do whole directory
-diff_lines_per_page = 10 # Controls how many diff lines per page are shown in the markdown report 
+
+max_files_to_process = "3" # Can be an integer to specify certain number or "all" to do whole directory
+
+diff_lines_per_page = 15 # Controls how many diff lines per page are shown in the markdown report 
                         # If page has 20 differing lines, only first 2 shown in report
+                        
 number_pages_to_view = "all" # Can be an integer to specify certain number or "all" for whole document
 
 #---------------
@@ -150,7 +153,7 @@ def compare_texts(
     wrapped_json = textwrap.fill(json_text, width=80)
     wrapped_pdf = textwrap.fill(pdf_text, width=80)
 
-    header = f"\nComparing Page {page_num} of PDF: {pdf_file} vs JSON: {json_file}\n"
+    header = f"\nComparing extracted text via {method.upper()} for Page {page_num} of PDF: {pdf_file.name} vs JSON: {json_file.name}\n"
     pdf_section = f"----- PDF Text -----\n{wrapped_pdf or '[Empty]'}\n"
     json_section = f"----- JSON Text -----\n{wrapped_json or '[Empty]'}\n"
 
@@ -401,7 +404,7 @@ def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extra
 
             # Include misspelled words if any
             if page_data['misspelled']:
-                all_lines.append(f"- **Misspelled Words**: {', '.join(page_data['misspelled'])}")
+                all_lines.append(f"- **Potential Misspelled Words Examples**: {', '.join(page_data['misspelled'])}")
 
             # Include irregular characters if any
             if page_data['irregular_chars']:
