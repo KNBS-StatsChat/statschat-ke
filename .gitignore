@@ -19,6 +19,8 @@ __pycache__/
 *.faiss
 *.pdf
 
+# Log files and directories
+log/
 
 # Distribution / packaging
 .Python

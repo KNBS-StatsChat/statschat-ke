@@ -1,8 +1,4 @@
 """Module to generates responses using a pre-trained locally run language model."""
-# pip install sentencepiece
-# pip install protobuf
-# pip install 'accelerate>=0.26.0'
-
 import torch
 import logging
 from langchain_community.vectorstores import FAISS
@@ -78,7 +74,7 @@ def similarity_search(
 
     if return_dicts:
         return [
-            flatten_meta(doc[0].dict()) | {"score": float(doc[1])}
+            flatten_meta(doc[0].model_dump()) | {"score": float(doc[1])}
             for doc in top_matches
         ]
     return top_matches

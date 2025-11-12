@@ -34,9 +34,19 @@ the docstore / embedding store that is created is likewise and stored in `data/d
 also in `data/db_langchain_latest` after UPDATE. The LLM is either run locally with `local_llm.py` or an 
 API with `main_api_local.py` (both backend).
 
-## Step 1: Vector store
+## Overview
+<img width="1661" height="580" alt="image" src="https://github.com/user-attachments/assets/34eb5fbd-0965-48f8-acd3-bcc7ee945de2" />
+
+
+## Step 1: Environment Configuration
+> [!IMPORTANT]
+> **Before running the application, you must:**
+> 1. **[Create a virtual or conda environment](./docs/setup_guide.md)**
+> 2. **[Set up your `.env` file with API credentials](./docs/environment_setup.md)**
+
+## Step 2: Vector store
 > [!NOTE]
-> **Before setting up or updating the vector store ensure the [virtual or conda environment has been created.](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md)**
+> **Ensure the environment has been configured before setting up or updating the vector store.**
 
 Before running `pdf_runner.py` in an integrated development environment (IDE) ensure that the PDF_FILES_MODE (in `main.toml`) 
 is set to the desired option. It can also be run in the command line as below.
@@ -54,7 +64,7 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 
 `PDF_FILES_MODE = "UPDATE"` -> Will only scrape the latest 5 pages of PDF files from the KNBS website, compare existing PDF files in the vector store with those downloaded and only process new files - appending these to the database and "flushing" the latest data folders ready for a new run. This will need to be done as new PDFs are added to the KNBS website.
 
-## Step 2: Usage
+## Step 3: Usage
 
 #### Run the sample questions manually (backend)
 
@@ -89,6 +99,12 @@ From there, you can generate the synthetic "server" locally from your terminal:
 
 ```shell
 uvicorn fast-api.main_api_local:app --reload
+```
+
+or
+
+```shell
+uvicorn fast-api.main_api_cloud:app --reload
 ```
 
 The fastapi is set to respond to http requests on a particular port.
