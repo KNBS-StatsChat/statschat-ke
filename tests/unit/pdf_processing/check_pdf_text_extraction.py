@@ -343,8 +343,6 @@ def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = meth
                 "json_file": data["json_file"],
                 "page": page_num,
                 "diff_count": page_data["diff_count"],
-                "misspelled": ", ".join(page_data["misspelled"]),
-                "irregular_chars": ", ".join(page_data["irregular_chars"]),
                 "word_matches_from_extraction": page_data.get("accuracy_percent", "")
             })
 
