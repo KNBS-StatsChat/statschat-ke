@@ -236,7 +236,7 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, method: str = method, 
             "diff_occurrences": {},
             "misspelled": [],
             "irregular_chars": [],
-            "accuracy_percent": None
+            "word_match": None
         }
 
         # Compare text and record differences
@@ -266,7 +266,7 @@ def check_file_pair_text(pdf_path: Path, json_path: Path, method: str = method, 
         matched = [word for word in json_words if word in pdf_words]
         total = len(json_words)
         accuracy = (len(matched) / total * 100) if total > 0 else 0
-        page_report["accuracy_percent"] = round(accuracy, 2)
+        page_report["word_match"] = round(accuracy, 2)
 
         # Add page report to file report
         file_report["pages"][str(page_num)] = page_report
@@ -343,7 +343,7 @@ def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = meth
                 "json_file": data["json_file"],
                 "page_number": page_num,
                 "difference_count": page_data["diff_count"],
-                "word_match%": page_data.get("accuracy_percent", "")
+                "word_match%": page_data.get("word_match", "")
             })
 
     # Define output filename using extractor name
@@ -390,7 +390,7 @@ def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extra
         for page_num, page_data in data['pages'].items():
             all_lines.append(f"\n### Page {page_num}")
             all_lines.append(f"- **Differences Found**: {page_data['diff_count']}")
-            all_lines.append(f"- **Word Matches**: {page_data.get('accuracy_percent', 'N/A')}%")
+            all_lines.append(f"- **Word Matches**: {page_data.get('word_match', 'N/A')}%")
 
             # Include diff examples if available
             if page_data['diff_examples']:
