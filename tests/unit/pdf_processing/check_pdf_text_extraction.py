@@ -341,9 +341,9 @@ def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = meth
             rows.append({
                 "pdf_file": data["pdf_file"],
                 "json_file": data["json_file"],
-                "page": page_num,
-                "diff_count": page_data["diff_count"],
-                "word_matches_from_extraction": page_data.get("accuracy_percent", "")
+                "page_number": page_num,
+                "difference_count": page_data["diff_count"],
+                "word_match%": page_data.get("accuracy_percent", "")
             })
 
     # Define output filename using extractor name
@@ -375,7 +375,7 @@ def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extra
     Returns:
         None. Writes the combined Markdown file to disk.
     """
-    all_lines = [f"# Combined Audit Report ({pdf_extractor_name})\n"]  # Top-level heading with extractor name
+    all_lines = [f"# Report using {pdf_extractor_name.upper()} for text extraction\n"]  # Top-level heading with extractor name
 
     # Loop through each JSON file in the directory
     for json_file in json_dir.glob("*.json"):
