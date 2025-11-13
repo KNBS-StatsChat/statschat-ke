@@ -1,9 +1,9 @@
 """
 Checks text extraction word matches between PDFs and their JSON conversions.
 
-- Can check with different extraction methods.
+- Can check with different extraction methods in LOCAL SCRIPT CONFIG.
 - Normalizes text before comparison and ignores numeric differences.
-- Saves detailed reports per file and combined summaries in CSV and Markdown formats.
+- Saves detailed reports per file and combined summaries in CSV, Markdown and TXT formats.
 
 Run:
     python tests/unit/pdf_processing/check_pdf_text_extraction.py
