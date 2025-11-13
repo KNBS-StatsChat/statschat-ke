@@ -79,7 +79,7 @@ def json_split_dir(config):
 # Tests
 # ----------------------------
 
-def test_json_splits_match(json_conversions_dir, json_split_dir):
+def test_json_split_matches(json_conversions_dir, json_split_dir):
     """
     Ensure that the number of pages in each json_conversions file
     matches the number of split files in json_splits.
@@ -118,3 +118,53 @@ def test_json_splits_match(json_conversions_dir, json_split_dir):
     if mismatches:
         all_mismatches = "\n".join(mismatches)
         pytest.fail(f"PAGE SPLIT MISMATCHES FOUND\n{all_mismatches}")
+        
+
+def test_json_split_metadata(json_conversions_dir, json_split_dir):
+    """
+    Ensure that each split file's metadata matches the corresponding conversion JSON.
+    Checks fields like id, title, release_date, modification_date, overview, theme,
+    release_type, url_keywords, page_number, page_text.
+    """
+    conversion_files = list(json_conversions_dir.glob("*.json"))
+    assert conversion_files, "No conversion files found!"
+
+    mismatches = []
+
+    for converted_file in conversion_files:
+        with converted_file.open("r", encoding="utf-8") as f:
+            conv_data = json.load(f)
+
+        doc_id = str(conv_data.get("id"))
+        split_files = sorted(json_split_dir.glob(f"{doc_id}_*.json"),
+                             key=lambda p: int(p.stem.split("_")[1]))
+
+        for idx, page in enumerate(conv_data.get("content", [])):
+            if idx >= len(split_files):
+                mismatches.append(
+                    f"{converted_file.name}: missing split file for page {page.get('page_number')}"
+                )
+                continue
+
+            with split_files[idx].open("r", encoding="utf-8") as sf:
+                split_data = json.load(sf)
+
+            fields_to_check = [
+                "id", "title", "release_date", 
+                "modification_date", "overview", 
+                "theme", "release_type", "url", "url_keywords",
+            ]
+
+            for field in fields_to_check:
+                conv_val = page.get(field) if field in ["page_number", "page_url", "page_text"] else conv_data.get(field)
+                split_val = split_data.get(field)
+                if conv_val != split_val:
+                    msg = (
+                        f"{converted_file.name} page {page.get('page_number')} mismatch in {field}: "
+                        f"conversion={conv_val} vs split={split_val}"
+                    )
+                    logger.warning(msg)
+                    mismatches.append(msg)
+
+    # Explicit assert at the end
+    assert not mismatches, "Metadata mismatches:\n" + "\n".join(mismatches)
