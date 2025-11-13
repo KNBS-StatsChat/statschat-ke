@@ -1,6 +1,7 @@
+# %%
 from pydantic import BaseModel, Field
 from typing import Union, Optional
-
+# %%
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 import logging
@@ -10,10 +11,7 @@ from markupsafe import escape
 from statschat import load_config
 from statschat.generative.cloud_llm import Inquirer
 from statschat.embedding.latest_flag_helpers import get_latest_flag
-
-
-# Config file to load
-CONFIG = load_config(name="main")
+# %%
 
 # define session_id that will be used for log file and feedback
 SESSION_NAME = f"statschat_api_{format(datetime.now(), '%Y_%m_%d_%H:%M')}"
@@ -27,8 +25,19 @@ logging.basicConfig(
     filemode="a",
 )
 
+# %%
+# Config file to load
+CONFIG = load_config(name="main")
+# %%
+
 # initiate Statschat AI and start the app
-inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
+provider = CONFIG["search"].get("provider", "openrouter")
+
+inquirer = Inquirer(
+    **CONFIG["db"],
+    **CONFIG["search"],
+    logger=logger,
+)
 
 app = FastAPI(
     title="KNBS StatsChat API",
