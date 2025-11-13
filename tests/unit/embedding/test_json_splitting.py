@@ -2,7 +2,7 @@
 Test splitting of JSON conversions done by statschat\embedding\preprocess.py
 
 - Compares number of pages in each JSON conversion file against the number of split files created
-- Makes sure no pages are lost during the splitting process
+- Makes sure no pages are lost during the splitting process and each split has metadata same as json conversion
 
 Run:
     pytest tests/unit/embedding/test_json_splitting.py
