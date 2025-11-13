@@ -79,7 +79,7 @@ def json_split_dir(config):
 # Tests
 # ----------------------------
 
-def test_page_splits_match(json_conversions_dir, json_split_dir):
+def test_json_splits_match(json_conversions_dir, json_split_dir):
     """
     Ensure that the number of pages in each json_conversions file
     matches the number of split files in json_splits.
@@ -108,8 +108,8 @@ def test_page_splits_match(json_conversions_dir, json_split_dir):
 
         if pages_in_conversion != pages_in_splits:
             msg = (
-                f"Mismatch for {converted_file.name}: conversion has {pages_in_conversion} pages, "
-                f"but found {pages_in_splits} split files."
+                f"Mismatch for {converted_file.name}: conversion file has {pages_in_conversion} pages, "
+                f"but only found {pages_in_splits} split files."
             )
             logger.warning(msg)
             mismatches.append(msg)
