@@ -1,9 +1,11 @@
 """
+NOTE this is more an evaluation method than a unit test.
+
 Checks text extraction word matches between PDFs and their JSON conversions.
 
 - Can check with different extraction methods in LOCAL SCRIPT CONFIG.
 - Normalizes text before comparison and ignores numeric differences.
-- Saves detailed reports per file and combined summaries in CSV, Markdown and TXT formats.
+- Saves detailed reports per file to Outputs folder and combined summaries in CSV, Markdown and TXT formats.
 
 Run:
     python tests/unit/pdf_processing/check_pdf_text_extraction.py
@@ -60,7 +62,7 @@ spell = SpellChecker()
 #--------------------
 # LOCAL SCRIPT CONFIG
 #--------------------
-method = "pypdf2" # Options: 'fitz', 'pypdf2', 'pdfplumber'
+method = "pypdf" # Options: 'fitz', 'pypdf', 'pdfplumber'
 
 max_files_to_process = "3" # Can be an integer to specify certain number or "all" to do whole directory
 
@@ -78,7 +80,7 @@ def extract_pdf_text(pdf_path: Path, method: str = method) -> dict:
 
     Supported methods:
         - 'fitz' (PyMuPDF)
-        - 'pypdf2'
+        - 'pypdf'
         - 'pdfplumber'
 
     Args:
@@ -92,7 +94,7 @@ def extract_pdf_text(pdf_path: Path, method: str = method) -> dict:
         doc = fitz.open(pdf_path)
         return {page.number + 1: page.get_text() for page in doc}
 
-    elif method == "pypdf2":
+    elif method == "pypdf":
         reader = PdfReader(str(pdf_path))
         return {i + 1: page.extract_text() or "" for i, page in enumerate(reader.pages)}
 
@@ -144,7 +146,7 @@ def compare_texts(
         pdf_file (str, optional): Name of the PDF file.
         json_file (str, optional): Name of the JSON file.
         log_dir (Path, optional): Directory to save the log file.
-        method (str): Extraction method used (e.g., 'fitz', 'pypdf2', 'pdfplumber').
+        method (str): Extraction method used (e.g., 'fitz', 'pypdf', 'pdfplumber').
 
     Returns:
         list or None: A list of differing lines (excluding numeric ones), or None if no differences.
@@ -323,7 +325,7 @@ def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = meth
     Args:
         json_dir (Path): Directory containing JSON files.
         output_dir (Path): Directory where the CSV file will be saved.
-        pdf_extractor_name (str): Name of the extractor used (e.g., 'fitz', 'pypdf2', 'pdfplumber').
+        pdf_extractor_name (str): Name of the extractor used (e.g., 'fitz', 'pypdf', 'pdfplumber').
 
     Returns:
         None. Writes the combined CSV file to disk.
@@ -370,7 +372,7 @@ def combine_json_reports_to_markdown(json_dir: Path, output_dir: Path, pdf_extra
     Args:
         json_dir (Path): Directory containing JSON audit reports.
         output_dir (Path): Directory where the Markdown file will be saved.
-        pdf_extractor_name (str): Name of the extractor used (e.g., 'fitz', 'pypdf2', 'pdfplumber').
+        pdf_extractor_name (str): Name of the extractor used (e.g., 'fitz', 'pypdf', 'pdfplumber').
 
     Returns:
         None. Writes the combined Markdown file to disk.
