@@ -86,7 +86,7 @@ def create_test_samples_and_folder_structure(src_base="data", dest_base="tests/t
         with open(dest / "latest_pdf_downloads" / "url_dict.json", "w") as f:
             json.dump(filtered_latest, f, indent=4)
 
-    print(f"Samples created in {dest_base} now can run test_merge_database_files.py")
+    print(f"Samples created in {dest_base} now can now run test_merge_database_files.py")
 
 if __name__ == "__main__":
     create_test_samples_and_folder_structure()
