@@ -9,7 +9,7 @@ Refined unit tests for statschat.pdf_processing.pdf_downloader
 - Negative path: UPDATE with no original dict exits/returns cleanly without artifacts.
 
 Run:
-    pytest -s -v tests/unit/test_pdf_downloader.py
+    pytest -s -v tests/unit/pdf_processing/test_pdf_downloader.py
 """
 import pytest
 import json
