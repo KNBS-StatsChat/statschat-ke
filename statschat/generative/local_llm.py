@@ -1,8 +1,4 @@
 """Module to generates responses using a pre-trained locally run language model."""
-# pip install sentencepiece
-# pip install protobuf
-# pip install 'accelerate>=0.26.0'
-
 import torch
 import logging
 from langchain_community.vectorstores import FAISS

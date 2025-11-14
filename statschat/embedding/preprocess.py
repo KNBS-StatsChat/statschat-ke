@@ -117,12 +117,11 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
                         for num, section in enumerate(json_file["content"]):
                             section_json = {**section, **publication_meta}
 
-                            # Check that there's text extracted for this section
-                            if len(section["page_text"]) > 5:
-                                with open(
-                                    f"{self.split_directory}/{id}_{num}.json", "w"
-                                ) as new_file:
-                                    json.dump(section_json, new_file, indent=4)
+                            # Always create a split file for every page
+                            with open(
+                                f"{self.split_directory}/{id}_{num}.json", "w"
+                            ) as new_file:
+                                json.dump(section_json, new_file, indent=4)
 
             except KeyError as e:
                 self.logger.warning(f"Could not parse {filename}: {e}")
