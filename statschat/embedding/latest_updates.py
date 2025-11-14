@@ -1,5 +1,6 @@
 import glob
 import json
+import os
 from rapidfuzz import fuzz
 
 
@@ -13,7 +14,9 @@ def find_latest(dir) -> list[str]:
     """
     latest_filepaths = []
     for filepath in glob.glob(f"{dir}/*.json"):
-        if "0000" not in filepath:
+        # Check for "0000" in filename only, not full path
+        filename = os.path.basename(filepath)
+        if "0000" not in filename:
             with open(filepath) as f:
                 latest = json.load(f)["latest"]
                 if latest is True:
@@ -21,7 +24,7 @@ def find_latest(dir) -> list[str]:
     return latest_filepaths
 
 
-def compare_latest(dir, latest_filepaths) -> (list[str], list[str]):
+def compare_latest(dir, latest_filepaths) -> tuple[list[str], list[str]]:
     """Compare inbound publications with those currently
     flagged as latest
     Args:
@@ -78,11 +81,13 @@ def update_split_documents(split_dir, former_latest) -> None:
     Args:
         dir(str): SPLIT bulletins directory
         former_latest(list): names of current publications
-            no longer the most recent in their series
+            no longer the most recent in their series (e.g., "2024-Economic-Survey.json")
     """
     for fl in former_latest:
-        # take first 60 characters to avoid mismatches
-        split_docs = glob.glob(f"{split_dir}/{fl[:60]}*.json")
+        # Strip .json extension before taking first 60 characters
+        # This ensures pattern matching works correctly with split files
+        base_name = fl.replace(".json", "")
+        split_docs = glob.glob(f"{split_dir}/{base_name[:60]}*.json")
         for sd in split_docs:
             with open(sd, "r") as f:
                 one_split = json.load(f)

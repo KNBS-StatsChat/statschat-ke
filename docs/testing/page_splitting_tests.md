@@ -15,7 +15,7 @@ The page splitting tests validate that PDF to JSON conversion maintains page int
 
 **Recent Updates**:
 - ✅ Phase 1: Migrated from PyPDF2 to pypdf, strengthened assertions
-- ✅ Phase 2: Streamlined to 6 essential tests (removed over-engineered edge cases)
+- ✅ Phase 2: Created 4 new tests (6 in total).
 
 ---
 

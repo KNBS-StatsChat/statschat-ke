@@ -48,8 +48,12 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         self.faiss_db_root = (
             data_dir + faiss_db_root + ("_latest" if mode == "UPDATE" else "")
         )
-        # Remove '_latest' from faiss_db_root if present
-        self.original_faiss_db_root = (data_dir + faiss_db_root).replace("_latest", "")
+        # For UPDATE mode, store the original FAISS db path (without _latest suffix)
+        # Only remove _latest suffix at the END of the string to avoid removing it from directory names
+        if mode == "UPDATE" and self.faiss_db_root.endswith("_latest"):
+            self.original_faiss_db_root = self.faiss_db_root[:-7]  # Remove last 7 chars ("_latest")
+        else:
+            self.original_faiss_db_root = data_dir + faiss_db_root
         self.db = db
         self.latest_only = latest_only
         self.mode = mode
