@@ -83,6 +83,7 @@ def generate_latest_dir(original_dir: Path) -> Path:
 def get_name_and_meta(pdf_file_path: Path, config: dict) -> tuple[str, dict]:
     """
     Extract the file name and metadata from a PDF file using the specified extractor.
+    Always normalize metadata to a plain dict with consistent keys.
 
     Args:
         pdf_file_path (Path): Path to the PDF file.
@@ -99,13 +100,18 @@ def get_name_and_meta(pdf_file_path: Path, config: dict) -> tuple[str, dict]:
 
     if extractor == "pypdf":
         reader = PdfReader(pdf_file_path)
-        pdf_metadata = reader.metadata
+        # Convert DocumentInformation to dict
+        pdf_metadata = {k: str(v) for k, v in reader.metadata.items() if v is not None}
+
     elif extractor == "fitz":
         doc = fitz.open(pdf_file_path)
-        pdf_metadata = doc.metadata
+        # Already a dict, but normalize keys
+        pdf_metadata = {k.lower(): v for k, v in doc.metadata.items() if v}
+
     elif extractor == "pdfplumber":
         with pdfplumber.open(pdf_file_path) as pdf:
-            pdf_metadata = pdf.metadata
+            pdf_metadata = {k.lower(): v for k, v in pdf.metadata.items() if v}
+
 
     return file_name, pdf_metadata
 

@@ -49,7 +49,7 @@ API with `main_api_local.py` (both backend).
 > **Ensure the environment has been configured before setting up or updating the vector store.**
 
 Before running `pdf_runner.py` in an integrated development environment (IDE) ensure that the PDF_FILES_MODE (in `main.toml`) 
-is set to the desired option. It can also be run in the command line as below.
+is set to the desired option along with the chosen PDF extractor. It can also be run in the command line as below.
 
     ```shell
     python3 statschat/pdf_runner.py
