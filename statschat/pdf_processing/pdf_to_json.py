@@ -1,7 +1,7 @@
 # %%
 # import modules
 import os
-import PyPDF2
+from pypdf import PdfReader
 import json
 import re
 from pathlib import Path
@@ -89,7 +89,7 @@ def get_name_and_meta(pdf_file_path):
         pdf_metadata: metadata for PDF (dates etc)
     """
     file_name = pdf_file_path.name
-    pdf_metadata = PyPDF2.PdfReader(pdf_file_path)
+    pdf_metadata = PdfReader(pdf_file_path)
     pdf_metadata = pdf_metadata.metadata
 
     return (file_name, pdf_metadata)
@@ -128,7 +128,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
     date from metadata, or the current system date as a final fallback.
 
     Args:
-        metadata: PDF metadata dictionary from PyPDF2.PdfReader (can be None).
+        metadata: PDF metadata dictionary from pypdf.PdfReader (can be None).
         filename (str): The filename from which to extract a year if needed.
         counter (int): A running count of files that lack reliable date information.
 
@@ -140,7 +140,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
     pdf_creation_date = None  # Initialize variable to store the extracted date.
 
     def preprocess_date(date_str: str) -> str:
-        """Extracts only the YYYYMMDD portion from a PyPDF2 date string."""
+        """Extracts only the YYYYMMDD portion from a pypdf date string."""
         if date_str and date_str.startswith("D:"):
             date_str = date_str[2:10]  # Extract only YYYYMMDD
         return (
@@ -185,7 +185,7 @@ def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
     date.
 
     Args:
-        metadata: PDF metadata object from PyPDF2.PdfReader.
+        metadata: PDF metadata object from pypdf.PdfReader.
         pdf_creation_date (str): The creation date to use as a fallback if
         modification date is missing or invalid.
 
@@ -250,7 +250,7 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
 
     pages_text = []
     with open(pdf_file_path, "rb") as pdf_file:
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        pdf_reader = PdfReader(pdf_file)
 
         for page_num, page in enumerate(pdf_reader.pages, start=1):
             text = page.extract_text()

@@ -2,6 +2,7 @@ import logging
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
@@ -39,6 +40,7 @@ class Inquirer:
         verbose: bool = False,
         answer_threshold: float = 0.5,
         document_threshold: float = 0.9,
+        provider="openrouter",  # default
     ):
         """
         Args:
@@ -63,20 +65,43 @@ class Inquirer:
         self.verbose = verbose
         self.extractive_prompt = EXTRACTIVE_PROMPT_PYDANTIC
         self.stuff_document_prompt = STUFF_DOCUMENT_PROMPT
+        self.llm_temperature = llm_temperature
+        self.llm_max_tokens = llm_max_tokens
 
-        # Load the token for Hugging Face
+        # Load variables from .env
         load_dotenv()
-        sec_key = os.getenv("HF_TOKEN")
 
-        # Load LLM with text2text-generation specifications
-        self.llm = HuggingFaceEndpoint(
-            repo_id=generative_model_name,
-            model_kwargs={
-                "max_length": 512,
-            },
-            temperature=0.1,
-            token=sec_key,
-        )
+        if provider == "openai":
+            sec_key = os.getenv("OPENAI_API_KEY")
+            self.llm = ChatOpenAI(
+                model=generative_model_name,
+                temperature=llm_temperature,
+                max_tokens=llm_max_tokens,
+                api_key=sec_key,
+            )
+
+        elif provider == "openrouter":
+            sec_key = os.getenv("OPENROUTER_API_KEY")
+            api_base = os.getenv("OPENROUTER_BASE_URL")
+            self.llm = ChatOpenAI(
+                model=generative_model_name,
+                temperature=llm_temperature,
+                max_tokens=llm_max_tokens,
+                openai_api_key=sec_key,
+                openai_api_base=api_base,
+            )
+
+        elif provider == "huggingface_inference":
+            sec_key = os.getenv("HF_TOKEN")
+            self.llm = HuggingFaceEndpoint(
+                repo_id=generative_model_name,
+                model_kwargs={"max_length": llm_max_tokens},
+                temperature=llm_temperature,
+                token=sec_key,
+            )
+
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
 
         # Embeddings
         embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
@@ -318,10 +343,10 @@ if __name__ == "__main__":
     # initiate Statschat AI and start the app
     inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
 
-    question = "Where can I find the registered births by age of mother and county?"
+    #question = "Where can I find the registered births by age of mother and county?"
     # question = "What is the sample size of the Real Estate Survey?"
     # question = "How is core inflation calculated?"
-    question = "What was inflation in Kenya in December 2021?"
+    question = "What was inflation in Kenya in December 2022?"
     # question = "What is football?"
 
     docs, answer, response = inquirer.make_query(
