@@ -1,36 +1,18 @@
-# %%
+"""
+Helper functions for testing PDF page splitting functionality.
+
+This module provides utilities to validate that PDF to JSON conversion
+maintains page integrity by comparing page counts and validating file matching.
+"""
 from pathlib import Path
-from statschat import load_config
-import PyPDF2
+from pypdf import PdfReader
 import json
 
-# %% Configuration
 
-# Load configuration
-config = load_config(name="main")
-PDF_FILES = config["preprocess"]["mode"].upper()
-
-# Set directories
-BASE_DIR = Path.cwd().joinpath("data")
-
-# For PDF files
-DATA_DIR = BASE_DIR.joinpath(
-    "pdf_downloads" if PDF_FILES == "SETUP" else "latest_pdf_downloads"
-)
-
-# %%
-# For JSON conversion
-if PDF_FILES == "SETUP":
-    JSON_DIR = Path.cwd().joinpath("data/json_conversions")
-else:
-    JSON_DIR = Path.cwd().joinpath("data/latest_json_conversions")
-
-
-# %%
-def get_pdf_page_counts(directory: Path):
+def get_pdf_page_counts(directory: Path) -> dict:
     """
     Loop through all PDF files in a directory and return a dictionary
-    with filenames and their page counts using PyPDF2.
+    with filenames and their page counts using pypdf.
 
     Args:
         directory (Path): Path to the directory containing PDF files.
@@ -48,7 +30,7 @@ def get_pdf_page_counts(directory: Path):
             # Open the PDF file in binary read mode
             with open(pdf_file, "rb") as f:
                 # Create a PdfReader object to read the PDF
-                reader = PyPDF2.PdfReader(f)
+                reader = PdfReader(f)
                 # Store the number of pages in the dictionary using the filename as the key
                 pdf_page_counts[pdf_file.name] = len(reader.pages)
         except Exception as e:
@@ -58,8 +40,8 @@ def get_pdf_page_counts(directory: Path):
     # Return the dictionary containing filenames and their corresponding page counts
     return pdf_page_counts
 
-# %%
-def validate_page_splitting(json_folder: Path, expected_page_counts: dict):
+
+def validate_page_splitting(json_folder: Path, expected_page_counts: dict) -> list:
     """
     Validates a collection of JSON files that describe PDF documents by performing two checks:
     
@@ -139,14 +121,32 @@ def validate_page_splitting(json_folder: Path, expected_page_counts: dict):
     return results
 
 
-# %%
 if __name__ == "__main__":
+    """
+    Example usage when running this module directly.
+    This demonstrates how to use the functions with actual data directories.
+    """
+    from statschat import load_config
+    
+    # Load configuration to determine directory paths
+    config = load_config(name="main")
+    mode = config["preprocess"]["mode"].upper()
+    
+    # Set up directory paths based on mode
+    base_dir = Path.cwd().joinpath("data")
+    pdf_dir = base_dir.joinpath(
+        "pdf_downloads" if mode == "SETUP" else "latest_pdf_downloads"
+    )
+    json_dir = base_dir.joinpath(
+        "json_conversions" if mode == "SETUP" else "latest_json_conversions"
+    )
+    
     # Get expected page counts from PDF files before conversion to JSON files
-    expected_page_counts = get_pdf_page_counts(DATA_DIR)
-
+    expected_page_counts = get_pdf_page_counts(pdf_dir)
+    
     # Checking JSON conversions against expected page counts
-    validation_results = validate_page_splitting(JSON_DIR, expected_page_counts)
-
+    validation_results = validate_page_splitting(json_dir, expected_page_counts)
+    
     # Print results
     for result in validation_results:
         print(result)

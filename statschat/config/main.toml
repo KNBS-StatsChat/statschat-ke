@@ -18,10 +18,12 @@ k_docs = 2
 k_contexts = 5
 similarity_threshold = 2.0     # Threshold score below which a document is returned in a search
 llm_temperature = 0.0
+llm_max_tokens = 1024
 answer_threshold = 0.5 # Threshold score below which a answer is returned in a search
 document_threshold = 0.9 # Threshold score below which a document is returned in a search
+provider = "openrouter"  # or "openai", "huggingface_inference"
 
 [app]
 latest_max = 2    # Takes value int >= 0, commonly 0, 1 or 2
 page_start = 1    # Sets where to start looking for downloads. Higher the number the older the publications.
-page_end = 2      # Sets where to stop looking for downloads. Higher the number the older the publications
+page_end = 5      # Sets where to stop looking for downloads. Higher the number the older the publications
