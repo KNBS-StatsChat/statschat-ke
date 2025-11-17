@@ -1,7 +1,6 @@
 # %%
 # import modules
 import os
-import PyPDF2
 import json
 import re
 from pathlib import Path
@@ -11,6 +10,10 @@ from tqdm import tqdm
 from bs4 import BeautifulSoup
 from urllib.request import Request, urlopen
 from datetime import datetime
+from pypdf import PdfReader
+import fitz  # PyMuPDF
+import pdfplumber
+import toml
 
 # %%
 # set relative paths
@@ -33,7 +36,6 @@ def load_config(config_path: Path) -> dict:
     Returns:
         dict: Parsed configuration as a dictionary.
     """
-    import toml
 
     return toml.load(config_path)
 
@@ -78,21 +80,35 @@ def generate_latest_dir(original_dir: Path) -> Path:
     return original_dir.parent / f"latest_{original_dir.name}"
 
 
-def get_name_and_meta(pdf_file_path):
-    """Extracts file name and metadata from PDF
+def get_name_and_meta(pdf_file_path: Path, config: dict) -> tuple[str, dict]:
+    """
+    Extract the file name and metadata from a PDF file using the specified extractor.
 
     Args:
-        file_path (path): file path for PDF file
+        pdf_file_path (Path): Path to the PDF file.
+        config (dict): Configuration dictionary containing the extractor setting.
 
     Returns:
-        file_name: file for PDF file
-        pdf_metadata: metadata for PDF (dates etc)
+        tuple[str, dict]: A tuple containing:
+            - file_name (str): The name of the PDF file.
+            - pdf_metadata (dict): Metadata extracted from the PDF (e.g., author, creation date).
     """
+    extractor = config["preprocess"]["extractor"]
     file_name = pdf_file_path.name
-    pdf_metadata = PyPDF2.PdfReader(pdf_file_path)
-    pdf_metadata = pdf_metadata.metadata
+    pdf_metadata = {}
 
-    return (file_name, pdf_metadata)
+    if extractor == "pypdf":
+        reader = PdfReader(pdf_file_path)
+        pdf_metadata = reader.metadata
+    elif extractor == "fitz":
+        doc = fitz.open(pdf_file_path)
+        pdf_metadata = doc.metadata
+    elif extractor == "pdfplumber":
+        with pdfplumber.open(pdf_file_path) as pdf:
+            pdf_metadata = pdf.metadata
+
+    return file_name, pdf_metadata
+
 
 
 def extract_url_keywords_from_filename(file_name: str) -> list[str]:
@@ -128,7 +144,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
     date from metadata, or the current system date as a final fallback.
 
     Args:
-        metadata: PDF metadata dictionary from PyPDF2.PdfReader (can be None).
+        metadata: PDF metadata dictionary from extractor (can be None).
         filename (str): The filename from which to extract a year if needed.
         counter (int): A running count of files that lack reliable date information.
 
@@ -140,7 +156,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
     pdf_creation_date = None  # Initialize variable to store the extracted date.
 
     def preprocess_date(date_str: str) -> str:
-        """Extracts only the YYYYMMDD portion from a PyPDF2 date string."""
+        """Extracts only the YYYYMMDD portion from a date string."""
         if date_str and date_str.startswith("D:"):
             date_str = date_str[2:10]  # Extract only YYYYMMDD
         return (
@@ -185,7 +201,7 @@ def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
     date.
 
     Args:
-        metadata: PDF metadata object from PyPDF2.PdfReader.
+        metadata: PDF metadata object.
         pdf_creation_date (str): The creation date to use as a fallback if
         modification date is missing or invalid.
 
@@ -236,35 +252,53 @@ def extract_pdf_metadata(pdf_file_path: Path) -> tuple:
     return file_name, pdf_metadata
 
 
-def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
+def extract_pdf_text(pdf_file_path: Path, pdf_url: str, config: dict) -> list[dict]:
     """
-    Extracts text content from each page of a PDF file.
+    Extract text content from each page of a PDF file using the configured extractor.
 
     Args:
-        pdf_file_path (Path): The path to the PDF file.
-        pdf_url (str): The base URL where the document is hosted.
+        pdf_file_path (Path): Path to the PDF file.
+        pdf_url (str): Base URL where the document is hosted (used to build page links).
+        config (dict): Configuration dictionary containing the extractor setting.
 
     Returns:
-        list: A list of dictionaries containing page number, URL, and extracted text.
+        list[dict]: A list of dictionaries, each containing:
+            - page_number (int): The page number.
+            - page_url (str): The URL pointing to the specific page.
+            - page_text (str): Extracted text content from the page.
     """
-
+    extractor = config["preprocess"]["extractor"]
     pages_text = []
-    with open(pdf_file_path, "rb") as pdf_file:
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
 
-        for page_num, page in enumerate(pdf_reader.pages, start=1):
-            text = page.extract_text()
-            if text:
-                text = text.replace("\n", "")
+    if extractor == "pypdf":
+        reader = PdfReader(pdf_file_path)
+        for page_num, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").replace("\n", "")
+            pages_text.append({
+                "page_number": page_num,
+                "page_url": f"{pdf_url}#page={page_num}",
+                "page_text": text
+            })
 
-            page_link = f"{pdf_url}#page={page_num}"
-            pages_text.append(
-                {
+    elif extractor == "fitz":
+        doc = fitz.open(pdf_file_path)
+        for page_num, page in enumerate(doc, start=1):
+            text = (page.get_text("text") or "").replace("\n", "")
+            pages_text.append({
+                "page_number": page_num,
+                "page_url": f"{pdf_url}#page={page_num}",
+                "page_text": text
+            })
+
+    elif extractor == "pdfplumber":
+        with pdfplumber.open(pdf_file_path) as pdf:
+            for page_num, page in enumerate(pdf.pages, start=1):
+                text = (page.extract_text() or "").replace("\n", "")
+                pages_text.append({
                     "page_number": page_num,
-                    "page_url": page_link,
-                    "page_text": text or "",
-                }
-            )
+                    "page_url": f"{pdf_url}#page={page_num}",
+                    "page_text": text
+                })
 
     return pages_text
 
