@@ -466,7 +466,7 @@ def build_json(
     # print(f"Processing: {pdf_file_path.name}")
 
     # Extract Metadata & Pre-Process
-    file_name, pdf_metadata = extract_pdf_metadata(pdf_file_path)
+    file_name, pdf_metadata = extract_pdf_metadata(pdf_file_path, config)
 
     # Construct the document's URL
     pdf_url = pdf_website_url
