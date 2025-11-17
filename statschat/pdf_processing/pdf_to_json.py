@@ -110,7 +110,6 @@ def get_name_and_meta(pdf_file_path: Path, config: dict) -> tuple[str, dict]:
     return file_name, pdf_metadata
 
 
-
 def extract_url_keywords_from_filename(file_name: str) -> list[str]:
     """
     Extracts unique keywords from a hyphen-separated filename while
@@ -232,7 +231,7 @@ def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
         return pdf_creation_date
 
 
-def extract_pdf_metadata(pdf_file_path: Path) -> tuple:
+def extract_pdf_metadata(pdf_file_path: Path, config: dict) -> tuple:
     """
     Extracts metadata from a given PDF file.
 
@@ -241,12 +240,11 @@ def extract_pdf_metadata(pdf_file_path: Path) -> tuple:
         counter (int): A running count of files missing reliable date information.
 
     Returns:
-        tuple: (file_name, pdf_year, pdf_month,
-                pdf_creation_date, pdf_metadata, updated_counter)
+        tuple: (file_name, pdf_metadata)
     """
 
     # Extract filename and metadata
-    file_name, pdf_metadata = get_name_and_meta(pdf_file_path)
+    file_name, pdf_metadata = get_name_and_meta(pdf_file_path, config)
     # Extract creation and modification dates
 
     return file_name, pdf_metadata
@@ -448,7 +446,7 @@ def convert_to_date(date_str: str) -> str:
 
 
 def build_json(
-    pdf_file_path: Path, pdf_website_url: str, report_page: str, JSON_DIR: Path
+    pdf_file_path: Path, pdf_website_url: str, report_page: str, JSON_DIR: Path, config
 ) -> int:
     """
     Processes a PDF file, extracts metadata and content, then saves it as JSON.
@@ -501,7 +499,7 @@ def build_json(
         "contact_name": "Kenya National Bureau of Statistics",  # Contact details
         "contact_link": "datarequest@knbs.or.ke",
         "content": extract_pdf_text(
-            pdf_file_path, pdf_url
+            pdf_file_path, pdf_url, config
         ),  # Extracted text at the end
     }
     # check if overview is equal to the title
@@ -599,7 +597,7 @@ def process_pdfs(mode: str, config: dict):
         report_page = url_dict.get(f"{pdf}.pdf", {}).get(
             "report_page", "Unknown Overview URL"
         )
-        build_json(pdf_path, pdf_url, report_page, json_dir)
+        build_json(pdf_path, pdf_url, report_page, json_dir, config)
         count += 1
 
     print(f"Processed {count} PDFs. JSON files saved to {json_dir}.")
