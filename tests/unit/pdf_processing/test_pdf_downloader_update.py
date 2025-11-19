@@ -18,7 +18,7 @@ This script tests scraping logic and behaviour of 'pdf_downloader.py' when in "U
 8) Doesn't take into account "get_abstract_metadata" function if PDF metadata in missing as sample PDF doesn't have report page like KNBS PDFs do
 
 Run:
-    pytest tests/unit/test_pdf_downloader_update.py
+    pytest tests\unit\pdf_processing\test_pdf_downloader_update.py
 --------------------------------
 '''
 

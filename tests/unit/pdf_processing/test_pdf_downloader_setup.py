@@ -16,7 +16,7 @@ This script tests scraping logic and behaviour of 'pdf_downloader.py' when in "S
 7) Doesn't take into account "get_abstract_metadata" function if PDF metadata in missing
 
 Run:
-    pytest tests/unit/test_pdf_downloader_setup.py
+    pytest tests\unit\pdf_processing\test_pdf_downloader_setup.py
 --------------------------------
 '''
 import requests
