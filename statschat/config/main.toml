@@ -11,6 +11,7 @@ split_directory = "json_split"
 split_length = 2000
 split_overlap = 200
 latest_only = false
+extractor = "pypdf" # Options: "pypdf", "fitz", "pdfplumber"
 
 [search]
 generative_model_name = "mistralai/Mistral-7B-Instruct-v0.3"  # "text-unicorn" "text-bison@001" "google/flan-t5-large" "lmsys/fastchat-t5-3b-v1.0" "google/flan-t5-large" "google/flan-ul2"

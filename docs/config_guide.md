@@ -17,6 +17,7 @@ This guide explains the configuration options for StatsChat. The configuration f
 - **split_length**: Maximum number of characters per split document.
 - **split_overlap**: Number of overlapping characters between splits.
 - **latest_only**: If `true`, only process the latest files.
+- **extractor**: Choose which PDF extractor is used for JSON conversion - `pypdf`,`fitz` or `pdfplumber`
 
 ## `[search]`
 
