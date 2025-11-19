@@ -19,8 +19,6 @@ __pycache__/
 *.faiss
 *.pdf
 
-# Folder
-
 # Directories
 /outputs/tests
 # Log files and directories
