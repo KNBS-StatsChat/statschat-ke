@@ -1,3 +1,23 @@
+'''
+This script organizes and updates data folders after new documents 
+have been downloaded and processed in 'UPDATE' mode only.
+    
+Moves files from "latest" folders to their corresponding permanent locations:
+    - PDFs: Moves .pdf files from latest_pdf_downloads to pdf_downloads
+    - JSON conversions: Moves .json files from latest_json_conversions to json_conversions
+    - Split JSONs: Moves .json files from latest_json_split to json_split
+    
+Updates url_dict.json file that maps PDF filenames to their source URLs & report pages:
+    - Loads existing url_dict.json from 'pdf_downloads'
+    - Loads new url_dict.json from 'latest_pdf_downloads'
+    
+Merges - adds only new entries from the latest dictionary (avoiding duplicates)
+
+Saves - writes updated dictionary back to original location
+
+Cleans up - deletes latest url_dict.json from 'latest_pdf_downloads' to prepare for the next UPDATE batch
+'''
+
 # %%
 # import packages
 from pathlib import Path
