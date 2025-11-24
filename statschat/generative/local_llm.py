@@ -182,8 +182,8 @@ if __name__ == "__main__":
     
 
     # Choose your model (e.g., Mistral-7B, DeepSeek, Llama-3, etc.)
-   # MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
-    MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"  
+    MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
+   # MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"  
    # MODEL_ID = "amd/Instella-3B-Instruct"
     # Load model and tokenizer
    # bnb_config = BitsAndBytesConfig(load_in_4bit=True)
@@ -195,7 +195,7 @@ if __name__ == "__main__":
         MODEL_ID,
         torch_dtype=torch.float16,  # Use float16 for efficiency if using a GPU
         #quantization_config=bnb_config, # load in 8-bit or 4-bit quantization
-        device_map="cpu",  # Automatically selects GPU if available
+        device_map="auto",  # Automatically selects GPU if available
     )
     print("Model loaded successfully.")
     specific_prompt = _extractive_prompt.format(

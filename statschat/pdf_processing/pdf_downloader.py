@@ -53,6 +53,18 @@ page = page_start = config["app"]["page_start"]
 page_end = config["app"]["page_end"]
 
 max_pages = 100 if PDF_FILES == "SETUP" else page_end  # Limit to 5 for updates
+CA_CERT_PATH = "/home/mokero/statschat-ke/knbs_chain.pem"
+
+def safe_get(url, timeout=60):
+    """
+    First attempt secure request with KNBS cert chain.
+    Fallback to verify=False if KNBS sends incomplete chain.
+    """
+    try:
+        return requests.get(url, verify=CA_CERT_PATH, timeout=timeout)
+    except requests.exceptions.SSLError:
+        print(f"[SSL WARNING] Broken chain for {url}. Retrying with verify=False…")
+        return requests.get(url, verify=False, timeout=timeout)
 
 # %% Scrape intermediate report pages and extract PDF links
 all_pdf_entries = {}  # {"pdf_url": "report_page", ...}
@@ -70,8 +82,8 @@ while page <= page_end:
 
     # Visit each page and extract report links
     url = f"{base_url}{page}/"
-    response = requests.get(url)
-
+    #response = requests.get(url, verify=CA_CERT_PATH, timeout=60)
+    response = safe_get(url)
     if response.status_code != 200:
         print(f"Failed to access {url}. Stopping search.")
         break
@@ -102,7 +114,7 @@ while page <= page_end:
             continue  # Skip already visited report pages
 
         visited_report_pages.add(report_url)
-        report_response = requests.get(report_url)
+        report_response = safe_get(report_url)
 
         if report_response.status_code != 200:
             print(f"Failed to access report page: {report_url}")
@@ -164,7 +176,7 @@ for pdf, report_page in tqdm(
     file_path = DATA_DIR / pdf_name
 
     # Download PDF
-    response = requests.get(pdf_url)
+    response = safe_get(pdf_url)
 
     if response.status_code == 200:
         with open(file_path, "wb") as file:

@@ -11,7 +11,27 @@ from tqdm import tqdm
 from bs4 import BeautifulSoup
 from urllib.request import Request, urlopen
 from datetime import datetime
+import ssl
 
+CA_CERT_PATH = "/home/mokero/statschat-ke/knbs_chain.pem"
+
+def safe_urlopen(url, timeout=60):
+    """
+    Try KNBS custom CA bundle first.
+    If SSL fails, retry with certificate verification disabled.
+    """
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    # 1. Try with the KNBS intermediate CA
+    try:
+        ctx = ssl.create_default_context(cafile=CA_CERT_PATH)
+        return urlopen(Request(url, headers=headers), context=ctx, timeout=timeout)
+    except ssl.SSLError:
+        print(f"[SSL WARNING] Falling back to verify=False for: {url}")
+
+        # 2. Retry without verification
+        insecure_ctx = ssl._create_unverified_context()
+        return urlopen(Request(url, headers=headers), context=insecure_ctx, timeout=timeout)
 # %%
 # set relative paths
 # Update for latest PDFs or setup when using for first time
@@ -280,8 +300,9 @@ def get_abstract_metadata(url: str) -> dict:  # noqa: C901
         dict: Dictionary of abstract metadata.
     """
     # Scrape PDF links from KNBS website
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    web_byte = urlopen(req).read()
+    #req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    #web_byte = urlopen(req).read()
+    web_byte = safe_urlopen(url).read()
 
     soup = BeautifulSoup(web_byte, features="html.parser")
 

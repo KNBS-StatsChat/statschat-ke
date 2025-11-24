@@ -102,6 +102,8 @@ async def search(
 
     # Choose your model (e.g., Mistral-7B, DeepSeek, Llama-3, etc.)
     MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
+   # MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+   # MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"
     # Load model and tokenizer
     print("Building the tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
@@ -109,8 +111,8 @@ async def search(
     print("Loading the model...")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
-        torch_dtype=torch.float16,  # Use float16 for efficiency if using a GPU
-        device_map="auto",  # Automatically selects GPU if available
+        torch_dtype=torch.float32,  # Use float16 for efficiency if using a GPU
+        device_map="cpu",  # Automatically selects GPU if available
     )
 
     # Get the most relevant text chunks
@@ -125,6 +127,13 @@ async def search(
 
     raw_response = generate_response(user_input, model, tokenizer)
     formatted_response = format_response(raw_response)
+
+   # most_likely_answer = formatted_response.get(
+	# "most_likely_answer",
+     #    "No suitable answer, but relevant information may exist in a PDF.",
+    #)
+    #context_from = formatted_response.get("where_context_from", "Context not found")
+   # context_reference = formatted_response.get("context_reference", "No reference available")
 
     # If no suitable answer
     if formatted_response.get("most_likely_answer") is None:
