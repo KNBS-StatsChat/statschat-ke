@@ -48,7 +48,7 @@ def extract_pdf_text(pdf_path: Path, method: str = "fitz") -> dict:
 
     Supported methods:
         - 'fitz' (PyMuPDF)
-        - 'pypdf2'
+        - 'pypdf'
         - 'pdfplumber'
 
     Args:
@@ -62,7 +62,7 @@ def extract_pdf_text(pdf_path: Path, method: str = "fitz") -> dict:
         doc = fitz.open(pdf_path)
         return {page.number + 1: page.get_text() for page in doc}
 
-    elif method == "pypdf2":
+    elif method == "pypdf":
         reader = PdfReader(str(pdf_path))
         return {i + 1: page.extract_text() or "" for i, page in enumerate(reader.pages)}
 
@@ -219,7 +219,7 @@ def json_to_csv(json_dir: Path, output_dir: Path, pdf_extractor_name: str = "fit
     Args:
         json_dir (Path): Directory containing JSON files.
         output_dir (Path): Directory where the CSV file will be saved.
-        pdf_extractor_name (str): Name of the extractor used (e.g., 'fitz', 'pypdf2', 'pdfplumber').
+        pdf_extractor_name (str): Name of the extractor used (e.g., 'fitz', 'pypdf', 'pdfplumber').
 
     Returns:
         None. Writes the combined CSV file to disk.
@@ -383,14 +383,14 @@ if __name__ == "__main__":
     json_to_csv(
         json_dir=Path("outputs/tests"), 
         output_dir=Path("outputs/tests"), 
-        pdf_extractor_name="pypdf2"
+        pdf_extractor_name="pypdf"
     )
 
     
     combine_json_reports_to_markdown(
         json_dir=Path("outputs/tests"),
         output_dir=Path("outputs/tests"),
-        pdf_extractor_name='pypdf2'
+        pdf_extractor_name='pypdf'
     )
     
     # Cleanup: delete all JSON files in OUTPUT_TESTS_DIR

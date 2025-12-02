@@ -1,7 +1,7 @@
 # %%
 # import modules
 import os
-from pypdf import PdfReader
+import fitz  # PyMuPDF
 import json
 import re
 from pathlib import Path
@@ -79,18 +79,19 @@ def generate_latest_dir(original_dir: Path) -> Path:
 
 
 def get_name_and_meta(pdf_file_path):
-    """Extracts file name and metadata from PDF
+    """Extracts file name and metadata from PDF using PyMuPDF
 
     Args:
         file_path (path): file path for PDF file
 
     Returns:
         file_name: file for PDF file
-        pdf_metadata: metadata for PDF (dates etc)
+        pdf_metadata: metadata dictionary for PDF (dates etc)
     """
     file_name = pdf_file_path.name
-    pdf_metadata = PdfReader(pdf_file_path)
-    pdf_metadata = pdf_metadata.metadata
+    doc = fitz.open(pdf_file_path)
+    pdf_metadata = doc.metadata
+    doc.close()
 
     return (file_name, pdf_metadata)
 
@@ -128,7 +129,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
     date from metadata, or the current system date as a final fallback.
 
     Args:
-        metadata: PDF metadata dictionary from pypdf.PdfReader (can be None).
+        metadata: PDF metadata dictionary from PyMuPDF (can be None).
         filename (str): The filename from which to extract a year if needed.
         counter (int): A running count of files that lack reliable date information.
 
@@ -140,7 +141,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
     pdf_creation_date = None  # Initialize variable to store the extracted date.
 
     def preprocess_date(date_str: str) -> str:
-        """Extracts only the YYYYMMDD portion from a pypdf date string."""
+        """Extracts only the YYYYMMDD portion from a PDF date string (handles both pypdf and PyMuPDF formats)."""
         if date_str and date_str.startswith("D:"):
             date_str = date_str[2:10]  # Extract only YYYYMMDD
         return (
@@ -149,7 +150,8 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
 
     # Ensure metadata is not None before accessing it
     if metadata:
-        raw_date = metadata.get("/CreationDate") if isinstance(metadata, dict) else None
+        # PyMuPDF uses 'creationDate' (camelCase, no slash)
+        raw_date = metadata.get("creationDate") or metadata.get("/CreationDate")
         cleaned_date = preprocess_date(str(raw_date)) if raw_date else None
 
         if cleaned_date:
@@ -169,7 +171,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
 
     # Assign the current system date if no valid date is found.
     if not pdf_creation_date:
-        pdf_creation_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        pdf_creation_date = datetime.now().strftime("%Y-%m-%d")
         counter += (
             1  # Increment counter since the system date is being used as a fallback.
         )
@@ -181,11 +183,11 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
 def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
     """
     Extracts the modification date from PDF metadata if available. If the modification
-    date is more than 10 years earlier than the creation date, defaults to the creation
+    date is more than 5 years earlier than the creation date, defaults to the creation
     date.
 
     Args:
-        metadata: PDF metadata object from pypdf.PdfReader.
+        metadata: PDF metadata dictionary from PyMuPDF.
         pdf_creation_date (str): The creation date to use as a fallback if
         modification date is missing or invalid.
 
@@ -199,19 +201,33 @@ def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
         '2019-04-24'  # Fallback to creation date
     """
     try:
-        # Extract modification date from metadata
-        pdf_modification_date = str(metadata.modification_date)[:10]
+        # Extract modification date from metadata - PyMuPDF uses 'modDate' key
+        raw_mod_date = metadata.get("modDate") or metadata.get("/ModDate")
+        
+        if raw_mod_date:
+            # Parse the PDF date format (D:YYYYMMDDHHmmSS...)
+            if raw_mod_date.startswith("D:"):
+                date_str = raw_mod_date[2:10]  # Extract YYYYMMDD
+                if len(date_str) == 8 and date_str.isdigit():
+                    pdf_modification_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                else:
+                    return pdf_creation_date
+            else:
+                return pdf_creation_date
+            
+            # Parse the dates into datetime objects
+            creation_date_obj = datetime.strptime(pdf_creation_date, "%Y-%m-%d")
+            modification_date_obj = datetime.strptime(pdf_modification_date, "%Y-%m-%d")
 
-        # Parse the dates into datetime objects
-        creation_date_obj = datetime.strptime(pdf_creation_date, "%Y-%m-%d")
-        modification_date_obj = datetime.strptime(pdf_modification_date, "%Y-%m-%d")
+            # Check if the modification date is >5 years earlier than the creation date
+            if (modification_date_obj - creation_date_obj).days > 1825:  # ~5 years in days
+                return pdf_creation_date  # Default to creation date
 
-        # Check if the modification date is >5 years earlier than the creation date
-        if (modification_date_obj - creation_date_obj).days > 1825:  # ~5 years in days
-            return pdf_creation_date  # Default to creation date
-
-        return pdf_modification_date
-    except (AttributeError, ValueError):
+            return pdf_modification_date
+        else:
+            return pdf_creation_date
+            
+    except (AttributeError, ValueError, KeyError):
         # Fallback to creation date if modification date is unavailable or invalid
         return pdf_creation_date
 
@@ -238,7 +254,7 @@ def extract_pdf_metadata(pdf_file_path: Path) -> tuple:
 
 def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
     """
-    Extracts text content from each page of a PDF file.
+    Extracts text content from each page of a PDF file using PyMuPDF.
 
     Args:
         pdf_file_path (Path): The path to the PDF file.
@@ -249,23 +265,24 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
     """
 
     pages_text = []
-    with open(pdf_file_path, "rb") as pdf_file:
-        pdf_reader = PdfReader(pdf_file)
+    doc = fitz.open(pdf_file_path)
+    
+    for page_num in range(1, len(doc) + 1):
+        page = doc[page_num - 1]  # PyMuPDF uses 0-based indexing
+        text = page.get_text()
+        if text:
+            text = text.replace("\n", "")
 
-        for page_num, page in enumerate(pdf_reader.pages, start=1):
-            text = page.extract_text()
-            if text:
-                text = text.replace("\n", "")
-
-            page_link = f"{pdf_url}#page={page_num}"
-            pages_text.append(
-                {
-                    "page_number": page_num,
-                    "page_url": page_link,
-                    "page_text": text or "",
-                }
-            )
-
+        page_link = f"{pdf_url}#page={page_num}"
+        pages_text.append(
+            {
+                "page_number": page_num,
+                "page_url": page_link,
+                "page_text": text or "",
+            }
+        )
+    
+    doc.close()
     return pages_text
 
 
