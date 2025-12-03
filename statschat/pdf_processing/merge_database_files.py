@@ -55,23 +55,27 @@ for pdf_file in LATEST_DATA_DIR.glob("*.pdf"):
 ORIGINAL_URL_DICT_PATH = DATA_DIR.joinpath("url_dict.json")
 LATEST_URL_DICT_PATH = LATEST_DATA_DIR.joinpath("url_dict.json")
 
-with open(ORIGINAL_URL_DICT_PATH, "r") as file:
-    original_url_dict = json.load(file)
+# Only merge if there's a latest url_dict to merge
+if LATEST_URL_DICT_PATH.exists():
+    with open(ORIGINAL_URL_DICT_PATH, "r") as file:
+        original_url_dict = json.load(file)
 
-with open(LATEST_URL_DICT_PATH, "r") as file:
-    latest_url_dict = json.load(file)
+    with open(LATEST_URL_DICT_PATH, "r") as file:
+        latest_url_dict = json.load(file)
 
-# Merge: Add only new entries
-new_entries = {
-    key: value for key, value in latest_url_dict.items() if key not in original_url_dict
-}
-original_url_dict.update(new_entries)
+    # Merge: Add only new entries
+    new_entries = {
+        key: value for key, value in latest_url_dict.items() if key not in original_url_dict
+    }
+    original_url_dict.update(new_entries)
 
-# Save updated original url_dict
-with open(ORIGINAL_URL_DICT_PATH, "w") as file:
-    json.dump(original_url_dict, file, indent=4)
-print(f"Added {len(new_entries)} new entries to {ORIGINAL_URL_DICT_PATH}")
+    # Save updated original url_dict
+    with open(ORIGINAL_URL_DICT_PATH, "w") as file:
+        json.dump(original_url_dict, file, indent=4)
+    print(f"Added {len(new_entries)} new entries to {ORIGINAL_URL_DICT_PATH}")
 
-# Remove latest url_dict to reset for the next run
-LATEST_URL_DICT_PATH.unlink()
-print(f"Deleted {LATEST_URL_DICT_PATH} to reset for next update.")
+    # Remove latest url_dict to reset for the next run
+    LATEST_URL_DICT_PATH.unlink()
+    print(f"Deleted {LATEST_URL_DICT_PATH} to reset for next update.")
+else:
+    print("No new url_dict.json to merge. Skipping URL dictionary update.")

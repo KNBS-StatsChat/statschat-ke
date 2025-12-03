@@ -1,46 +1,160 @@
-## How to update PDF Database with new PDF files
+## How to Update the PDF Database
 
-### For Server - run on a...basis (automatically done on KNBS server)
+This guide explains how to add new KNBS PDF publications to the StatsChat database.
 
-Before running **`pdf_runner.py`** ensure that the PDF_FILES_MODE (in **`main.toml`**) is set to the desired option **"UPDATE"**.
-You can either run the python file in the IDE or use in the terminal as below.
+---
 
-    ```shell
-    python statschat/pdf_runner.py
-    ```
+## Quick Start
 
-This script will webscrape PDF documents from the KNBS website, convert them to JSON files and either append or replace the vector store - based on the PDF_FILES_MODE parameter.
+### 1. Set the mode to UPDATE
 
-PDF_FILES_MODE = "UPDATE" -> Will only scrape the latest 5 pages of PDF files, compare existing PDF files in the vector store with
-those downloaded and only process new files - appending these to the database and "flushing" the latest data folders ready for a new run.
+Edit `statschat/config/main.toml`:
 
-### For Development
-For development/testing purposes this update can also be done by running these 3 scripts individually
-
-```
-1) Run script `pdf_downloader.py` and PDF_FILES_MODE (in main.toml) is set to the desired option "UPDATE".
+```toml
+[preprocess]
+mode = "UPDATE"  # Must be "UPDATE" not "SETUP"
 ```
 
-**Downloads newest PDF files into the `latest_pdf_downloads` folder. Informs how many new PDF files there are then converts them to json files in the `latest_json_conversions` folder**
+### 2. Run the update script
 
-```
-2) Run script 'preprocess.py'
-```
-
-**Splits the latest json conversion files, moves them to `latest_json_splits`, converts them to a pickle file and finally merges that pickle file with the pickle file currently in the `db_langchain_latest` folder**
-
-```
-3) Run script 'merge_database_files.py' to move
-   new PDF, json conversions and splits to relevant folders after database update.
+```shell
+python statschat/pdf_runner.py
 ```
 
-- Moves new PDF files to the from **`latest_pdf_downloads`** to **`pdf_downloads`** folder and then removes all files in the **`latest_pdf_downloads`**
+That's it! The script will automatically:
+- Scrape the latest PDFs from the KNBS website
+- Compare with existing PDFs to find new ones
+- Convert new PDFs to JSON
+- Update the vector database
+- Clean up temporary files
 
-- Moves new json conversions from **`latest_json_conversions`** to **`json_conversions`** folder and then removes all files in **`latest_json_conversion`**
+---
 
-- Moves new json splits from **`latest_json_splits`** to **`json_splits`** folder and then removes all files in **`latest_json_splits`**
+## Understanding SETUP vs UPDATE Mode
+
+| Aspect | SETUP Mode | UPDATE Mode |
+|--------|------------|-------------|
+| **Purpose** | Initial database creation | Add new publications |
+| **PDFs processed** | All PDFs in `pdf_downloads/` | Only new PDFs not already in database |
+| **Directories used** | `pdf_downloads/`, `json_conversions/` | `latest_pdf_downloads/`, `latest_json_conversions/` |
+| **Database action** | Creates new database | Appends to existing database |
+| **When to use** | First-time setup or full rebuild | Regular updates (e.g., weekly/monthly) |
+
+---
+
+## How UPDATE Mode Works
+
+UPDATE mode uses "latest_" prefixed directories as a staging area:
 
 ```
-Repeat process each time new KNBS PDF files are published to
-update the database that Statschats will use to answer questions
+1. Download    → latest_pdf_downloads/
+2. Convert     → latest_json_conversions/  
+3. Split       → latest_json_split/
+4. Merge       → Appends to main database
+5. Cleanup     → Moves files to main folders, clears latest_ folders
 ```
+
+This ensures the main database is only modified after successful processing.
+
+---
+
+## Detailed Steps (For Development/Debugging)
+
+If you need to run the update process step-by-step (useful for debugging):
+
+### Step 1: Download new PDFs
+
+```shell
+python statschat/pdf_processing/pdf_downloader.py
+```
+
+Downloads newest PDF files into `latest_pdf_downloads/`. Compares with existing PDFs and only keeps new ones.
+
+### Step 2: Convert and embed
+
+```shell
+python statschat/embedding/preprocess.py
+```
+
+- Converts new PDFs to JSON (`latest_json_conversions/`)
+- Splits JSON files (`latest_json_split/`)
+- Updates the vector database
+
+### Step 3: Merge files
+
+```shell
+python statschat/pdf_processing/merge_database_files.py
+```
+
+Moves files from `latest_*` directories to main directories:
+- `latest_pdf_downloads/` → `pdf_downloads/`
+- `latest_json_conversions/` → `json_conversions/`
+- `latest_json_split/` → `json_split/`
+
+Then clears the `latest_*` directories for the next run.
+
+---
+
+## How Duplicate Detection Works
+
+**PDFs that have already been downloaded will NOT be downloaded again.**
+
+The system tracks all downloaded PDFs in `pdf_downloads/url_dict.json`. Each entry contains:
+
+```json
+{
+  "Report-Name.pdf": {
+    "pdf_url": "https://www.knbs.or.ke/.../Report-Name.pdf",
+    "report_page": "https://www.knbs.or.ke/reports/report-name/"
+  }
+}
+```
+
+### During UPDATE mode:
+
+1. **Scrapes** PDF links from the KNBS website (pages 1-5 by default)
+2. **Loads** existing URLs from `url_dict.json`
+3. **Compares** each scraped URL against existing URLs
+4. **Downloads only** PDFs whose URL is not already in the dictionary
+5. **Exits early** if no new PDFs are found
+
+### The comparison is based on:
+
+- The **PDF URL** (e.g., `https://www.knbs.or.ke/.../report.pdf`)
+- NOT the filename alone
+
+This means:
+- ✅ Same PDF won't be re-downloaded
+- ✅ If KNBS uploads a new version with the same filename but different URL, it will be detected
+- ✅ Efficient - only processes genuinely new publications
+
+---
+
+## Configuration Options
+
+In `statschat/config/main.toml`:
+
+```toml
+[app]
+page_start = 1    # Start page for KNBS website scraping (1 = newest)
+page_end = 5      # End page (UPDATE mode typically only needs 1-5)
+```
+
+For UPDATE mode, pages 1-5 usually capture all recent publications. Increase `page_end` if you've missed several update cycles.
+
+---
+
+## Troubleshooting
+
+**"No new PDFs to process"**
+- This is normal if there are no new publications since last update
+- Check the KNBS website to confirm new publications exist
+
+**Tests failing with "No PDFs found in latest_pdf_downloads"**
+- This is expected when `latest_*` directories are empty
+- Tests will skip gracefully - this is not an error
+- Run in SETUP mode or populate directories to run full tests
+
+**Files stuck in latest_* directories**
+- Run `merge_database_files.py` to complete the update cycle
+- Or manually move files and clear the directories

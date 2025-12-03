@@ -239,6 +239,13 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
 
         print("Embedding documents chunks. Please wait...")
 
+        # Check if there are any chunks to embed
+        if not self.chunks or len(self.chunks) == 0:
+            print("No document chunks to embed. Skipping embedding step.")
+            self.logger.info("No document chunks to embed. Skipping embedding step.")
+            self.db = None
+            return None
+
         self.logger.info("Starting embedding of document chunks")
         print("Starting embedding of document chunks, please wait...")
 
@@ -257,6 +264,12 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         existing permanent vector store. Removes latest vector store files
         after merging.
         """
+
+        # Skip merge if there's nothing to merge
+        if self.db is None:
+            print("No new embeddings to merge. Skipping merge step.")
+            self.logger.info("No new embeddings to merge. Skipping merge step.")
+            return None
 
         print("Merging vector store. Please wait...")
 
