@@ -185,3 +185,4 @@ cython_debug/
 
 # VSCode
 .vscode/
+.python-version
