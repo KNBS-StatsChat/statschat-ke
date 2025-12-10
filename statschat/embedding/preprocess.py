@@ -36,24 +36,24 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         latest_only: bool = False,
         mode: str = "SETUP",
     ):
-        self.directory = data_dir + ("latest_" if mode == "UPDATE" else "") + directory
-        self.split_directory = (
-            data_dir + ("latest_" if mode == "UPDATE" else "") + split_directory
+        self.directory = os.path.join(
+            data_dir, ("latest_" if mode == "UPDATE" else ""), directory
         )
-        self.download_dir = data_dir + download_dir
+        self.split_directory = os.path.join(
+            data_dir, ("latest_" if mode == "UPDATE" else ""), split_directory
+        )
+        self.download_dir = os.path.join(data_dir, download_dir)
         self.split_length = split_length
         self.split_overlap = split_overlap
         self.embedding_model_name = embedding_model_name
         self.redundant_similarity_threshold = redundant_similarity_threshold
-        self.faiss_db_root = (
-            data_dir + faiss_db_root + ("_latest" if mode == "UPDATE" else "")
+        self.faiss_db_root = os.path.join(
+            data_dir, faiss_db_root + ("_latest" if mode == "UPDATE" else "")
         )
-        # For UPDATE mode, store the original FAISS db path (without _latest suffix)
-        # Only remove _latest suffix at the END of the string to avoid removing it from directory names
         if mode == "UPDATE" and self.faiss_db_root.endswith("_latest"):
-            self.original_faiss_db_root = self.faiss_db_root[:-7]  # Remove last 7 chars ("_latest")
+            self.original_faiss_db_root = self.faiss_db_root[:-7]
         else:
-            self.original_faiss_db_root = data_dir + faiss_db_root
+            self.original_faiss_db_root = os.path.join(data_dir, faiss_db_root)
         self.db = db
         self.latest_only = latest_only
         self.mode = mode
