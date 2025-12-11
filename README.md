@@ -73,6 +73,19 @@ Make sure that you're terminal is running from **`statschat-ke`**. Then use the 
 (requires huggingface api token) or **`local_llm.py`** script and change the **question** parameter 
 with the desired question:
 
+```shell
+# Cloud LLM (faster, requires HuggingFace API token)
+python statschat/generative/cloud_llm.py
+
+# Local LLM (slower, runs Mistral-7B locally)
+python statschat/generative/local_llm.py
+```
+
+> [!NOTE]
+> **Local LLM Performance:** Running Mistral-7B locally requires ~16GB RAM and takes 3-5 minutes per query. 
+> The model may occasionally fail to produce valid JSON output - in this case, the relevant documents 
+> found will still be displayed. For faster, more reliable responses, use `cloud_llm.py`.
+
 ![image](https://github.com/user-attachments/assets/36ec03e4-2d6a-4814-9220-8cc478196e52)
 
 The answer, context and response will be output in the terminal.

@@ -187,7 +187,16 @@ if __name__ == "__main__":
     raw_response = generate_response(user_input, model, tokenizer)
     formatted_response = format_response(raw_response)
     
-    if formatted_response["answer_provided"] and result_score_1 or result_score_2 < 0.5: #check
+    # Handle error case where JSON parsing failed
+    if "error" in formatted_response:
+        print(f"Note: Could not parse response as JSON. See raw response above.")
+        print(f"\nQuestion: {question}")
+        print("\nRelevant documents found:")
+        print(f"  1. {key_title_1} (Score: {round(result_score_1, 2)})")
+        print(f"     URL: {key_url_1}")
+        print(f"  2. {key_title_2} (Score: {round(result_score_2, 2)})")
+        print(f"     URL: {key_url_2}")
+    elif formatted_response.get("answer_provided") and result_score_1 or result_score_2 < 0.5: #check
         print(f"Question: {question}")
         
         # If no suitable answer

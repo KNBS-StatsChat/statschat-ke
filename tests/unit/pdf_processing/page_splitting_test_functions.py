@@ -5,14 +5,14 @@ This module provides utilities to validate that PDF to JSON conversion
 maintains page integrity by comparing page counts and validating file matching.
 """
 from pathlib import Path
-from pypdf import PdfReader
+import fitz  # PyMuPDF
 import json
 
 
 def get_pdf_page_counts(directory: Path) -> dict:
     """
     Loop through all PDF files in a directory and return a dictionary
-    with filenames and their page counts using pypdf.
+    with filenames and their page counts using PyMuPDF.
 
     Args:
         directory (Path): Path to the directory containing PDF files.
@@ -27,12 +27,11 @@ def get_pdf_page_counts(directory: Path) -> dict:
     for pdf_file in directory.glob("*.pdf"):
         print(f"Getting page count for: {pdf_file.name}")
         try:
-            # Open the PDF file in binary read mode
-            with open(pdf_file, "rb") as f:
-                # Create a PdfReader object to read the PDF
-                reader = PdfReader(f)
-                # Store the number of pages in the dictionary using the filename as the key
-                pdf_page_counts[pdf_file.name] = len(reader.pages)
+            # Open the PDF file using PyMuPDF
+            doc = fitz.open(pdf_file)
+            # Store the number of pages in the dictionary using the filename as the key
+            pdf_page_counts[pdf_file.name] = len(doc)
+            doc.close()
         except Exception as e:
             # Print an error message if the file couldn't be read
             print(f"Error reading {pdf_file.name}: {e}")

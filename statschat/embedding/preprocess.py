@@ -36,20 +36,24 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         latest_only: bool = False,
         mode: str = "SETUP",
     ):
-        self.directory = data_dir + ("latest_" if mode == "UPDATE" else "") + directory
-        self.split_directory = (
-            data_dir + ("latest_" if mode == "UPDATE" else "") + split_directory
+        self.directory = os.path.join(
+            data_dir, ("latest_" if mode == "UPDATE" else ""), directory
         )
-        self.download_dir = data_dir + download_dir
+        self.split_directory = os.path.join(
+            data_dir, ("latest_" if mode == "UPDATE" else ""), split_directory
+        )
+        self.download_dir = os.path.join(data_dir, download_dir)
         self.split_length = split_length
         self.split_overlap = split_overlap
         self.embedding_model_name = embedding_model_name
         self.redundant_similarity_threshold = redundant_similarity_threshold
-        self.faiss_db_root = (
-            data_dir + faiss_db_root + ("_latest" if mode == "UPDATE" else "")
+        self.faiss_db_root = os.path.join(
+            data_dir, faiss_db_root + ("_latest" if mode == "UPDATE" else "")
         )
-        # Remove '_latest' from faiss_db_root if present
-        self.original_faiss_db_root = (data_dir + faiss_db_root).replace("_latest", "")
+        if mode == "UPDATE" and self.faiss_db_root.endswith("_latest"):
+            self.original_faiss_db_root = self.faiss_db_root[:-7]
+        else:
+            self.original_faiss_db_root = os.path.join(data_dir, faiss_db_root)
         self.db = db
         self.latest_only = latest_only
         self.mode = mode
@@ -235,6 +239,13 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
 
         print("Embedding documents chunks. Please wait...")
 
+        # Check if there are any chunks to embed
+        if not self.chunks or len(self.chunks) == 0:
+            print("No document chunks to embed. Skipping embedding step.")
+            self.logger.info("No document chunks to embed. Skipping embedding step.")
+            self.db = None
+            return None
+
         self.logger.info("Starting embedding of document chunks")
         print("Starting embedding of document chunks, please wait...")
 
@@ -253,6 +264,12 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         existing permanent vector store. Removes latest vector store files
         after merging.
         """
+
+        # Skip merge if there's nothing to merge
+        if self.db is None:
+            print("No new embeddings to merge. Skipping merge step.")
+            self.logger.info("No new embeddings to merge. Skipping merge step.")
+            return None
 
         print("Merging vector store. Please wait...")
 

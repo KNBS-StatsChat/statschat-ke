@@ -94,7 +94,6 @@ trusted-host = pypi.org
 EOF
 ```
 
-For more details, see [SSL Fix Report](./docs/ssl_fix_report.md).
 
 ### setuptools Build Errors
 
