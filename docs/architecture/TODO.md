@@ -7,12 +7,12 @@ Tracking planned documentation work and improvements.
 ## Planned Documents
 
 ### Hub Document
-- [ ] `README.md` - Architecture overview (2-3 pages, links to spokes)
+- [x] `README.md` - Architecture overview (2-3 pages, links to spokes)
 
 ### Pipeline Documents (Spokes)
 - [ ] `pipeline-pdf-ingestion.md` - PDF download → JSON conversion
 - [ ] `pipeline-embedding.md` - JSON → FAISS vector store  
-- [ ] `pipeline-rag-query.md` - Query → LLM response
+- [x] `pipeline-rag-query.md` - Query → LLM response
 - [ ] `data-flow.md` - What data exists where, schemas, directory structure
 
 ### Completed
