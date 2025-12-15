@@ -48,7 +48,7 @@ for pdf_file in LATEST_DATA_DIR.glob("*.pdf"):
     source_file.rename(destination_file)
 
     print(f"{pdf_file.name} has been moved to {DATA_DIR}")
-    
+
 # %%
 # Update url_dict.json with new pdf files - removing the latest url_dict
 # Load original and latest URL dictionaries
@@ -65,7 +65,9 @@ if LATEST_URL_DICT_PATH.exists():
 
     # Merge: Add only new entries
     new_entries = {
-        key: value for key, value in latest_url_dict.items() if key not in original_url_dict
+        key: value
+        for key, value in latest_url_dict.items()
+        if key not in original_url_dict
     }
     original_url_dict.update(new_entries)
 

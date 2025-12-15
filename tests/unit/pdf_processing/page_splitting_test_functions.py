@@ -4,6 +4,7 @@ Helper functions for testing PDF page splitting functionality.
 This module provides utilities to validate that PDF to JSON conversion
 maintains page integrity by comparing page counts and validating file matching.
 """
+
 from pathlib import Path
 import fitz  # PyMuPDF
 import json
@@ -43,8 +44,8 @@ def get_pdf_page_counts(directory: Path) -> dict:
 def validate_page_splitting(json_folder: Path, expected_page_counts: dict) -> list:
     """
     Validates a collection of JSON files that describe PDF documents by performing two checks:
-    
-    1. Verifies that the filename extracted from the 'url' field in each JSON file matches (via substring) 
+
+    1. Verifies that the filename extracted from the 'url' field in each JSON file matches (via substring)
        one of the expected PDF filenames provided in the expected_page_counts dictionary.
     2. Confirms that the last 'page_number' listed in the 'content' array matches the expected total page count.
 
@@ -99,22 +100,21 @@ def validate_page_splitting(json_folder: Path, expected_page_counts: dict) -> li
             expected_pages = expected_page_counts.get(matched_filename)
 
             # Append the validation result for this JSON file
-            results.append({
-                "json_file": json_file.name,
-                "pdf_filename_in_json": filename_from_url,
-                "matched_expected_filename": matched_filename,
-                "filename_match_found": matched_filename is not None,
-                "last_page_number_from_json_content": last_page,
-                "expected_page_count_from_pdf": expected_pages,
-                "page_count_matches": last_page == expected_pages
-            })
+            results.append(
+                {
+                    "json_file": json_file.name,
+                    "pdf_filename_in_json": filename_from_url,
+                    "matched_expected_filename": matched_filename,
+                    "filename_match_found": matched_filename is not None,
+                    "last_page_number_from_json_content": last_page,
+                    "expected_page_count_from_pdf": expected_pages,
+                    "page_count_matches": last_page == expected_pages,
+                }
+            )
 
         except Exception as e:
             # If an error occurs, record it in the results
-            results.append({
-                "json_file": json_file.name,
-                "error": str(e)
-            })
+            results.append({"json_file": json_file.name, "error": str(e)})
 
     # Return the list of validation results
     return results
@@ -126,11 +126,11 @@ if __name__ == "__main__":
     This demonstrates how to use the functions with actual data directories.
     """
     from statschat import load_config
-    
+
     # Load configuration to determine directory paths
     config = load_config(name="main")
     mode = config["preprocess"]["mode"].upper()
-    
+
     # Set up directory paths based on mode
     base_dir = Path.cwd().joinpath("data")
     pdf_dir = base_dir.joinpath(
@@ -139,13 +139,13 @@ if __name__ == "__main__":
     json_dir = base_dir.joinpath(
         "json_conversions" if mode == "SETUP" else "latest_json_conversions"
     )
-    
+
     # Get expected page counts from PDF files before conversion to JSON files
     expected_page_counts = get_pdf_page_counts(pdf_dir)
-    
+
     # Checking JSON conversions against expected page counts
     validation_results = validate_page_splitting(json_dir, expected_page_counts)
-    
+
     # Print results
     for result in validation_results:
         print(result)

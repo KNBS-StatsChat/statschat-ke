@@ -1,7 +1,7 @@
 # Page Splitting Tests Documentation
 
-**Last Updated**: November 6, 2025  
-**Test Count**: 6 tests  
+**Last Updated**: November 6, 2025
+**Test Count**: 6 tests
 **Coverage**: Essential (integration tests + critical error handling)
 
 ## Overview
@@ -75,7 +75,7 @@ Edge Case & Error Handling (4) - Use tmp_path isolation
 ## Integration Tests (Production Data)
 
 ### `test_get_pdf_page_counts`
-**Type**: Integration test  
+**Type**: Integration test
 **Data**: Uses real PDFs from configured directory
 
 Validates that page counts are correctly extracted from PDF files.
@@ -107,7 +107,7 @@ for pdf_name, count in page_counts.items():
 ---
 
 ### `test_validate_page_splitting`
-**Type**: Integration test  
+**Type**: Integration test
 **Data**: Uses real PDFs and JSONs from configured directories
 
 Validates that JSON conversions maintain correct page counts from source PDFs.
@@ -144,7 +144,7 @@ Page splitting validation failures:
 ## Edge Case Tests (Isolation with tmp_path)
 
 ### `test_get_pdf_page_counts_empty_directory`
-**Purpose**: Validate handling of empty PDF directories  
+**Purpose**: Validate handling of empty PDF directories
 **Expected**: Returns empty dict without errors
 
 ```python
@@ -153,15 +153,15 @@ assert len(page_counts) == 0
 ```
 
 ### `test_get_pdf_page_counts_nonexistent_directory`
-**Purpose**: Validate handling of non-existent directories  
+**Purpose**: Validate handling of non-existent directories
 **Expected**: Returns empty dict gracefully (Path.glob handles this)
 
 ### `test_validate_page_splitting_empty_json_directory`
-**Purpose**: Validate handling of empty JSON directories  
+**Purpose**: Validate handling of empty JSON directories
 **Expected**: Returns empty list without errors
 
 ### `test_validate_page_splitting_empty_expected_counts`
-**Purpose**: Validate behavior when no PDFs were found  
+**Purpose**: Validate behavior when no PDFs were found
 **Expected**: Processes JSONs but reports no matches
 
 **Test Data**:
@@ -359,17 +359,17 @@ Loads the main configuration file.
 ### `data_dir`
 Path to PDF files directory, determined by config mode.
 
-**Setup Mode**: `data/pdf_downloads`  
+**Setup Mode**: `data/pdf_downloads`
 **Update Mode**: `data/latest_pdf_downloads`
 
 ### `json_dir`
 Path to JSON conversion files directory, determined by config mode.
 
-**Setup Mode**: `data/json_conversions`  
+**Setup Mode**: `data/json_conversions`
 **Update Mode**: `data/latest_json_conversions`
 
 ### `tmp_path`
-**Built-in pytest fixture**  
+**Built-in pytest fixture**
 Provides temporary directory that's automatically cleaned up.
 
 **Used by**: All edge case, error handling, negative, and parameterized tests
@@ -439,7 +439,7 @@ pip install pypdf pytest
 
 **Cause**: Directory is empty or doesn't exist
 
-**Solution**: 
+**Solution**:
 1. Check config mode setting in `config/main.toml`
 2. Verify PDFs have been downloaded
 3. Check directory path is correct
@@ -597,7 +597,7 @@ Error handling (4):     ~0.02s  (isolated, uses tmp_path)
 def test_my_new_scenario(tmp_path):
     """
     Purpose: Brief description
-    
+
     Validates:
     - ✅ First check
     - ✅ Second check
@@ -605,14 +605,14 @@ def test_my_new_scenario(tmp_path):
     # Setup
     test_dir = tmp_path / "test_case"
     test_dir.mkdir()
-    
+
     # Create test data
     test_json = test_dir / "test.json"
     test_json.write_text('{"url": "...", "content": [...]}')
-    
+
     # Run function
     results = validate_page_splitting(test_dir, expected_counts)
-    
+
     # Assert
     assert results[0]['field'] == expected_value, "Clear error message"
 ```
@@ -683,5 +683,5 @@ pytest tests/unit/pdf_processing/test_page_splitting.py::test_my_new_scenario -v
 
 ---
 
-**Last Updated**: November 6, 2025  
+**Last Updated**: November 6, 2025
 **Status**: ✅ Streamlined to 6 essential tests

@@ -11,6 +11,7 @@ Refined unit tests for statschat.pdf_processing.pdf_downloader
 Run:
     pytest -s -v tests/unit/pdf_processing/test_pdf_downloader.py
 """
+
 import pytest
 import json
 import importlib
@@ -20,6 +21,7 @@ from unittest.mock import MagicMock
 # Configure logging for the test module
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def _build_side_effect(report_listing_html, report_page_html, pdf_bytes):
     """
@@ -38,6 +40,7 @@ def _build_side_effect(report_listing_html, report_page_html, pdf_bytes):
         Callable: A function that takes a URL and returns a mock response object with
         appropriate `status_code` and `content` attributes based on the URL.
     """
+
     def side_effect(url, *a, **k):
         url = str(url)
         resp = MagicMock()
@@ -54,7 +57,9 @@ def _build_side_effect(report_listing_html, report_page_html, pdf_bytes):
             resp.status_code = 404
             resp.content = b""
         return resp
+
     return side_effect
+
 
 def _assert_calls(mock_get):
     """
@@ -72,6 +77,7 @@ def _assert_calls(mock_get):
     assert any(str(u).endswith("/reports/report-1/") for u in called)
     assert any(str(u).endswith("/files/sample.pdf") for u in called)
 
+
 def _assert_schema_and_values(d, filename="sample.pdf"):
     """
     Assert that the given dictionary `d` contains the expected schema and values for a PDF file entry.
@@ -84,9 +90,10 @@ def _assert_schema_and_values(d, filename="sample.pdf"):
         AssertionError: If the dictionary does not contain the expected filename, schema, or value formats.
     """
     assert filename in d
-    assert set(d[filename].keys()) == {"pdf_url","report_page"}
+    assert set(d[filename].keys()) == {"pdf_url", "report_page"}
     assert d[filename]["pdf_url"].endswith("/files/sample.pdf")
     assert d[filename]["report_page"].endswith("/reports/report-1/")
+
 
 def _silence_tqdm(monkeypatch):
     """
@@ -100,7 +107,9 @@ def _silence_tqdm(monkeypatch):
         monkeypatch: The pytest monkeypatch fixture used to modify or replace attributes for testing.
     """
     import statschat.pdf_processing.pdf_downloader as dl
+
     monkeypatch.setattr(dl, "tqdm", lambda it, **k: it)
+
 
 def test_pdf_download_and_url_dict_setup(tmp_path, monkeypatch):
     """
@@ -118,7 +127,10 @@ def test_pdf_download_and_url_dict_setup(tmp_path, monkeypatch):
         AssertionError: If the PDF is not downloaded correctly, or url_dict.json does not match the expected schema and values.
     """
     logger.info("Running SETUP mode test...")
-    mock_config = {"preprocess":{"mode":"SETUP"},"app":{"page_start":1,"page_end":1}}
+    mock_config = {
+        "preprocess": {"mode": "SETUP"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
     monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
     monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
     _silence_tqdm(monkeypatch)
@@ -129,9 +141,12 @@ def test_pdf_download_and_url_dict_setup(tmp_path, monkeypatch):
 
     mock_get = MagicMock()
     mock_get.side_effect = _build_side_effect(listing, report, pdf_bytes)
-    monkeypatch.setattr("statschat.pdf_processing.pdf_downloader.requests.get", mock_get)
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
 
     import statschat.pdf_processing.pdf_downloader as dl
+
     importlib.reload(dl)
     dl.main()
 
@@ -145,6 +160,7 @@ def test_pdf_download_and_url_dict_setup(tmp_path, monkeypatch):
     logger.info(f"url_dict.json contents: {url_dict}")
     _assert_schema_and_values(url_dict)
 
+
 def test_pdf_update_mode_writes_only_new_entries(tmp_path, monkeypatch):
     """
     Test that in UPDATE mode, only new PDF entries are written to the latest_pdf_downloads directory.
@@ -157,7 +173,10 @@ def test_pdf_update_mode_writes_only_new_entries(tmp_path, monkeypatch):
         - The schema and values of the new entry are correct.
     """
     logger.info("Running UPDATE mode test (writes only new entries)...")
-    mock_config = {"preprocess":{"mode":"UPDATE"},"app":{"page_start":1,"page_end":1}}
+    mock_config = {
+        "preprocess": {"mode": "UPDATE"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
     monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
     monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
     _silence_tqdm(monkeypatch)
@@ -165,13 +184,18 @@ def test_pdf_update_mode_writes_only_new_entries(tmp_path, monkeypatch):
     base = tmp_path / "data"
     orig = base / "pdf_downloads"
     latest = base / "latest_pdf_downloads"
-    orig.mkdir(parents=True); latest.mkdir(parents=True)
-    (orig / "url_dict.json").write_text(json.dumps({
-        "existing.pdf":{
-            "pdf_url":"https://www.knbs.or.ke/files/existing.pdf",
-            "report_page":"https://www.knbs.or.ke/reports/report-0/"
-        }
-    }))
+    orig.mkdir(parents=True)
+    latest.mkdir(parents=True)
+    (orig / "url_dict.json").write_text(
+        json.dumps(
+            {
+                "existing.pdf": {
+                    "pdf_url": "https://www.knbs.or.ke/files/existing.pdf",
+                    "report_page": "https://www.knbs.or.ke/reports/report-0/",
+                }
+            }
+        )
+    )
 
     listing = '<a href="https://www.knbs.or.ke/reports/report-1/">Report 1</a>'
     report = '<a href="https://www.knbs.or.ke/files/sample.pdf">Download PDF</a>'
@@ -179,9 +203,12 @@ def test_pdf_update_mode_writes_only_new_entries(tmp_path, monkeypatch):
 
     mock_get = MagicMock()
     mock_get.side_effect = _build_side_effect(listing, report, pdf_bytes)
-    monkeypatch.setattr("statschat.pdf_processing.pdf_downloader.requests.get", mock_get)
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
 
     import statschat.pdf_processing.pdf_downloader as dl
+
     importlib.reload(dl)
     dl.main()
 
@@ -194,8 +221,9 @@ def test_pdf_update_mode_writes_only_new_entries(tmp_path, monkeypatch):
     latest_dict = json.loads(latest_dict_path.read_text())
     logger.info(f"url_dict.json contents in UPDATE: {latest_dict}")
     assert list(latest_dict.keys()) == ["sample.pdf"]
-    _assert_schema_and_values(latest_dict,"sample.pdf")
+    _assert_schema_and_values(latest_dict, "sample.pdf")
     assert (latest / "sample.pdf").read_bytes() == pdf_bytes
+
 
 def test_update_mode_no_original_dict_exits_cleanly(tmp_path, monkeypatch):
     """
@@ -206,7 +234,10 @@ def test_update_mode_no_original_dict_exits_cleanly(tmp_path, monkeypatch):
     downloads directory.
     """
     logger.info("Running UPDATE mode test (no original dict, should exit)...")
-    mock_config = {"preprocess":{"mode":"UPDATE"},"app":{"page_start":1,"page_end":1}}
+    mock_config = {
+        "preprocess": {"mode": "UPDATE"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
     monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
     monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
     _silence_tqdm(monkeypatch)
@@ -220,9 +251,12 @@ def test_update_mode_no_original_dict_exits_cleanly(tmp_path, monkeypatch):
     pdf_bytes = b"%PDF-1.4 sample"
     mock_get = MagicMock()
     mock_get.side_effect = _build_side_effect(listing, report, pdf_bytes)
-    monkeypatch.setattr("statschat.pdf_processing.pdf_downloader.requests.get", mock_get)
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
 
     import statschat.pdf_processing.pdf_downloader as dl
+
     importlib.reload(dl)
     with pytest.raises(SystemExit):
         dl.main()

@@ -4,7 +4,7 @@ During the development of embedding pipeline tests, we discovered and fixed **3 
 
 ## Bug #1: Filepath Check for "0000" Filter ✅ FIXED
 
-**File**: `statschat/embedding/latest_updates.py`  
+**File**: `statschat/embedding/latest_updates.py`
 **Function**: `find_latest()`
 
 ### Problem
@@ -35,7 +35,7 @@ for filepath in glob.glob(f"{dir}/*.json"):
 
 ## Bug #2: Incorrect Type Hint Syntax ✅ FIXED
 
-**File**: `statschat/embedding/latest_updates.py`  
+**File**: `statschat/embedding/latest_updates.py`
 **Function**: `compare_latest()`
 
 ### Problem
@@ -61,7 +61,7 @@ def compare_latest(dir, latest_filepaths) -> tuple[list[str], list[str]]:
 
 ## Bug #3: Split Document Update Glob Pattern ✅ FIXED
 
-**File**: `statschat/embedding/latest_updates.py`  
+**File**: `statschat/embedding/latest_updates.py`
 **Function**: `update_split_documents()`
 
 ### Problem
@@ -97,7 +97,7 @@ for fl in former_latest:  # fl = "2024-Economic-Survey.json"
 
 ## Bug #4: String Replace Removes Substring Anywhere ✅ FIXED
 
-**File**: `statschat/embedding/preprocess.py`  
+**File**: `statschat/embedding/preprocess.py`
 **Function**: `PrepareVectorStore.__init__()`
 
 ### Problem

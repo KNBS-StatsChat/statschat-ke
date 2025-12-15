@@ -11,7 +11,6 @@ import re
 
 
 def main():
-    
 
     # %% Configuration
 
@@ -48,13 +47,14 @@ def main():
                 original_url_dict = json.load(json_file)
                 print(f"Loaded existing url_dict.json from {ORIGINAL_URL_DICT_PATH}")
         else:
-            print("No existing url_dict.json found in pdf_downloads. Exiting update mode.")
+            print(
+                "No existing url_dict.json found in pdf_downloads. Exiting update mode."
+            )
             sys.exit(1)  # Nothing to update if there's no record
 
         url_dict = {}  # This will store only new entries
 
-
-    page = page_start = config["app"]["page_start"]
+    page = config["app"]["page_start"]
     page_end = config["app"]["page_end"]
 
     max_pages = 100 if PDF_FILES == "SETUP" else page_end  # Limit to 5 for updates
@@ -121,9 +121,9 @@ def main():
             # if pdf link found - retain first one
             if pdf_links:
                 pdf_links = pdf_links["href"]
-                all_pdf_entries[
-                    pdf_links
-                ] = report_url  # Store the PDF URL and report page URL
+                all_pdf_entries[pdf_links] = (
+                    report_url  # Store the PDF URL and report page URL
+                )
 
         page += 1
 
@@ -152,7 +152,9 @@ def main():
         all_pdf_entries = new_entries  # Replace with filtered dictionary
 
     # %% Download PDFs and Update URL Dictionary
-    format = "[{elapsed}<{remaining}]{n_fmt}/{total_fmt}|{l_bar}{bar} {rate_fmt}{postfix}"
+    format = (
+        "[{elapsed}<{remaining}]{n_fmt}/{total_fmt}|{l_bar}{bar} {rate_fmt}{postfix}"
+    )
     for pdf, report_page in tqdm(
         all_pdf_entries.items(),
         desc="DOWNLOADING PDF FILES:",
@@ -190,6 +192,7 @@ def main():
 
     if PDF_FILES == "SETUP":
         print("Finished downloading all PDF files.")
+
 
 if __name__ == "__main__":
     main()

@@ -31,7 +31,7 @@ using only the information contained within the documents.
 
 For this prototype, relevant web pages with PDF's are scraped and the data stored in `data/pdf_downloads`,
 the docstore / embedding store that is created is likewise and stored in `data/db_langchain` after SETUP and then
-also in `data/db_langchain_latest` after UPDATE. The LLM is either run locally with `local_llm.py` or an 
+also in `data/db_langchain_latest` after UPDATE. The LLM is either run locally with `local_llm.py` or an
 API with `main_api_local.py` (both backend).
 
 ## Overview
@@ -48,7 +48,7 @@ API with `main_api_local.py` (both backend).
 > [!NOTE]
 > **Ensure the environment has been configured before setting up or updating the vector store.**
 
-Before running `pdf_runner.py` in an integrated development environment (IDE) ensure that the PDF_FILES_MODE (in `main.toml`) 
+Before running `pdf_runner.py` in an integrated development environment (IDE) ensure that the PDF_FILES_MODE (in `main.toml`)
 is set to the desired option. It can also be run in the command line as below.
 
     ```shell
@@ -60,7 +60,7 @@ is set to the desired option. It can also be run in the command line as below.
 
 This script will webscrape PDF documents from the KNBS website, convert them to JSON files and either append or replace the vector store - based on the `PDF_FILES_MODE` parameter.
 
-`PDF_FILES_MODE = "SETUP"` -> Will scrape all pdf files from the KNBS website and reset the vector store, creating a new one from the PDF documents that are scraped and processed into JSON files. This will only need to be done `once` as afterwards it will just need updating. 
+`PDF_FILES_MODE = "SETUP"` -> Will scrape all pdf files from the KNBS website and reset the vector store, creating a new one from the PDF documents that are scraped and processed into JSON files. This will only need to be done `once` as afterwards it will just need updating.
 
 `PDF_FILES_MODE = "UPDATE"` -> Will only scrape the latest 5 pages of PDF files from the KNBS website, compare existing PDF files in the vector store with those downloaded and only process new files - appending these to the database and "flushing" the latest data folders ready for a new run. This will need to be done as new PDFs are added to the KNBS website.
 
@@ -69,8 +69,8 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 #### Run the sample questions manually (backend)
 
 This assumes the [vector store](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md) has already been created otherwise this will need to be done before.
-Make sure that you're terminal is running from **`statschat-ke`**. Then use the **`cloud_llm.py`** 
-(requires huggingface api token) or **`local_llm.py`** script and change the **question** parameter 
+Make sure that you're terminal is running from **`statschat-ke`**. Then use the **`cloud_llm.py`**
+(requires huggingface api token) or **`local_llm.py`** script and change the **question** parameter
 with the desired question:
 
 ```shell
@@ -82,8 +82,8 @@ python statschat/generative/local_llm.py
 ```
 
 > [!NOTE]
-> **Local LLM Performance:** Running Mistral-7B locally requires ~16GB RAM and takes 3-5 minutes per query. 
-> The model may occasionally fail to produce valid JSON output - in this case, the relevant documents 
+> **Local LLM Performance:** Running Mistral-7B locally requires ~16GB RAM and takes 3-5 minutes per query.
+> The model may occasionally fail to produce valid JSON output - in this case, the relevant documents
 > found will still be displayed. For faster, more reliable responses, use `cloud_llm.py`.
 
 ![image](https://github.com/user-attachments/assets/36ec03e4-2d6a-4814-9220-8cc478196e52)
@@ -101,7 +101,7 @@ In order to run the interactive Statschat API you will need to make sure you hav
 
 **`fastapi`**: This is a Python library to generate the API functionality
 
-To get these in your machine simply run: 
+To get these in your machine simply run:
 
 ```
 pip install fastapi uvicorn

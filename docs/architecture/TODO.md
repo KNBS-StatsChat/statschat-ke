@@ -10,9 +10,10 @@ Tracking planned documentation work and improvements.
 - [x] `README.md` - Architecture overview (2-3 pages, links to spokes)
 
 ### Pipeline Documents (Spokes)
-- [ ] `pipeline-pdf-ingestion.md` - PDF download → JSON conversion
-- [ ] `pipeline-embedding.md` - JSON → FAISS vector store  
-- [x] `pipeline-rag-query.md` - Query → LLM response
+- [x] `pipeline-pdf-ingestion.md` - PDF download → JSON conversion
+- [x] `pipeline-embedding.md` - JSON → FAISS vector store
+- [x] `pipeline-retrieval.md` - Semantic search & Reranking
+- [x] `pipeline-generation.md` - LLM interaction & Response parsing
 - [ ] `data-flow.md` - What data exists where, schemas, directory structure
 
 ### Completed
@@ -26,10 +27,11 @@ Places where a Mermaid or image diagram would improve understanding:
 
 | Location | Diagram Type | Description |
 |----------|--------------|-------------|
-| Hub README | Flowchart | High-level architecture showing all 3 pipelines |
+| Hub README | Flowchart | High-level architecture showing all 4 pipelines |
 | `pipeline-pdf-ingestion.md` | Sequence diagram | KNBS website → download → JSON conversion flow |
 | `pipeline-embedding.md` | Flowchart | JSON → splitting → embedding → FAISS merge |
-| `pipeline-rag-query.md` | Sequence diagram | Query → search → context selection → LLM → response |
+| `pipeline-retrieval.md` | Sequence diagram | Query → search → rerank → context selection |
+| `pipeline-generation.md` | Sequence diagram | Context → LLM → JSON → Highlighting |
 | `token-usage-guide.md` | Bar chart | Token distribution visualization |
 
 ---

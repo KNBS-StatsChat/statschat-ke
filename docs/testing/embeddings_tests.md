@@ -6,7 +6,7 @@ This directory contains focused, fast tests for the StatsChat-KE embedding pipel
 
 **Philosophy**: Keep tests simple, fast, and focused on real failure scenarios. No over-engineering.
 
---- 
+---
 
 ## Running Tests
 
@@ -125,7 +125,7 @@ Additional test dependencies:
 
 The `conftest.py` automatically sets:
 - `TRANSFORMERS_OFFLINE=1` - Prevents model downloads
-- `HF_DATASETS_OFFLINE=1` - Prevents dataset downloads  
+- `HF_DATASETS_OFFLINE=1` - Prevents dataset downloads
 - `TQDM_DISABLE=1` - Disables progress bars
 
 ## Common Issues

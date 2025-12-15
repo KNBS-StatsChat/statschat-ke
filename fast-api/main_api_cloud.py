@@ -1,6 +1,7 @@
 # %%
 from pydantic import BaseModel, Field
 from typing import Union, Optional
+
 # %%
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
@@ -11,6 +12,7 @@ from markupsafe import escape
 from statschat import load_config
 from statschat.generative.cloud_llm import Inquirer
 from statschat.embedding.latest_flag_helpers import get_latest_flag
+
 # %%
 
 # define session_id that will be used for log file and feedback

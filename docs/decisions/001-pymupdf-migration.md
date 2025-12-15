@@ -1,7 +1,7 @@
 # ADR-001: Migration from pypdf to PyMuPDF (fitz) for PDF Processing
 
-**Status:** Accepted  
-**Date:** 2024-12-02  
+**Status:** Accepted
+**Date:** 2024-12-02
 **Branch:** `production_fitz`
 
 ## Context
@@ -17,7 +17,7 @@ We needed to:
 
 ## Decision
 
-**Primary (Production):** PyMuPDF (`fitz`)  
+**Primary (Production):** PyMuPDF (`fitz`)
 **Secondary (Testing/Validation):** `pypdf` and `pdfplumber`
 
 ### Why PyMuPDF?
@@ -46,7 +46,7 @@ This allows detection of extraction issues by comparing outputs across libraries
 
 ## Changes Made
 
-Prior to 2025-12-02 we used pypdf for pdf conversion in the production mode. On 2025-12-02 we switched to use PyMuPDF. Here are the changes required for that transition. 
+Prior to 2025-12-02 we used pypdf for pdf conversion in the production mode. On 2025-12-02 we switched to use PyMuPDF. Here are the changes required for that transition.
 
 ### Key Differences Between pypdf and PyMuPDF
 
@@ -145,7 +145,7 @@ Run tests to validate the migration:
 # Page splitting tests
 pytest tests/unit/pdf_processing/test_page_splitting.py -s
 
-# Text extraction comparison tests  
+# Text extraction comparison tests
 pytest tests/unit/pdf_processing/test_pdf_text_extraction.py -s
 ```
 

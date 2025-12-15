@@ -1,6 +1,6 @@
 # Bug Fixes: UPDATE Mode Edge Cases
 
-**Date:** 2024-12-02  
+**Date:** 2024-12-02
 **Branch:** `production_fitz`
 
 ## Problem
@@ -12,7 +12,7 @@ Running `pdf_runner.py` in UPDATE mode crashed when there were no new PDFs to pr
 Three scripts assumed there would always be content to process, causing crashes on empty data:
 
 1. **`preprocess.py`** - Tried to create FAISS index from empty document list
-2. **`preprocess.py`** - Tried to merge non-existent embeddings 
+2. **`preprocess.py`** - Tried to merge non-existent embeddings
 3. **`merge_database_files.py`** - Tried to load non-existent `url_dict.json`
 
 ## Fixes Applied

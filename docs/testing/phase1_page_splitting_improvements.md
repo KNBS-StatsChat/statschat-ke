@@ -1,7 +1,7 @@
 # Phase 1: Page Splitting Test Improvements
 
-**Date**: November 5, 2025  
-**Branch**: test_pdfs  
+**Date**: November 5, 2025
+**Branch**: test_pdfs
 **Status**: ✅ Complete
 
 ## Overview
@@ -32,7 +32,7 @@ from pypdf import PdfReader
 reader = PdfReader(file)
 ```
 
-**Impact**: 
+**Impact**:
 - ✅ Eliminated deprecation warnings
 - ✅ Future-proofed the codebase
 - ✅ Tests continue to pass without modification
@@ -113,20 +113,20 @@ def test_get_pdf_page_counts(data_dir):
 def test_get_pdf_page_counts(data_dir):
     """
     Test that PDF page counts are correctly extracted from all PDF files.
-    
+
     Validates:
     - Returns a dictionary
     - All page counts are positive integers
     - At least some PDFs were found (non-empty result)
     """
     page_counts = get_pdf_page_counts(data_dir)
-    
+
     # Basic structure validation
     assert isinstance(page_counts, dict), "Result should be a dictionary"
-    
+
     # Validate we found some PDFs
     assert len(page_counts) > 0, f"No PDFs found in {data_dir}"
-    
+
     # Validate all page counts are positive integers
     for pdf_name, count in page_counts.items():
         assert isinstance(count, int), f"{pdf_name}: page count should be an integer"
@@ -158,7 +158,7 @@ def test_validate_page_splitting(json_dir, data_dir):
 def test_validate_page_splitting(json_dir, data_dir):
     """
     Test that JSON conversions maintain correct page counts from source PDFs.
-    
+
     Validates:
     - All JSON files have required fields
     - Filenames match between PDFs and JSON files
@@ -167,35 +167,35 @@ def test_validate_page_splitting(json_dir, data_dir):
     """
     expected_counts = get_pdf_page_counts(data_dir)
     results = validate_page_splitting(json_dir, expected_counts)
-    
+
     # Validate we found some results
     assert len(results) > 0, f"No JSON files found in {json_dir}"
-    
+
     # Track validation failures for detailed reporting
     failures = []
-    
+
     for result in results:
         # Check for error field (indicates processing failure)
         if "error" in result:
             failures.append(f"{result['json_file']}: {result['error']}")
             continue
-        
+
         # Validate required fields exist
         assert "json_file" in result
         assert "filename_match_found" in result
         assert "page_count_matches" in result
-        
+
         # Track failures for detailed error messages
         if not result['filename_match_found']:
             failures.append(f"{json_file}: No matching PDF found")
-        
+
         if not result['page_count_matches']:
             failures.append(
                 f"{json_file}: Page count mismatch "
                 f"(JSON: {result['last_page_number_from_json_content']}, "
                 f"PDF: {result['expected_page_count_from_pdf']})"
             )
-    
+
     # Report all failures together for easier debugging
     if failures:
         failure_msg = "\n".join([f"  - {f}" for f in failures])

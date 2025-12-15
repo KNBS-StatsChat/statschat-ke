@@ -7,6 +7,7 @@ to avoid 5-10 second waits per test.
 Run:
     pytest -s -v tests/unit/embedding/test_preprocess_integration.py
 """
+
 import pytest
 import json
 import os

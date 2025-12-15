@@ -48,7 +48,7 @@ UPDATE mode uses "latest_" prefixed directories as a staging area:
 
 ```
 1. Download    → latest_pdf_downloads/
-2. Convert     → latest_json_conversions/  
+2. Convert     → latest_json_conversions/
 3. Split       → latest_json_split/
 4. Merge       → Appends to main database
 5. Cleanup     → Moves files to main folders, clears latest_ folders

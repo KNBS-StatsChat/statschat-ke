@@ -8,7 +8,7 @@ python3.11 -m venv env
 source env/bin/activate
 ```
 
-or 
+or
 
 ```shell
 conda create -n env python=3.11

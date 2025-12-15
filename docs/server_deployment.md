@@ -1,4 +1,4 @@
-# Server deployment 
+# Server deployment
 
 ## **In case of issues with server setup on Ubuntu try these steps below:**
 
@@ -31,27 +31,27 @@ uvicorn fast-api.main_api_local:app --host 0.0.0.0 --port 8000
 ```
 curl http://102.220.23.39:8000/search?q=what+was+inflation
 ```
-Sends a test HTTP GET request to the FastAPI /search endpoint. Tests if the deployed server is: 
+Sends a test HTTP GET request to the FastAPI /search endpoint. Tests if the deployed server is:
 - running and reachable
 - accepting and responding to queries (like a question about inflation)
 
 ## **In case of issues with SSL Certification errors on Ubuntu:**
 
-This regards to an issue with **`pdf_downloader.py`** when trying to scrape PDF's 
-from the KNBS website. A SSL certification kept occurring most. A temporary fix for 
+This regards to an issue with **`pdf_downloader.py`** when trying to scrape PDF's
+from the KNBS website. A SSL certification kept occurring most. A temporary fix for
 this was to add **`verify = False`** as a parameter to all the response variables.
 
 ![image](https://github.com/user-attachments/assets/fabb2012-26b1-48b6-be43-43cd45d601d9)
 
-### For a more permanent solution 
+### For a more permanent solution
 
 First check the certificate used on the website:
 ```
 openssl s_client -connect [website name]:[port] -showcerts < /dev/null
 ```
-Look out for the Certificate Chain and a line like this: **`i:C = US, O = Let's Encrypt, CN = E5`**. 
-**`O = Let’s Encrypt`** shows the name and **`CN = R5`** gives the version. 
-In this case the certificate being used is the **`Let's Encrypt E5 certificate`**. 
+Look out for the Certificate Chain and a line like this: **`i:C = US, O = Let's Encrypt, CN = E5`**.
+**`O = Let’s Encrypt`** shows the name and **`CN = R5`** gives the version.
+In this case the certificate being used is the **`Let's Encrypt E5 certificate`**.
 
 **Installation process of the certificate**
 

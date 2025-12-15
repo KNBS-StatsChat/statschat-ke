@@ -203,30 +203,34 @@ def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
     try:
         # Extract modification date from metadata - PyMuPDF uses 'modDate' key
         raw_mod_date = metadata.get("modDate") or metadata.get("/ModDate")
-        
+
         if raw_mod_date:
             # Parse the PDF date format (D:YYYYMMDDHHmmSS...)
             if raw_mod_date.startswith("D:"):
                 date_str = raw_mod_date[2:10]  # Extract YYYYMMDD
                 if len(date_str) == 8 and date_str.isdigit():
-                    pdf_modification_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                    pdf_modification_date = (
+                        f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                    )
                 else:
                     return pdf_creation_date
             else:
                 return pdf_creation_date
-            
+
             # Parse the dates into datetime objects
             creation_date_obj = datetime.strptime(pdf_creation_date, "%Y-%m-%d")
             modification_date_obj = datetime.strptime(pdf_modification_date, "%Y-%m-%d")
 
             # Check if the modification date is >5 years earlier than the creation date
-            if (modification_date_obj - creation_date_obj).days > 1825:  # ~5 years in days
+            if (
+                modification_date_obj - creation_date_obj
+            ).days > 1825:  # ~5 years in days
                 return pdf_creation_date  # Default to creation date
 
             return pdf_modification_date
         else:
             return pdf_creation_date
-            
+
     except (AttributeError, ValueError, KeyError):
         # Fallback to creation date if modification date is unavailable or invalid
         return pdf_creation_date
@@ -266,7 +270,7 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
 
     pages_text = []
     doc = fitz.open(pdf_file_path)
-    
+
     for page_num in range(1, len(doc) + 1):
         page = doc[page_num - 1]  # PyMuPDF uses 0-based indexing
         text = page.get_text()
@@ -281,7 +285,7 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
                 "page_text": text or "",
             }
         )
-    
+
     doc.close()
     return pages_text
 
