@@ -37,10 +37,10 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         mode: str = "SETUP",
     ):
         self.directory = os.path.join(
-            data_dir, ("latest_" if mode == "UPDATE" else ""), directory
+            data_dir, ("latest_" if mode == "UPDATE" else "") + directory
         )
         self.split_directory = os.path.join(
-            data_dir, ("latest_" if mode == "UPDATE" else ""), split_directory
+            data_dir, ("latest_" if mode == "UPDATE" else "") + split_directory
         )
         self.download_dir = os.path.join(data_dir, download_dir)
         self.split_length = split_length
