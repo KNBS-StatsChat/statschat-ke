@@ -1,6 +1,7 @@
 # Test Infrastructure Overhaul & API Coverage Report
 **Updated**: 12 January 2026 (targeted coverage additions)
 **Scope**: Documentation Restructuring & Integration Test Implementation
+**Status**: Current test suite is sufficient for the project scope (API contracts, ingestion integrity, embedding update flows, and key helpers), achieved with lightweight mocks—no heavy model downloads required.
 
 ## 1. Executive Summary
 This report details the work undertaken to modernize the project's testing infrastructure. The primary goals were to:
@@ -38,12 +39,12 @@ Previous documentation mixed operational instructions (page ranges, config setti
 *   **Why**: This serves as a "Smoke Test". If the app fails to import (e.g., missing dependencies, syntax errors in `main_api_local.py`), this test will fail immediately.
 
 ### B. API Search Logic
-**File**: `tests/integration/test_api_search.py`
+**Files**: `tests/integration/test_api_search.py`, `tests/integration/test_api_cloud.py`
 
 *   **Objective**: Verify the `/search` endpoint validates inputs and correctly structures the complex JSON response.
 *   **Mocking Strategy**: Since the app uses large LLM models (Mistral-7B) and Vector DBs (FAISS), testing with real components is too slow and resource-heavy for CI.
-    *   **Solution**: We use `unittest.mock.patch` to mock `statschat.generative.local_llm` functions.
-    *   **Mocked Components**: `similarity_search` (Retriever), `generate_response` (LLM), and (Update) `AutoTokenizer`/`AutoModelForCausalLM` to prevent model downloads during tests.
+    *   **Solution**: We use `unittest.mock.patch` to mock `statschat.generative.local_llm` and `statschat.generative.cloud_llm` functions.
+    *   **Mocked Components**: `similarity_search` (Retriever), `generate_response` (LLM), `Inquirer` (Cloud), and `AutoTokenizer`/`AutoModelForCausalLM` to prevent model downloads.
 
 *   **Scenarios Covered**:
     1.  **Happy Path (Full RAG)**: Simulates a successful retrieval and generation.
@@ -52,9 +53,10 @@ Previous documentation mixed operational instructions (page ranges, config setti
     2.  **Input Validation**:
         *   Missing `q` parameter $\to$ **422 Unprocessable Entity**.
         *   Empty string `q=""` $\to$ **422 Unprocessable Entity** (verifies custom business logic).
-    3.  **(Update) Error Paths**:
+    3.  **(Update) Error Paths & Fallbacks**:
         *   Invalid `content_type` gracefully falls back to `"latest"`.
         *   `/feedback` endpoint accepts documented payload and returns **202**.
+        *   **Cloud API**: Verifies that specific cloud-only paths also handle empty results and invalid params gracefully.
 
 ### C. Embedding Pipeline Maintenance
 **File**: `tests/unit/embedding/test_preprocess_integration.py`
@@ -73,17 +75,21 @@ Previous documentation mixed operational instructions (page ranges, config setti
     *   Checks RAG document tag structure (`<Doc1>...`).
 
 ### E. Ingestion Utility Hardening (Update)
-**Files**: `tests/unit/pdf_processing/test_merge_database_files.py`, `tests/unit/pdf_processing/test_pdf_to_json.py`
+**Files**: `tests/unit/pdf_processing/test_merge_database_files.py`, `tests/unit/pdf_processing/test_pdf_to_json.py`, `tests/unit/embedding/test_merge_faiss_db.py`
 
 *   **Objective**: Cover lightweight but high-risk behaviors in ingestion glue code without touching real data.
 *   **Logic Tested**:
     *   `merge_database_files.py`: Moves from `latest_*` directories into canonical locations and merges `url_dict.json` entries without leaving artifacts.
     *   `pdf_to_json.extract_pdf_creation_date`: Prefers metadata dates, falls back to filename years, and only uses the current date as a last resort (with a counter increment).
+    *   `_merge_faiss_db` (New): Unit test mocking FAISS to ensure the "Update Mode" index merge logic correctly calls `merge_from` and cleans up the temporary directory.
 
-### F. Generative Helper Regression (Update)
-**Files**: `statschat/generative/utils.py`, `tests/unit/generative/test_utils.py`
+### F. Generative Helper Regression (Update), `tests/unit/generative/test_local_llm_format.py`
 
-*   **Objective**: Ensure deduplication logic actually removes duplicates before downstream scoring/highlighting.
+*   **Objective**: Ensure deduplication, highlighting, and formatting logic works robustly.
+*   **Change**:
+    *   Fixed `deduplicator` to record seen signatures and added a regression test to confirm first-occurrence preservation.
+    *   Added tests for `highlighter` (verifies HTML Bolding), `time_decay` (scoring penalty for old docs), and `trim_context`.
+    *   Added `test_local_llm_format` to verify the system gracefully handles invalid JSON outputs from the LLM
 *   **Change**: Fixed `deduplicator` to record seen signatures and added a regression test to confirm first-occurrence preservation.
 
 ---
@@ -104,9 +110,11 @@ pytest tests/
 
 **Update (targeted additions)**:
 ```bash
-pytest tests/unit/generative/test_utils.py \
-       tests/unit/pdf_processing/test_pdf_to_json.py \
-       tests/unit/pdf_processing/test_merge_database_files.py \
+pytest tests/unit/generative/test_utils.py \\
+       tests/integration/test_api_cloud.py \
+       tests/unit/embedding/test_merge_faiss_db.py -q
+```
+Result: **18+ passed**; confirms new coverage for Cloud API and additional ingestion utilities without heavy dependencie
        tests/integration/test_api_search.py -q
 ```
 Result: **10 passed** in ~5s (warnings only from upstream swig deps); confirms new coverage without heavy dependencies or model downloads.
