@@ -59,6 +59,8 @@ def mock_llm_logic():
         patch("main_api_local.similarity_search") as mock_sim,
         patch("main_api_local.generate_response") as mock_gen,
         patch("main_api_local.format_response") as mock_fmt,
+        patch("main_api_local.AutoTokenizer") as mock_tokenizer,
+        patch("main_api_local.AutoModelForCausalLM") as mock_model,
     ):
 
         # Mock returns
@@ -83,6 +85,10 @@ def mock_llm_logic():
             "where_context_from": "Section 1",
             "context_reference": "Page 1",
         }
+
+        # Stub out heavy model/tokenizer loading to avoid downloads
+        mock_tokenizer.from_pretrained.return_value = object()
+        mock_model.from_pretrained.return_value = object()
 
         yield {"search": mock_sim, "generate": mock_gen, "format": mock_fmt}
 
@@ -116,3 +122,32 @@ def test_search_endpoint_empty_query_string(client):
     response = client.get("/search", params={"q": ""})
     assert response.status_code == 422
     assert response.json()["detail"] == "Empty question"
+
+
+def test_search_endpoint_invalid_content_type_falls_back_to_latest(
+    client, mock_llm_logic
+):
+    """
+    Test GET /search with an invalid content_type; should fall back to 'latest'.
+    """
+    response = client.get(
+        "/search", params={"q": "What is GDP?", "content_type": "invalid"}
+    )
+    assert response.status_code == 200
+    assert response.json()["content_type"] == "latest"
+
+
+def test_feedback_endpoint_accepts_payload(client):
+    """
+    Test POST /feedback accepts the documented payload and returns 202.
+    """
+    payload = {
+        "rating": 1,
+        "rating_comment": "Useful",
+        "question": "Q?",
+        "content_type": "latest",
+        "answer": "A",
+    }
+    response = client.post("/feedback", json=payload)
+    assert response.status_code == 202
+    assert response.json() == ""

@@ -1,6 +1,5 @@
 # Test Infrastructure Overhaul & API Coverage Report
-**Date**: January 11, 2026
-**Author**: GitHub Copilot (Agent)
+**Updated**: 12 January 2026 (targeted coverage additions)
 **Scope**: Documentation Restructuring & Integration Test Implementation
 
 ## 1. Executive Summary
@@ -8,6 +7,7 @@ This report details the work undertaken to modernize the project's testing infra
 1.  **Clarify Documentation**: Separate "how to run the app" from "how to test the app".
 2.  **Close Coverage Gaps**: Implement the first set of Integration Tests for the FastAPI backend, ensuring the web server and search logic are verifiable.
 3.  **Fix Regressions**: Repair existing integration tests for the Embedding Pipeline.
+4.  **(Update)** Add minimal, high-ROI tests for API fallbacks, ingestion utilities, and generative helpers while keeping runtime and dependencies light.
 
 All tests are now passing (`pytest tests/`).
 
@@ -43,7 +43,7 @@ Previous documentation mixed operational instructions (page ranges, config setti
 *   **Objective**: Verify the `/search` endpoint validates inputs and correctly structures the complex JSON response.
 *   **Mocking Strategy**: Since the app uses large LLM models (Mistral-7B) and Vector DBs (FAISS), testing with real components is too slow and resource-heavy for CI.
     *   **Solution**: We use `unittest.mock.patch` to mock `statschat.generative.local_llm` functions.
-    *   **Mocked Components**: `similarity_search` (Retriever) and `generate_response` (LLM).
+    *   **Mocked Components**: `similarity_search` (Retriever), `generate_response` (LLM), and (Update) `AutoTokenizer`/`AutoModelForCausalLM` to prevent model downloads during tests.
 
 *   **Scenarios Covered**:
     1.  **Happy Path (Full RAG)**: Simulates a successful retrieval and generation.
@@ -52,6 +52,9 @@ Previous documentation mixed operational instructions (page ranges, config setti
     2.  **Input Validation**:
         *   Missing `q` parameter $\to$ **422 Unprocessable Entity**.
         *   Empty string `q=""` $\to$ **422 Unprocessable Entity** (verifies custom business logic).
+    3.  **(Update) Error Paths**:
+        *   Invalid `content_type` gracefully falls back to `"latest"`.
+        *   `/feedback` endpoint accepts documented payload and returns **202**.
 
 ### C. Embedding Pipeline Maintenance
 **File**: `tests/unit/embedding/test_preprocess_integration.py`
@@ -69,6 +72,20 @@ Previous documentation mixed operational instructions (page ranges, config setti
     *   Validates variable injection (formatting).
     *   Checks RAG document tag structure (`<Doc1>...`).
 
+### E. Ingestion Utility Hardening (Update)
+**Files**: `tests/unit/pdf_processing/test_merge_database_files.py`, `tests/unit/pdf_processing/test_pdf_to_json.py`
+
+*   **Objective**: Cover lightweight but high-risk behaviors in ingestion glue code without touching real data.
+*   **Logic Tested**:
+    *   `merge_database_files.py`: Moves from `latest_*` directories into canonical locations and merges `url_dict.json` entries without leaving artifacts.
+    *   `pdf_to_json.extract_pdf_creation_date`: Prefers metadata dates, falls back to filename years, and only uses the current date as a last resort (with a counter increment).
+
+### F. Generative Helper Regression (Update)
+**Files**: `statschat/generative/utils.py`, `tests/unit/generative/test_utils.py`
+
+*   **Objective**: Ensure deduplication logic actually removes duplicates before downstream scoring/highlighting.
+*   **Change**: Fixed `deduplicator` to record seen signatures and added a regression test to confirm first-occurrence preservation.
+
 ---
 
 ## 4. Verification
@@ -84,6 +101,15 @@ pytest tests/
 - **PASSED**: 37 tests
 - **SKIPPED**: 2 tests
 - **FAILED**: 0
+
+**Update (targeted additions)**:
+```bash
+pytest tests/unit/generative/test_utils.py \
+       tests/unit/pdf_processing/test_pdf_to_json.py \
+       tests/unit/pdf_processing/test_merge_database_files.py \
+       tests/integration/test_api_search.py -q
+```
+Result: **10 passed** in ~5s (warnings only from upstream swig deps); confirms new coverage without heavy dependencies or model downloads.
 
 ## 5. Future Considerations
 
