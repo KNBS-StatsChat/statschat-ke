@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 
 def test_deduplicator_removes_duplicates_preserving_first():
+    """Deduplicates records by key, keeping the first occurrence."""
     records = [
         {"title": "A", "date": "2024-01-01", "other": 1},
         {"title": "A", "date": "2024-01-01", "other": 2},
@@ -28,6 +29,7 @@ def test_deduplicator_removes_duplicates_preserving_first():
 
 
 def test_highlighter_marks_most_likely_answer():
+    """Bold-marks the model's most-likely answer phrase in matched docs."""
     docs = [
         {
             "page_content": "The economy grew rapidly.",
@@ -48,10 +50,12 @@ def test_highlighter_marks_most_likely_answer():
 
 
 def test_time_decay_downweights_older_dates():
+    """Assigns higher weight to more recent dates than older dates."""
     newer = time_decay("2024-01-01")
     older = time_decay("2020-01-01")
     assert older > newer
 
 
 def test_trim_context_strips_edges():
+    """Trims a context string to the intended core span."""
     assert trim_context("hello there world") == "there"

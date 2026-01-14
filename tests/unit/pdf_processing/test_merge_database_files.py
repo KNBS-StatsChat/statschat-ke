@@ -10,6 +10,7 @@ import sys
 
 
 def test_merge_database_files_moves_and_merges(tmp_path, monkeypatch):
+    """Moves latest_* artifacts into main dirs and merges pdf_downloads/url_dict."""
     base = tmp_path / "data"
     pdf_downloads = base / "pdf_downloads"
     json_conversions = base / "json_conversions"

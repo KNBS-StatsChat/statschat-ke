@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 
 def test_merge_faiss_db_merges_and_cleans(tmp_path, monkeypatch):
+    """Merges latest FAISS DB into original and cleans the latest directory."""
     from statschat.embedding import preprocess
 
     latest_dir = tmp_path / "db_langchain_latest"

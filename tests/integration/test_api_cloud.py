@@ -52,6 +52,8 @@ def client_factory():
 
 
 def test_search_invalid_content_type_falls_back(client_factory):
+    """Falls back to the default content_type when an invalid value is provided."""
+
     def make_query_impl(question, latest_filter, latest_weight, highlighting):
         return (
             [{"page_url": "http://example.com/doc", "title": "Doc", "score": 0.1}],
@@ -68,6 +70,8 @@ def test_search_invalid_content_type_falls_back(client_factory):
 
 
 def test_search_handles_empty_results(client_factory):
+    """Returns 200 with empty references/answer when retrieval yields no hits."""
+
     def make_query_impl(question, latest_filter, latest_weight, highlighting):
         return ([], "", types.SimpleNamespace(__dict__={}))
 

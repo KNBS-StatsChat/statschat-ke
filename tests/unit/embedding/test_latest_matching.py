@@ -246,6 +246,7 @@ def test_update_split_documents_flags(tmp_path):
 
 
 def test_find_matching_chunks():
+    """Selects chunk IDs whose metadata source matches a target publication."""
     from statschat.embedding.latest_updates import find_matching_chunks
 
     db_dict = {

@@ -2,6 +2,16 @@
 
 This document outlines the strategy, scope, and execution of tests for `StatsChat-KE`.
 
+## Guides by Area
+
+- API integration: [api_integration_tests.md](api_integration_tests.md)
+- Embeddings (maintained): [embedding_tests.md](embedding_tests.md)
+    - Historical reference (may be outdated): [embeddings_tests.md](embeddings_tests.md)
+- Generative layer: [generative_tests.md](generative_tests.md)
+- PDF processing: [pdf_processing_tests.md](pdf_processing_tests.md)
+    - Page splitting deep-dive: [page_splitting_tests.md](page_splitting_tests.md)
+- E2E tests: [e2e_tests.md](e2e_tests.md)
+
 ## 1. Quick Start
 
 **Prerequisites**: Ensure you have installed the test dependencies.

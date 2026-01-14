@@ -1,3 +1,8 @@
+"""Prompt-contract tests.
+
+Validates required input variables and basic formatting for local/cloud prompts.
+"""
+
 from statschat.generative.prompts_local import (
     EXTRACTIVE_PROMPT_PYDANTIC as LOCAL_PROMPT,
     STUFF_DOCUMENT_PROMPT as LOCAL_DOC_PROMPT,

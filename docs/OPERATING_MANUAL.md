@@ -1,5 +1,9 @@
 # Operating Manual
 
+*COULD DO WITH UPDATING TO ALSO INCLUDE HOW TO RUN STATSCHAT OR CLEARLY DEFINE THIS DOCUMENT*
+
+---
+
 This document provides detailed instructions for configuring, running, and managing the `StatsChat-KE` data pipeline. It is intended for developers and operators who need to ingest data or update the vector store.
 
 ## 1. System Configuration
