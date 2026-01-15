@@ -19,7 +19,7 @@ This update:
 3. Expands unit tests to cover the highest-value behaviors that affect downstream retrieval correctness.
 
 ## Why This Was Done
-Project guidance emphasized that tests should “properly test the code.” For this project, the critical contract is:
+Tests should properly test the code. For this project, the critical contract is:
 - producing stable, valid JSON artifacts
 - preserving page integrity and schema invariants downstream components depend on
 - handling date/metadata fallbacks deterministically
