@@ -4,7 +4,7 @@
 
 This guide explains how tokens are calculated for LLM queries in StatsChat, what configuration parameters affect token usage, and how to tune them for cost vs quality trade-offs.
 
-For pricing and deployment cost estimates, see [`docs/cost.md`](../cost.md).
+For pricing and deployment cost estimates, see [`cost.md`](../decisions/cost.md).
 
 ---
 

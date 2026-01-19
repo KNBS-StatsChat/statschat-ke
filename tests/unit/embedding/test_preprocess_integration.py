@@ -153,8 +153,9 @@ def test_update_mode_uses_latest_directories(
 
     # Setup directories for UPDATE mode
     data_dir = tmp_path / "data"
-    latest_json_dir = data_dir / "latest_" / "json_conversions"
-    latest_split_dir = data_dir / "latest_" / "json_split"
+    # App expects: data/latest_json_conversions (flat name, not subdir)
+    latest_json_dir = data_dir / "latest_json_conversions"
+    latest_split_dir = data_dir / "latest_json_split"
     original_faiss_dir = data_dir / "db_langchain"
     latest_faiss_dir = data_dir / "db_langchain_latest"
 
@@ -211,11 +212,12 @@ def test_update_mode_uses_latest_directories(
         )
 
         # Verify UPDATE mode used correct directories
+        # The app uses string concatenation ("latest_" + dir), not os.path.join
         assert prepper.directory == os.path.join(
-            f"{data_dir}/", "latest_", "json_conversions"
+            f"{data_dir}/", "latest_" + "json_conversions"
         )
         assert prepper.split_directory == os.path.join(
-            f"{data_dir}/", "latest_", "json_split"
+            f"{data_dir}/", "latest_" + "json_split"
         )
         assert prepper.faiss_db_root == f"{data_dir}/db_langchain_latest"
         # Normalize paths for comparison

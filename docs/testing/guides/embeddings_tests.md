@@ -1,5 +1,8 @@
 # Embedding Pipeline Tests
 
+> NOTE (Reference-only): This document is kept for historical context and may be outdated.
+> Prefer the maintained guide: [embedding_tests.md](embedding_tests.md).
+
 ## Overview
 
 This directory contains focused, fast tests for the StatsChat-KE embedding pipeline.
