@@ -24,6 +24,7 @@ import json
 import importlib
 import logging
 from unittest.mock import MagicMock
+from requests.exceptions import Timeout
 import fitz  # PyMuPDF
 
 
@@ -227,6 +228,333 @@ def test_pdf_download_incomplete_file(tmp_path, monkeypatch):
     url_dict_path = data_dir / "url_dict.json"
     url_dict = json.loads(url_dict_path.read_text())
     assert "sample.pdf" in url_dict, "Corrupted PDF should be in url_dict.json"
+
+
+def test_report_link_filter_excludes_census(tmp_path, monkeypatch):
+    """
+    Test that census report links are excluded from processing.
+    """
+    logger.info("Running census exclusion test...")
+    mock_config = {
+        "preprocess": {"mode": "SETUP"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
+    monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
+    monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+    _silence_tqdm(monkeypatch)
+
+    listing = (
+        '<a href="https://www.knbs.or.ke/reports/kenya-census-2019/">Census</a>'
+        '<a href="https://www.knbs.or.ke/reports/report-1/">Report 1</a>'
+        '<a href="https://www.knbs.or.ke/not-a-report/">Other</a>'
+    )
+    report = '<a href="https://www.knbs.or.ke/files/sample.pdf">Download PDF</a>'
+    pdf_bytes = b"%PDF-1.4 sample"
+
+    def side_effect(url, *a, **k):
+        resp = MagicMock()
+        if url.endswith("/all-reports/page/1/"):
+            resp.status_code = 200
+            resp.content = listing.encode()
+        elif url.endswith("/reports/report-1/"):
+            resp.status_code = 200
+            resp.content = report.encode()
+        elif url.endswith("/files/sample.pdf"):
+            resp.status_code = 200
+            resp.content = pdf_bytes
+        else:
+            resp.status_code = 404
+            resp.content = b""
+        return resp
+
+    mock_get = MagicMock()
+    mock_get.side_effect = side_effect
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
+
+    import statschat.pdf_processing.pdf_downloader as dl
+
+    importlib.reload(dl)
+    dl.main()
+
+    called = [str(c.args[0]) for c in mock_get.call_args_list]
+    assert not any("/reports/kenya-census" in u for u in called)
+    assert any(u.endswith("/reports/report-1/") for u in called)
+
+    data_dir = tmp_path / "data" / "pdf_downloads"
+    pdfs = list(data_dir.glob("*.pdf"))
+    assert len(pdfs) == 1
+    assert pdfs[0].read_bytes() == pdf_bytes
+
+
+def test_update_mode_skips_malformed_original_url_dict_entries(tmp_path, monkeypatch):
+    """
+    Test that malformed entries in the original url_dict.json do not break UPDATE mode.
+    """
+    logger.info("Running malformed url_dict entries test...")
+    mock_config = {
+        "preprocess": {"mode": "UPDATE"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
+    monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
+    monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+    _silence_tqdm(monkeypatch)
+
+    base = tmp_path / "data"
+    orig = base / "pdf_downloads"
+    latest = base / "latest_pdf_downloads"
+    orig.mkdir(parents=True)
+    latest.mkdir(parents=True)
+    (orig / "url_dict.json").write_text(
+        json.dumps(
+            {
+                "existing.pdf": {
+                    "pdf_url": "https://www.knbs.or.ke/files/existing.pdf",
+                    "report_page": "https://www.knbs.or.ke/reports/report-0/",
+                },
+                "bad-entry": "not-a-dict",
+            }
+        )
+    )
+
+    listing = '<a href="https://www.knbs.or.ke/reports/report-1/">Report 1</a>'
+    report = '<a href="https://www.knbs.or.ke/files/sample.pdf">Download PDF</a>'
+    pdf_bytes = b"%PDF-1.4 sample"
+
+    def side_effect(url, *a, **k):
+        resp = MagicMock()
+        if url.endswith("/all-reports/page/1/"):
+            resp.status_code = 200
+            resp.content = listing.encode()
+        elif url.endswith("/reports/report-1/"):
+            resp.status_code = 200
+            resp.content = report.encode()
+        elif url.endswith("/files/sample.pdf"):
+            resp.status_code = 200
+            resp.content = pdf_bytes
+        else:
+            resp.status_code = 404
+            resp.content = b""
+        return resp
+
+    mock_get = MagicMock()
+    mock_get.side_effect = side_effect
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
+
+    import statschat.pdf_processing.pdf_downloader as dl
+
+    importlib.reload(dl)
+    dl.main()
+
+    latest_dict_path = latest / "url_dict.json"
+    assert latest_dict_path.exists()
+    latest_dict = json.loads(latest_dict_path.read_text())
+    assert list(latest_dict.keys()) == ["sample.pdf"]
+    assert (latest / "sample.pdf").read_bytes() == pdf_bytes
+
+
+def test_pdf_download_forbidden_not_saved(tmp_path, monkeypatch):
+    """
+    Test that forbidden (HTTP 403) downloads are not saved or added to url_dict.json.
+    """
+    logger.info("Running forbidden download test...")
+    mock_config = {
+        "preprocess": {"mode": "SETUP"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
+    monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
+    monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+    _silence_tqdm(monkeypatch)
+
+    listing = '<a href="https://www.knbs.or.ke/reports/report-1/">Report 1</a>'
+    report = '<a href="https://www.knbs.or.ke/files/sample.pdf">Download PDF</a>'
+
+    def side_effect(url, *a, **k):
+        resp = MagicMock()
+        if url.endswith("/all-reports/page/1/"):
+            resp.status_code = 200
+            resp.content = listing.encode()
+        elif url.endswith("/reports/report-1/"):
+            resp.status_code = 200
+            resp.content = report.encode()
+        elif url.endswith("/files/sample.pdf"):
+            resp.status_code = 403
+            resp.content = b""
+        else:
+            resp.status_code = 404
+            resp.content = b""
+        return resp
+
+    mock_get = MagicMock()
+    mock_get.side_effect = side_effect
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
+
+    import statschat.pdf_processing.pdf_downloader as dl
+
+    importlib.reload(dl)
+    dl.main()
+
+    data_dir = tmp_path / "data" / "pdf_downloads"
+    pdfs = list(data_dir.glob("*.pdf"))
+    assert len(pdfs) == 0
+    url_dict = json.loads((data_dir / "url_dict.json").read_text())
+    assert "sample.pdf" not in url_dict
+
+
+def test_pdf_download_rate_limited_not_saved(tmp_path, monkeypatch):
+    """
+    Test that rate-limited (HTTP 429) downloads are not saved or added to url_dict.json.
+    """
+    logger.info("Running rate-limit download test...")
+    mock_config = {
+        "preprocess": {"mode": "SETUP"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
+    monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
+    monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+    _silence_tqdm(monkeypatch)
+
+    listing = '<a href="https://www.knbs.or.ke/reports/report-1/">Report 1</a>'
+    report = '<a href="https://www.knbs.or.ke/files/sample.pdf">Download PDF</a>'
+
+    def side_effect(url, *a, **k):
+        resp = MagicMock()
+        if url.endswith("/all-reports/page/1/"):
+            resp.status_code = 200
+            resp.content = listing.encode()
+        elif url.endswith("/reports/report-1/"):
+            resp.status_code = 200
+            resp.content = report.encode()
+        elif url.endswith("/files/sample.pdf"):
+            resp.status_code = 429
+            resp.content = b""
+        else:
+            resp.status_code = 404
+            resp.content = b""
+        return resp
+
+    mock_get = MagicMock()
+    mock_get.side_effect = side_effect
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
+
+    import statschat.pdf_processing.pdf_downloader as dl
+
+    importlib.reload(dl)
+    dl.main()
+
+    data_dir = tmp_path / "data" / "pdf_downloads"
+    pdfs = list(data_dir.glob("*.pdf"))
+    assert len(pdfs) == 0
+    url_dict = json.loads((data_dir / "url_dict.json").read_text())
+    assert "sample.pdf" not in url_dict
+
+
+def test_pdf_download_redirect_not_saved(tmp_path, monkeypatch):
+    """
+    Test that a redirect (HTTP 302) response is not treated as a successful download.
+    """
+    logger.info("Running redirect download test...")
+    mock_config = {
+        "preprocess": {"mode": "SETUP"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
+    monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
+    monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+    _silence_tqdm(monkeypatch)
+
+    listing = '<a href="https://www.knbs.or.ke/reports/report-1/">Report 1</a>'
+    report = '<a href="https://www.knbs.or.ke/files/sample.pdf">Download PDF</a>'
+
+    def side_effect(url, *a, **k):
+        resp = MagicMock()
+        if url.endswith("/all-reports/page/1/"):
+            resp.status_code = 200
+            resp.content = listing.encode()
+        elif url.endswith("/reports/report-1/"):
+            resp.status_code = 200
+            resp.content = report.encode()
+        elif url.endswith("/files/sample.pdf"):
+            resp.status_code = 302
+            resp.content = b""
+        else:
+            resp.status_code = 404
+            resp.content = b""
+        return resp
+
+    mock_get = MagicMock()
+    mock_get.side_effect = side_effect
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
+
+    import statschat.pdf_processing.pdf_downloader as dl
+
+    importlib.reload(dl)
+    dl.main()
+
+    data_dir = tmp_path / "data" / "pdf_downloads"
+    pdfs = list(data_dir.glob("*.pdf"))
+    assert len(pdfs) == 0
+    url_dict = json.loads((data_dir / "url_dict.json").read_text())
+    assert "sample.pdf" not in url_dict
+
+
+def test_pdf_download_timeout_raises(tmp_path, monkeypatch):
+    """
+    Test that a timeout during PDF download propagates and no url_dict.json is written.
+    """
+    logger.info("Running timeout download test...")
+    mock_config = {
+        "preprocess": {"mode": "SETUP"},
+        "app": {"page_start": 1, "page_end": 1},
+    }
+    monkeypatch.setattr("statschat.load_config", lambda *a, **k: mock_config)
+    monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+    _silence_tqdm(monkeypatch)
+
+    listing = '<a href="https://www.knbs.or.ke/reports/report-1/">Report 1</a>'
+    report = '<a href="https://www.knbs.or.ke/files/sample.pdf">Download PDF</a>'
+
+    def side_effect(url, *a, **k):
+        if url.endswith("/all-reports/page/1/"):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.content = listing.encode()
+            return resp
+        if url.endswith("/reports/report-1/"):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.content = report.encode()
+            return resp
+        if url.endswith("/files/sample.pdf"):
+            raise Timeout("Request timed out")
+        resp = MagicMock()
+        resp.status_code = 404
+        resp.content = b""
+        return resp
+
+    mock_get = MagicMock()
+    mock_get.side_effect = side_effect
+    monkeypatch.setattr(
+        "statschat.pdf_processing.pdf_downloader.requests.get", mock_get
+    )
+
+    import statschat.pdf_processing.pdf_downloader as dl
+
+    importlib.reload(dl)
+    with pytest.raises(Timeout):
+        dl.main()
+
+    data_dir = tmp_path / "data" / "pdf_downloads"
+    url_dict_path = data_dir / "url_dict.json"
+    assert not url_dict_path.exists()
 
 
 def test_url_dict_and_file_mismatch(tmp_path, monkeypatch):
