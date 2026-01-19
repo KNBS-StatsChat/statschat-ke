@@ -5,33 +5,26 @@ These tests focus on high-ROI, deterministic behaviors:
 - keyword extraction
 - JSON payload invariants and schema produced by build_json
 """
-"""Unit tests for statschat.pdf_processing.pdf_to_json.
 
-These tests focus on high-ROI, deterministic behaviors:
-- date parsing/fallback rules
-- keyword extraction
-- JSON payload invariants and schema produced by build_json
-"""
-
+import importlib
 import json
+import sys
 from datetime import datetime
+from types import ModuleType
 
 import pytest
 
-# Provide a lightweight fake `fitz` module so tests can import the module
-# without requiring the heavy PyMuPDF dependency.
-import sys
-from types import ModuleType
-
 fake_fitz = ModuleType("fitz")
+
 
 def _fake_open(*args, **kwargs):
     raise RuntimeError("fake fitz.open called - should be monkeypatched in tests")
 
+
 fake_fitz.open = _fake_open
 sys.modules.setdefault("fitz", fake_fitz)
 
-from statschat.pdf_processing import pdf_to_json
+pdf_to_json = importlib.import_module("statschat.pdf_processing.pdf_to_json")
 
 
 def test_extract_pdf_creation_date_prefers_metadata():
@@ -210,7 +203,9 @@ def test_extract_pdf_text_with_mocked_fitz(tmp_path, monkeypatch):
     def fake_open(path):
         return FakeDoc([FakePage("Line1\nLine2"), FakePage("OnlyOneLine")])
 
-    monkeypatch.setattr(pdf_to_json, "fitz", type("M", (), {"open": staticmethod(fake_open)}))
+    monkeypatch.setattr(
+        pdf_to_json, "fitz", type("M", (), {"open": staticmethod(fake_open)})
+    )
 
     pages = pdf_to_json.extract_pdf_text(pdf_path, "https://example.com/doc.pdf")
     assert isinstance(pages, list)
@@ -234,7 +229,9 @@ def test_get_name_and_meta_and_extract_pdf_metadata(monkeypatch, tmp_path):
     def fake_open(path):
         return FakeDoc({"creationDate": "D:20220101000000Z", "title": "My Title"})
 
-    monkeypatch.setattr(pdf_to_json, "fitz", type("M", (), {"open": staticmethod(fake_open)}))
+    monkeypatch.setattr(
+        pdf_to_json, "fitz", type("M", (), {"open": staticmethod(fake_open)})
+    )
 
     name, meta = pdf_to_json.get_name_and_meta(pdf_path)
     assert name == "sample.pdf"
@@ -247,11 +244,9 @@ def test_get_name_and_meta_and_extract_pdf_metadata(monkeypatch, tmp_path):
 
 
 def test_get_abstract_metadata_parses_html(monkeypatch):
-    from io import BytesIO
-
     html = (
         "<html><body>About Report Report Economy May 2025 Overview This is an overview "
-        "Share This Page <a href=\"https://example.com/file.pdf\">pdf</a></body></html>"
+        'Share This Page <a href="https://example.com/file.pdf">pdf</a></body></html>'
     ).encode("utf-8")
 
     class FakeResp:
@@ -269,6 +264,45 @@ def test_get_abstract_metadata_parses_html(monkeypatch):
     assert meta["pdf_abstract_url"] == "https://example.com/file.pdf"
 
 
+def test_get_abstract_metadata_alt_layout_uses_main_report_year(monkeypatch):
+    html = (
+        "<html><body>Main Report Some content 2014 Visit the KNBS "
+        '<a href="https://example.com/file.pdf">pdf</a></body></html>'
+    ).encode("utf-8")
+
+    class FakeResp:
+        def read(self):
+            return html
+
+    def fake_urlopen(_req):
+        return FakeResp()
+
+    monkeypatch.setattr(pdf_to_json, "urlopen", fake_urlopen)
+
+    meta = pdf_to_json.get_abstract_metadata("https://knbs.or.ke/reports/x")
+    assert meta["date"] == "2014"
+    assert meta["pdf_abstract_url"] == "https://example.com/file.pdf"
+
+
+def test_get_abstract_metadata_missing_pdf_link(monkeypatch):
+    html = (
+        "<html><body>About Report Report Economy May 2025 Overview Text "
+        "Share This Page</body></html>"
+    ).encode("utf-8")
+
+    class FakeResp:
+        def read(self):
+            return html
+
+    def fake_urlopen(_req):
+        return FakeResp()
+
+    monkeypatch.setattr(pdf_to_json, "urlopen", fake_urlopen)
+
+    meta = pdf_to_json.get_abstract_metadata("https://knbs.or.ke/reports/x")
+    assert meta["pdf_abstract_url"] == "No PDF link found"
+
+
 def test_process_pdfs_setup_creates_json(tmp_path, monkeypatch):
     # Make tmp_path act as cwd for the module
     monkeypatch.setattr(pdf_to_json.Path, "cwd", staticmethod(lambda: tmp_path))
@@ -280,7 +314,10 @@ def test_process_pdfs_setup_creates_json(tmp_path, monkeypatch):
     (pdf_dir / "sample.pdf").write_text("")
 
     url_dict = {
-        "sample.pdf": {"pdf_url": "https://example.com/sample.pdf", "report_page": "https://example.com/report"}
+        "sample.pdf": {
+            "pdf_url": "https://example.com/sample.pdf",
+            "report_page": "https://example.com/report",
+        }
     }
     (pdf_dir / "url_dict.json").write_text(json.dumps(url_dict))
 
@@ -296,3 +333,102 @@ def test_process_pdfs_setup_creates_json(tmp_path, monkeypatch):
     pdf_to_json.process_pdfs("SETUP", {})
 
     assert (json_dir / "sample.json").exists()
+
+
+def test_process_pdfs_update_only_new(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_to_json.Path, "cwd", staticmethod(lambda: tmp_path))
+
+    old_dir = tmp_path / "data" / "pdf_downloads"
+    latest_dir = tmp_path / "data" / "latest_pdf_downloads"
+    old_dir.mkdir(parents=True)
+    latest_dir.mkdir(parents=True)
+
+    (old_dir / "old.pdf").write_text("")
+    (latest_dir / "old.pdf").write_text("")
+    (latest_dir / "new.pdf").write_text("")
+
+    url_dict = {
+        "old.pdf": {"pdf_url": "https://example.com/old.pdf", "report_page": "r"},
+        "new.pdf": {"pdf_url": "https://example.com/new.pdf", "report_page": "r"},
+    }
+    (latest_dir / "url_dict.json").write_text(json.dumps(url_dict))
+    (old_dir / "url_dict.json").write_text(
+        json.dumps({"old.pdf": {"pdf_url": "x", "report_page": "r"}})
+    )
+
+    out_dir = tmp_path / "data" / "latest_json_conversions"
+
+    calls = []
+
+    def fake_build_json(pdf_path, _pdf_url, _report_page, JSON_DIR, **kwargs):
+        JSON_DIR.mkdir(parents=True, exist_ok=True)
+        calls.append(pdf_path.name)
+        out = JSON_DIR / f"{pdf_path.stem}.json"
+        out.write_text("{}")
+        return out
+
+    monkeypatch.setattr(pdf_to_json, "build_json", fake_build_json)
+
+    pdf_to_json.process_pdfs("UPDATE", {})
+
+    assert calls == ["new.pdf"]
+    assert (out_dir / "new.json").exists()
+    assert not (out_dir / "old.json").exists()
+
+
+def test_process_pdfs_update_no_new_exits(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_to_json.Path, "cwd", staticmethod(lambda: tmp_path))
+
+    old_dir = tmp_path / "data" / "pdf_downloads"
+    latest_dir = tmp_path / "data" / "latest_pdf_downloads"
+    old_dir.mkdir(parents=True)
+    latest_dir.mkdir(parents=True)
+
+    (old_dir / "same.pdf").write_text("")
+    (latest_dir / "same.pdf").write_text("")
+
+    (latest_dir / "url_dict.json").write_text(
+        json.dumps({"same.pdf": {"pdf_url": "x", "report_page": "r"}})
+    )
+    (old_dir / "url_dict.json").write_text(
+        json.dumps({"same.pdf": {"pdf_url": "x", "report_page": "r"}})
+    )
+
+    calls = []
+
+    def fake_build_json(*args, **kwargs):
+        calls.append("called")
+
+    monkeypatch.setattr(pdf_to_json, "build_json", fake_build_json)
+
+    pdf_to_json.process_pdfs("UPDATE", {})
+
+    assert calls == []
+
+
+def test_process_pdfs_update_missing_url_dict_skips(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_to_json.Path, "cwd", staticmethod(lambda: tmp_path))
+
+    old_dir = tmp_path / "data" / "pdf_downloads"
+    latest_dir = tmp_path / "data" / "latest_pdf_downloads"
+    old_dir.mkdir(parents=True)
+    latest_dir.mkdir(parents=True)
+
+    (old_dir / "old.pdf").write_text("")
+    (latest_dir / "new.pdf").write_text("")
+
+    # No latest url_dict.json present
+    (old_dir / "url_dict.json").write_text(
+        json.dumps({"old.pdf": {"pdf_url": "x", "report_page": "r"}})
+    )
+
+    calls = []
+
+    def fake_build_json(*args, **kwargs):
+        calls.append("called")
+
+    monkeypatch.setattr(pdf_to_json, "build_json", fake_build_json)
+
+    pdf_to_json.process_pdfs("UPDATE", {})
+
+    assert calls == []
