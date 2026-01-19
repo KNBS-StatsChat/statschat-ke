@@ -5,11 +5,31 @@ These tests focus on high-ROI, deterministic behaviors:
 - keyword extraction
 - JSON payload invariants and schema produced by build_json
 """
+"""Unit tests for statschat.pdf_processing.pdf_to_json.
+
+These tests focus on high-ROI, deterministic behaviors:
+- date parsing/fallback rules
+- keyword extraction
+- JSON payload invariants and schema produced by build_json
+"""
 
 import json
 from datetime import datetime
 
 import pytest
+
+# Provide a lightweight fake `fitz` module so tests can import the module
+# without requiring the heavy PyMuPDF dependency.
+import sys
+from types import ModuleType
+
+fake_fitz = ModuleType("fitz")
+
+def _fake_open(*args, **kwargs):
+    raise RuntimeError("fake fitz.open called - should be monkeypatched in tests")
+
+fake_fitz.open = _fake_open
+sys.modules.setdefault("fitz", fake_fitz)
 
 from statschat.pdf_processing import pdf_to_json
 
@@ -160,3 +180,119 @@ def test_build_json_writes_expected_schema(tmp_path):
     # Content contract
     assert isinstance(payload["content"], list)
     assert [p["page_number"] for p in payload["content"]] == [1, 2]
+
+
+def test_extract_pdf_text_with_mocked_fitz(tmp_path, monkeypatch):
+    # Create a fake PDF path
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("")
+
+    class FakePage:
+        def __init__(self, text):
+            self._text = text
+
+        def get_text(self):
+            return self._text
+
+    class FakeDoc:
+        def __init__(self, pages):
+            self._pages = pages
+
+        def __len__(self):
+            return len(self._pages)
+
+        def __getitem__(self, idx):
+            return self._pages[idx]
+
+        def close(self):
+            pass
+
+    def fake_open(path):
+        return FakeDoc([FakePage("Line1\nLine2"), FakePage("OnlyOneLine")])
+
+    monkeypatch.setattr(pdf_to_json, "fitz", type("M", (), {"open": staticmethod(fake_open)}))
+
+    pages = pdf_to_json.extract_pdf_text(pdf_path, "https://example.com/doc.pdf")
+    assert isinstance(pages, list)
+    assert pages[0]["page_number"] == 1
+    assert pages[0]["page_text"] == "Line1Line2"
+    assert pages[1]["page_text"] == "OnlyOneLine"
+
+
+def test_get_name_and_meta_and_extract_pdf_metadata(monkeypatch, tmp_path):
+    # Create a fake PDF file path
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_text("")
+
+    class FakeDoc:
+        def __init__(self, metadata):
+            self.metadata = metadata
+
+        def close(self):
+            pass
+
+    def fake_open(path):
+        return FakeDoc({"creationDate": "D:20220101000000Z", "title": "My Title"})
+
+    monkeypatch.setattr(pdf_to_json, "fitz", type("M", (), {"open": staticmethod(fake_open)}))
+
+    name, meta = pdf_to_json.get_name_and_meta(pdf_path)
+    assert name == "sample.pdf"
+    assert "creationDate" in meta
+
+    # extract_pdf_metadata currently wraps get_name_and_meta
+    fname, pmeta = pdf_to_json.extract_pdf_metadata(pdf_path)
+    assert fname == name
+    assert pmeta == meta
+
+
+def test_get_abstract_metadata_parses_html(monkeypatch):
+    from io import BytesIO
+
+    html = (
+        "<html><body>About Report Report Economy May 2025 Overview This is an overview "
+        "Share This Page <a href=\"https://example.com/file.pdf\">pdf</a></body></html>"
+    ).encode("utf-8")
+
+    class FakeResp:
+        def read(self):
+            return html
+
+    def fake_urlopen(req):
+        return FakeResp()
+
+    monkeypatch.setattr(pdf_to_json, "urlopen", fake_urlopen)
+
+    meta = pdf_to_json.get_abstract_metadata("https://knbs.or.ke/reports/x")
+    assert meta["date"] == "May 2025"
+    assert "overview" in meta
+    assert meta["pdf_abstract_url"] == "https://example.com/file.pdf"
+
+
+def test_process_pdfs_setup_creates_json(tmp_path, monkeypatch):
+    # Make tmp_path act as cwd for the module
+    monkeypatch.setattr(pdf_to_json.Path, "cwd", staticmethod(lambda: tmp_path))
+
+    # Create data/pdf_downloads and a sample pdf + url_dict.json
+    pdf_dir = tmp_path / "data" / "pdf_downloads"
+    json_dir = tmp_path / "data" / "json_conversions"
+    pdf_dir.mkdir(parents=True)
+    (pdf_dir / "sample.pdf").write_text("")
+
+    url_dict = {
+        "sample.pdf": {"pdf_url": "https://example.com/sample.pdf", "report_page": "https://example.com/report"}
+    }
+    (pdf_dir / "url_dict.json").write_text(json.dumps(url_dict))
+
+    # Replace build_json with a fake that writes a file
+    def fake_build_json(pdf_path, pdf_url, report_page, JSON_DIR, **kwargs):
+        JSON_DIR.mkdir(parents=True, exist_ok=True)
+        out = JSON_DIR / f"{pdf_path.stem}.json"
+        out.write_text("{}")
+        return out
+
+    monkeypatch.setattr(pdf_to_json, "build_json", fake_build_json)
+
+    pdf_to_json.process_pdfs("SETUP", {})
+
+    assert (json_dir / "sample.json").exists()
