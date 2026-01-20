@@ -2,6 +2,7 @@
 
 import torch
 import logging
+from dotenv import load_dotenv
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -137,8 +138,18 @@ if __name__ == "__main__":
 
     # For a question, retreive the most relevant text chunks
     # question = "What is the leading cause of death in Kenya in 2023?"
-    question = "What was inflation in Kenya in 2022?"
     # question = "How is inflation calculated?"
+    # question = "What was the population of Kenya in 2019?"
+    # question = "What is the Kenya National Bureau of Statistics?"
+    # question = "How many counties are there in Kenya?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "What was Kenya's GDP growth rate in 2023?"
+    # question = "What is the total area of Kenya?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "How much did the economy expand in the third quarter of 2025?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "What was Kenya's Consumer Price Index inflation rate in December 2022?"
+    question = "By how much did Kenya's GDP grow in 2024?"
 
     # Get the most relevant text chunks
     relevant_texts = similarity_search(question, latest_filter=True)
@@ -163,11 +174,16 @@ if __name__ == "__main__":
 
     # Choose your model (e.g., Mistral-7B, DeepSeek, Llama-3, etc.)
     MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
+
+    # Load environment variables
+    load_dotenv()
+
     # Load model and tokenizer
-    print("Building the tokenizer...")
+    print(f"Building the tokenizer for {MODEL_ID}...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 
-    print("Loading the model...")
+    print(f"Loading the model {MODEL_ID}...")
+    print("If this is the first run, it will download ~15GB. Please be patient...")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=torch.float16,  # Use float16 for efficiency if using a GPU
