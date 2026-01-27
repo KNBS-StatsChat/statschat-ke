@@ -1,9 +1,11 @@
 """Smoke tests for FastAPI endpoints with mocked model/search dependencies.
 
-These tests load the local FastAPI app, stub heavyweight ML dependencies, and
-exercise key endpoints to confirm basic routing and response schemas. They
-validate redirects, OpenAPI exposure, search validation/fallback behavior, and
-feedback handling without loading real models or hitting external services.
+These tests load the local and cloud FastAPI apps, stub heavyweight ML and
+cloud dependencies, and exercise key endpoints to confirm basic routing and
+response schemas. They validate redirects, OpenAPI exposure, search
+validation/fallback behavior, and feedback handling without loading real
+models or hitting external services. Cloud tests replace the Inquirer and
+latest-flag helpers to avoid network or credential requirements.
 """
 
 import importlib.util
@@ -103,6 +105,46 @@ def _build_client(monkeypatch):
     )
 
     transport = httpx.ASGITransport(app=main_api_local.app)
+    return httpx.AsyncClient(transport=transport, base_url="http://testserver")
+
+
+def _load_main_api_cloud():
+    repo_root = Path(__file__).resolve().parents[2]
+    api_path = repo_root / "fast-api" / "main_api_cloud.py"
+
+    module_name = "fast_api_main_api_cloud"
+    sys.modules.pop(module_name, None)
+
+    class DummyInquirer:
+        def __init__(self, **_kwargs):
+            pass
+
+        def make_query(self, question, latest_filter, latest_weight):
+            class DummyResponse:
+                def __init__(self):
+                    self.raw = "debug"
+
+            return ["doc1", "doc2"], "Answer", DummyResponse()
+
+    sys.modules.pop("statschat.generative.cloud_llm", None)
+    cloud_llm_stub = ModuleType("statschat.generative.cloud_llm")
+    cloud_llm_stub.Inquirer = DummyInquirer
+    sys.modules["statschat.generative.cloud_llm"] = cloud_llm_stub
+
+    spec = importlib.util.spec_from_file_location(module_name, api_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _build_cloud_client(monkeypatch):
+    main_api_cloud = _load_main_api_cloud()
+
+    monkeypatch.setattr(main_api_cloud, "inquirer", main_api_cloud.inquirer)
+    monkeypatch.setattr(main_api_cloud, "get_latest_flag", lambda *_a, **_k: 0.7)
+
+    transport = httpx.ASGITransport(app=main_api_cloud.app)
     return httpx.AsyncClient(transport=transport, base_url="http://testserver")
 
 
@@ -206,3 +248,29 @@ async def test_feedback_accepts_minimal_payload(monkeypatch):
     assert response.status_code == 422
     payload = response.json()
     assert "detail" in payload
+
+
+@pytest.mark.anyio
+async def test_cloud_search_returns_schema(monkeypatch):
+    async with _build_cloud_client(monkeypatch) as client:
+        response = await client.get("/search", params={"q": "Population"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["question"] == "Population"
+    assert payload["answer"] == "Answer"
+    assert payload["references"] == ["doc1", "doc2"]
+    assert payload["content_type"] == "latest"
+    assert "debug_response" in payload
+
+
+@pytest.mark.anyio
+async def test_cloud_search_debug_false_excludes_debug(monkeypatch):
+    async with _build_cloud_client(monkeypatch) as client:
+        response = await client.get(
+            "/search", params={"q": "Population", "debug": False}
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "debug_response" not in payload
