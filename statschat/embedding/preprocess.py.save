@@ -36,10 +36,8 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         latest_only: bool = False,
         mode: str = "SETUP",
     ):
-        self.directory = os.path.join(
-            data_dir + ("latest_" if mode == "UPDATE" else "") + directory
-        )
-        self.split_directory = os.path.join(
+        self.directory = data_dir + ("latest_" if mode == "UPDATE" else "") + directory
+        self.split_directory = (
             data_dir + ("latest_" if mode == "UPDATE" else "") + split_directory
         )
         self.download_dir = data_dir + download_dir
@@ -47,43 +45,23 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         self.split_overlap = split_overlap
         self.embedding_model_name = embedding_model_name
         self.redundant_similarity_threshold = redundant_similarity_threshold
-
        # self.faiss_db_root = (
          #   data_dir + faiss_db_root + ("_latest" if mode == "UPDATE" else "")
         #)
         # Remove '_latest' from faiss_db_root if present
        # self.original_faiss_db_root = (data_dir + faiss_db_root).replace("_latest", "")
-
         data_dir = Path(data_dir)
-        # Fix TOML string containing quotes
-        faiss_db_root = faiss_db_root.strip('"\'')
 
-        faiss_path = Path(faiss_db_root)
+	faiss_path = Path(faiss_db_root)
+	if not faiss_path.is_absolute():
+	    faiss_path = data_dir / faiss_path
 
-        # If user supplied an absolute path → use as-is
-        # If relative → resolve relative to data_dir
-        if not faiss_path.is_absolute():
-            faiss_path = data_dir / faiss_path
-        self.original_faiss_db_root = faiss_path.resolve()
-        # Store final paths
-        #self.faiss_db_root = faiss_path.with_name(
-        #    faiss_path.name + ("_latest" if mode == "UPDATE" else "")
-        #)
-        #self.faiss_db_root = (self.original_faiss_db_root.parent / (
-        #    self.original_faiss_db_root.name + "_latest")
-        #).resolve()
-        if mode == "UPDATE":
-            self.faiss_db_root = (
-                self.original_faiss_db_root.parent
-                / f"{self.original_faiss_db_root.name}_latest"
-            ).resolve()
-        else:
-            self.faiss_db_root = self.original_faiss_db_root
-        # Ensure both DB directories exist
-        self.original_faiss_db_root.mkdir(parents=True, exist_ok=True)
-        self.faiss_db_root.mkdir(parents=True, exist_ok=True)
+	self.faiss_db_root = faiss_path.with_name(
+	    faiss_path.name + ("_latest" if mode == "UPDATE" else "")
+	)
 
-        self.original_faiss_db_root = faiss_path
+	self.original_faiss_db_root = faiss_path
+
         self.db = db
         self.latest_only = latest_only
         self.mode = mode

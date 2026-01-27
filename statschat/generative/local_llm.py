@@ -46,18 +46,22 @@ def similarity_search(
     # Resolve base dir relative to this file (statschat/generative/)
     BASE_DIR = Path(__file__).resolve().parent.parent.parent  # → /home/mokero/statschat-ke/statschat
     DATA_DIR = BASE_DIR / "data"
+   # DATA_DIR = BASE_DIR / "fast-api" / "data"
 
     DB_LANGCHAIN_DIR = DATA_DIR / "db_langchain"
-    DB_LANGCHAIN_UPDATE_DIR = DATA_DIR / "db_langchain_update"
+   # DB_LANGCHAIN_UPDATE_DIR = DATA_DIR / "db_langchain_update"
+    DB_LANGCHAIN_LATEST_DIR = DATA_DIR / "db_langchain_latest"
 
-    if DB_LANGCHAIN_UPDATE_DIR.exists():
-        faiss_db_root_latest = DATA_DIR / "db_langchain_latest"
-    elif DB_LANGCHAIN_DIR.exists():
-        faiss_db_root_latest = DB_LANGCHAIN_DIR
+    if DB_LANGCHAIN_LATEST_DIR.exists()and any(DB_LANGCHAIN_LATEST_DIR.iterdir()):
+       # faiss_db_root_latest = DATA_DIR / "db_langchain_latest"
+        faiss_db_root = DB_LANGCHAIN_LATEST_DIR
+    elif DB_LANGCHAIN_DIR.exists()and any(DB_LANGCHAIN_DIR.iterdir()):
+        faiss_db_root = DB_LANGCHAIN_DIR
     else:
         raise FileNotFoundError(f"No FAISS index directory found under {DATA_DIR}")
+    logger.info(f"Using FAISS index at: {faiss_db_root}")
 
-    faiss_db_root = DB_LANGCHAIN_DIR  # fallback
+   # faiss_db_root = DB_LANGCHAIN_DIR  # fallback
 
    # faiss_db_root = "data/db_langchain"
     
@@ -73,7 +77,7 @@ def similarity_search(
     #    faiss_db_root_latest = "data/db_langchain"
         
     k_docs = 3
-    similarity_threshold = 2.0
+    similarity_threshold = 4.0
     embedding_model_name = "sentence-transformers/all-mpnet-base-v2"
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
     start = time.perf_counter()
@@ -91,7 +95,9 @@ def similarity_search(
     logger.info(f"FAISS retrieval took {elapsed:.3f} seconds")
     # filter to document matches with similarity scores less than...
     # i.e. closest cosine distances to query
-    top_matches = [x for x in top_matches if x[-1] <= similarity_threshold]
+   # top_matches = [x for x in top_matches if x[-1] <= similarity_threshold]
+    # Keep top-k, not absolute threshold
+    top_matches = sorted(top_matches, key=lambda x: x[1])[:k_docs]
 
     if return_dicts:
         return [
@@ -155,7 +161,7 @@ if __name__ == "__main__":
 
     # For a question, retreive the most relevant text chunks
     #question = "What is the leading cause of death in Kenya in 2023?"
-    question = "What was inflation in Kenya in 2022?"
+    question = "What was the consumer price index in Kenya in September 2025?"
     #question = "How is inflation calculated?"
     
     # Get the most relevant text chunks

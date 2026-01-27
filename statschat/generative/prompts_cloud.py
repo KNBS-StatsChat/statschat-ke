@@ -28,17 +28,55 @@ Explain your reasoning.
 Question: {question}
 Contexts: {summaries}
 """
+# -----------------------------
+# HARD JSON RULES (critical)
+# -----------------------------
+_JSON_RULES = """
+IMPORTANT JSON RULES:
+- You MUST return a JSON OBJECT
+- DO NOT return a JSON schema
+- DO NOT describe the schema
+- DO NOT include markdown
+- DO NOT include text outside the JSON object
+- Return ONLY valid JSON that matches the specified format
+"""
+
+# -----------------------------
+# Example output (VERY IMPORTANT)
+# -----------------------------
+_JSON_EXAMPLE = """
+Example of a valid response:
+
+{{
+  "answer_provided": true,
+  "most_likely_answer": "The Consumer Prices Index (CPI) increased by 3.6% in August 2025.",
+  "highlighting1": ["Consumer Prices Index (CPI)", "August 2025"],
+  "highlighting2": [],
+  "highlighting3": [],
+  "reasoning": "The CPI value for August 2025 is explicitly stated in the provided context."
+}}
+"""
 
 parser = PydanticOutputParser(pydantic_object=LlmResponse)
 
-EXTRACTIVE_PROMPT_PYDANTIC = PromptTemplate.from_template(
+_format_instructions = (
+    parser.get_format_instructions()
+    .replace("{", "{{")
+    .replace("}", "}}")
+)
+
+
+EXTRACTIVE_PROMPT_PYDANTIC = PromptTemplate(
+    input_variables=["question", "context"],
     template=_core_prompt
     + _extractive_prompt
+    + _JSON_RULES
+    + _JSON_EXAMPLE
     + "\n\n ==RESPONSE FORMAT==\n{format_instructions}"
     + "\n\n ==JSON RESPONSE ==\n",
     partial_variables={
         "current_datetime": str(date.today()),
-        "format_instructions": parser.get_format_instructions(),
+        "format_instructions":_format_instructions,
     },
 )
 

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StatsChat-KE</title>
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="static/knbslogo.png">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f9f9f9;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      text-align: center;
+      padding: 20px;
+      background-color: #ffffff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+
+    header img {
+      max-width: 150px;
+      height: auto;
+      margin-bottom: 10px;
+    }
+
+    h2 {
+      text-align: center;
+      color: #003366; /* KNBS deep blue */
+      margin: 0;
+    }
+
+    main {
+      flex: 1;
+      padding: 20px;
+    }
+
+    #search-form {
+      margin: 0 auto 20px auto;
+      max-width: 800px;
+      display: flex;
+      flex-wrap: wrap;     
+      justify-content: center;
+      gap: 10px;
+    }
+
+    #search-input {
+      flex: 1 1 300px;
+      padding: 12px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+
+    #search-button {
+      flex: 0 0 auto;
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      background-color: #009639; /* KNBS green */
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    #search-button:hover {
+      background-color: #007a2d; /* darker green */
+    }
+
+    #search-results {
+      margin-top: 20px;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .result-card {
+      background-color: #fff;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      border-left: 6px solid #ffcc00; /* KNBS yellow accent */
+    }
+
+    .question {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #003366; /* blue */
+    }
+
+    .answer {
+      font-size: 20px;
+      font-weight: bold;
+      color: #009639; /* green */
+      margin-bottom: 15px;
+    }
+
+    .context, .publications {
+      font-size: 14px;
+      color: #444;
+      margin-bottom: 10px;
+    }
+
+    .source-link {
+      display: inline-block;
+      padding: 8px 15px;
+      background-color: #003366; /* blue */
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-top: 10px;
+    }
+
+    .source-link:hover {
+      background-color: #001f4d; /* darker blue */
+    }
+
+    .loading {
+      font-size: 16px;
+      font-style: italic;
+      color: #777;
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    footer {
+      background-color: #B06443; /* KNBS brown */
+      color: white;
+      text-align: center;
+      padding: 15px 10px;
+      margin-top: auto;
+    }
+
+    footer a {
+      color: #F7F0EC; /*white */
+      text-decoration: none;
+      margin: 0 10px;
+      font-size: 14px;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+      h2 {
+        font-size: 1.5rem;
+      }
+      #search-input {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+      #search-button {
+        width: 100%;
+        margin-left: 0;
+      }
+      .result-card {
+        padding: 15px;
+      }
+      .answer {
+        font-size: 18px;
+      }
+      header img {
+        max-width: 120px;
+      }
+      footer {
+        font-size: 13px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      h2 {
+        font-size: 1.3rem;
+      }
+
+      .answer {
+        font-size: 17px;
+      }
+
+      #search-input {
+        font-size: 15px;
+      }
+
+      footer a {
+        display: block;
+        margin: 5px 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <!-- Replace with actual KNBS logo URL or file path -->
+    <img src="static/knbs_logo.png" alt="KNBS Logo">
+    <h2>Statschat-KE</h2>
+  </header>
+
+  <main>
+    <form id="search-form">
+      <input type="text" id="search-input" placeholder="Enter your search query..." required />
+      <button type="submit" id="search-button">Get Answer</button>
+    </form>
+
+    <div id="search-results"></div>
+  </main>
+
+  <footer>
+    <p>&copy; 2025 Data Science and Dissemination (KNBS). </p>
+    <p>
+      <a href="https://www.knbs.or.ke/about/">About KNBS</a> | 
+      <a href="#">About Statschat</a> |
+      <a href="#">Privacy Policy</a> | 
+      <a href="#">Contact</a>
+    </p>
+  </footer>
+
+  <script>
+  document.getElementById('search-form').addEventListener('submit', async function(event) {
+      event.preventDefault();
+      const query = document.getElementById('search-input').value;
+      const resultsDiv = document.getElementById('search-results');
+      const apiUrl = `/search?q=${encodeURIComponent(query)}`;
+
+      resultsDiv.innerHTML = '<p class="loading">⏳ Getting Response...</p>';
+
+      try {
+          const response = await fetch(apiUrl);
+          if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data = await response.json();
+          console.log("Parsed JSON:", data);
+
+          resultsDiv.innerHTML = '';
+
+          if (data.answer) {
+              const card = document.createElement('div');
+              card.className = 'result-card';
+              card.innerHTML = `
+                  <div class="question">Q: ${data.question}</div>
+                  <div class="answer">👉 ${data.answer}</div>
+                  <div class="context"><strong>Context:</strong> ${data.context_reference} (${data.context_from})</div>
+                  <a href="${data.references}" target="_blank" class="source-link">📄 View Source</a>
+                  <div class="publications">
+                      <strong>Related Publications:</strong><br>
+                      • ${data.relevant_publication_one}<br>
+                      • ${data.relevant_publication_two}
+                  </div>
+              `;
+              resultsDiv.appendChild(card);
+          } else {
+              resultsDiv.innerHTML = '<p>No answer returned from API.</p>';
+          }
+      } catch (error) {
+          console.error('Fetch failed:', error);
+          resultsDiv.innerHTML = `<p>Fetch failed: ${error.message}</p>`;
+      }
+  });
+  </script>
+
+</body>
+</html>

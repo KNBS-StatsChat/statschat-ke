@@ -1,7 +1,7 @@
 import logging
 import os
 from dotenv import load_dotenv
-from pathlib import Path
+from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
@@ -28,7 +28,7 @@ class Inquirer:
         self,
         generative_model_name: str = "mistralai/Mistral-7B-Instruct-v0.3",
         faiss_db_root: str = "data/db_langchain",
-        faiss_db_root_latest: str = "data/db_langchain", # change to "data/db_langchain_latest" after "UPDATE"
+        faiss_db_root_latest: str = "data/db_langchain",  # change to "data/db_langchain_latest" after "UPDATE"
         embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
         k_docs: int = 10,
         k_contexts: int = 3,
@@ -39,6 +39,7 @@ class Inquirer:
         verbose: bool = False,
         answer_threshold: float = 0.5,
         document_threshold: float = 0.9,
+        provider="openrouter",  # default
     ):
         """
         Args:
@@ -63,20 +64,43 @@ class Inquirer:
         self.verbose = verbose
         self.extractive_prompt = EXTRACTIVE_PROMPT_PYDANTIC
         self.stuff_document_prompt = STUFF_DOCUMENT_PROMPT
+        self.llm_temperature = llm_temperature
+        self.llm_max_tokens = llm_max_tokens
 
-        # Load the token for Hugging Face
+        # Load variables from .env
         load_dotenv()
-        sec_key = os.getenv("HF_TOKEN")
 
-        # Load LLM with text2text-generation specifications
-        self.llm = HuggingFaceEndpoint(
-            repo_id=generative_model_name,
-            model_kwargs={
-                "max_length": 512,
-            },
-            temperature=0.1,
-            token=sec_key,
-        )
+        if provider == "openai":
+            sec_key = os.getenv("OPENAI_API_KEY")
+            self.llm = ChatOpenAI(
+                model=generative_model_name,
+                temperature=llm_temperature,
+                max_tokens=llm_max_tokens,
+                api_key=sec_key,
+            )
+
+        elif provider == "openrouter":
+            sec_key = os.getenv("OPENROUTER_API_KEY")
+            api_base = os.getenv("OPENROUTER_BASE_URL")
+            self.llm = ChatOpenAI(
+                model=generative_model_name,
+                temperature=llm_temperature,
+                max_tokens=llm_max_tokens,
+                openai_api_key=sec_key,
+                openai_api_base=api_base,
+            )
+
+        elif provider == "huggingface_inference":
+            sec_key = os.getenv("HF_TOKEN")
+            self.llm = HuggingFaceEndpoint(
+                repo_id=generative_model_name,
+                model_kwargs={"max_length": llm_max_tokens},
+                temperature=llm_temperature,
+                token=sec_key,
+            )
+
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
 
         # Embeddings
         embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
@@ -318,11 +342,32 @@ if __name__ == "__main__":
     # initiate Statschat AI and start the app
     inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
 
-    question = "Where can I find the registered births by age of mother and county?"
+    # question = "Where can I find the registered births by age of mother and county?"
     # question = "What is the sample size of the Real Estate Survey?"
     # question = "How is core inflation calculated?"
-    question = "What was inflation in Kenya in December 2021?"
+    # question = "What was inflation in Kenya in December 2022?"
     # question = "What is football?"
+    # question = "What was the population of Kenya in 2019?"
+    # question = "How many counties are there in Kenya?"
+    # question = "What is the Kenya National Bureau of Statistics?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "What was Kenya's GDP growth rate in 2023?"
+    # question = "What is the total area of Kenya?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "What was Kenya's inflation rate in Q1 2023?"
+    # question = "What is the latest official GDP figure for 2025?"
+    # question = "What was Kenya's GDP growth rate in Q3 2025?"
+    # question = "How much did the economy expand in the third quarter of 2025?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "What was the inflation rate in Kenya in 2021?"
+    # question = "What was the inflation rate in Kenya in July 2022?"
+    # question = "What was the inflation rate in Kenya in August 2022?"
+    # question = "What was the year on year inflation rate in August 2022?"
+    # question = "What was the inflation rate in December 2022?"
+    # question = "What was Kenya's Consumer Price Index inflation rate in December 2022?"
+    # question = "What was inflation in Kenya in 2023?"
+    #question = "By how much did Kenya's GDP grow in 2024?"
+    question = "What is the consumer price index in November 2025?"
 
     docs, answer, response = inquirer.make_query(
         question,

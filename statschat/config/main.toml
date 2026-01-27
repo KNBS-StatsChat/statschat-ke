@@ -1,5 +1,5 @@
 [db]
-faiss_db_root = "/home/mokero/statschat-ke/fast-api/data/db_langchain"
+faiss_db_root = "/home/mokero/statschat-ke/fast-api/data/db_langchain_latest"
 embedding_model_name = "sentence-transformers/all-mpnet-base-v2" #all-mpnet-base-v2" #all-MiniLM-L6-v2" #"sentence-transformers/all-mpnet-base-v2"  # "textembedding-gecko@001" "sentence-transformers/paraphrase-MiniLM-L3-v2"
 
 [preprocess]
