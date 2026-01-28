@@ -2,6 +2,8 @@
 
 This document details the final stage of the StatsChat-KE pipeline: using a Large Language Model (LLM) to synthesize a human-readable answer from the retrieved context.
 
+For an end-to-end view of what goes into StatsChat (PDFs, chunks, queries) and what comes out (answers and references), see [Input/Output (I/O) Overview](pipeline-input-output.md).
+
 ## Conceptual Overview
 
 Once the [Retrieval Pipeline](pipeline-retrieval.md) has identified the relevant facts, the Generation pipeline acts as the "reasoning engine." It sends the user's question and the retrieved context to an LLM, which generates a structured response.

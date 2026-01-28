@@ -97,14 +97,31 @@ def generate_response(question: str, model: str, tokenizer) -> str:
         str: The generated response.
     """
     print("Generating input tokens...")
-    input_ids = tokenizer(question, return_tensors="pt").input_ids.to(model.device)
+    encoded = tokenizer(question, return_tensors="pt")
+    input_ids = encoded.input_ids.to(model.device)
+    attention_mask = encoded.attention_mask.to(model.device)
     print("Generating response...")
-    output = model.generate(input_ids, max_new_tokens=1000)
+    output = model.generate(
+        input_ids,
+        attention_mask=attention_mask,
+        max_new_tokens=800,
+        do_sample=False,
+        pad_token_id=tokenizer.eos_token_id,
+    )
     raw_response = tokenizer.decode(output[0], skip_special_tokens=True)
     return raw_response
 
 
 # Define a function to format the response
+def _extract_json_block(raw_response: str) -> str:
+    """Try to extract the first JSON object from the response text."""
+    start = raw_response.find("{")
+    end = raw_response.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return raw_response
+    return raw_response[start : end + 1]
+
+
 def format_response(raw_response: str) -> dict:
     """
     Format the raw response from the model.
@@ -124,6 +141,7 @@ def format_response(raw_response: str) -> dict:
         .replace("’", "'")
         .strip()
     )
+    clean_response = _extract_json_block(clean_response)
     try:
         validated_answer = json.loads(clean_response)
     except json.JSONDecodeError as e:
@@ -142,17 +160,33 @@ if __name__ == "__main__":
     # question = "What was the population of Kenya in 2019?"
     # question = "What is the Kenya National Bureau of Statistics?"
     # question = "How many counties are there in Kenya?"
-    # question = "What was inflation in Kenya in 2022?"
     # question = "What was Kenya's GDP growth rate in 2023?"
     # question = "What is the total area of Kenya?"
-    # question = "What was inflation in Kenya in 2022?"
     # question = "How much did the economy expand in the third quarter of 2025?"
     # question = "What was inflation in Kenya in 2022?"
     # question = "What was Kenya's Consumer Price Index inflation rate in December 2022?"
-    question = "By how much did Kenya's GDP grow in 2024?"
+    # question = "By how much did Kenya's GDP grow in 2024?"
+    question = "What proportion of women own agricultural land in Kenya?"
 
     # Get the most relevant text chunks
     relevant_texts = similarity_search(question, latest_filter=True)
+
+    if len(relevant_texts) == 0:
+        raise SystemExit(
+            "No relevant documents were found for this question. Try rephrasing it or updating the vector store."
+        )
+
+    if len(relevant_texts) == 1:
+        # Pad with a placeholder so downstream formatting still succeeds
+        relevant_texts.append(
+            {
+                "page_content": "",
+                "title": "(no additional relevant document)",
+                "page_url": "",
+                "date": "",
+                "score": float("inf"),
+            }
+        )
 
     if verbose:
         print("Relevant text chunks retrieved:")
@@ -181,6 +215,8 @@ if __name__ == "__main__":
     # Load model and tokenizer
     print(f"Building the tokenizer for {MODEL_ID}...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     print(f"Loading the model {MODEL_ID}...")
     print("If this is the first run, it will download ~15GB. Please be patient...")
