@@ -1,5 +1,13 @@
+"""Unit tests for cloud_llm Inquirer behavior.
+
+Covers metadata flattening, similarity filtering, query parsing behavior,
+and error handling for empty inputs or invalid provider configuration.
+"""
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pytest
 
 from statschat.generative.cloud_llm import Inquirer
 from statschat.generative.response_model import LlmResponse
@@ -81,6 +89,31 @@ def test_query_texts_parses_chain_response(monkeypatch):
     parsed = inq.query_texts("why", docs)
     assert isinstance(parsed, LlmResponse)
     assert parsed.most_likely_answer == "ANS"
+
+
+def test_query_texts_handles_empty_docs():
+    inq = Inquirer.__new__(Inquirer)
+    inq.k_contexts = 3
+    inq.extractive_prompt = "p"
+    inq.stuff_document_prompt = "d"
+    inq.llm = None
+    inq.verbose = False
+    inq.logger = MagicMock()
+
+    with pytest.raises(Exception):
+        inq.query_texts("why", [])
+
+
+def test_inquirer_init_invalid_provider_raises(monkeypatch):
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.HuggingFaceEmbeddings", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.FAISS.load_local", lambda *a, **k: None
+    )
+
+    with pytest.raises(ValueError):
+        Inquirer(provider="invalid")
 
 
 def test_make_query_uses_similarity_and_formats_answer(monkeypatch):
