@@ -1,3 +1,11 @@
+"""Unit tests for pdf_runner entrypoint and subprocess orchestration.
+
+These tests validate that the pipeline runner:
+- Invokes child scripts via subprocess with the expected arguments.
+- Executes the correct script sequence for SETUP and UPDATE modes.
+- Raises on invalid modes and propagates subprocess failures.
+"""
+
 import runpy
 import subprocess
 import sys
@@ -66,9 +74,9 @@ def test_main_pipeline_setup_executes_three_scripts(monkeypatch):
     # Expect three script runs: downloader, pdf_to_json, preprocess
     assert len(calls) == 3
     called_files = [str(c[1]) for c in calls]
-    assert any("pdf_downloader.py" in f for f in called_files)
-    assert any("pdf_to_json.py" in f for f in called_files)
-    assert any("preprocess.py" in f for f in called_files)
+    assert called_files[0].endswith("pdf_downloader.py")
+    assert called_files[1].endswith("pdf_to_json.py")
+    assert called_files[2].endswith("preprocess.py")
 
 
 def test_main_pipeline_update_executes_merge(monkeypatch):
@@ -86,7 +94,10 @@ def test_main_pipeline_update_executes_merge(monkeypatch):
     # Expect four script runs including merge_database_files.py
     assert len(calls) == 4
     called_files = [str(c[1]) for c in calls]
-    assert any("merge_database_files.py" in f for f in called_files)
+    assert called_files[0].endswith("pdf_downloader.py")
+    assert called_files[1].endswith("pdf_to_json.py")
+    assert called_files[2].endswith("preprocess.py")
+    assert called_files[3].endswith("merge_database_files.py")
 
 
 def test_main_pipeline_invalid_mode_raises(monkeypatch):
