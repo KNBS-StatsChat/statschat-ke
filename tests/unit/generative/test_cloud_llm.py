@@ -1,8 +1,5 @@
-import types
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-
-import pytest
 
 from statschat.generative.cloud_llm import Inquirer
 from statschat.generative.response_model import LlmResponse
@@ -27,8 +24,18 @@ def test_similarity_search_filters_and_flattens():
 
     # Fake FAISS DB that returns two matches; second is above threshold
     def fake_sim_with_score(query, k):
-        doc1 = SimpleNamespace(dict=lambda: {"page_content": "c1", "metadata": {"title": "A", "date": "2024-01-01"}})
-        doc2 = SimpleNamespace(dict=lambda: {"page_content": "c2", "metadata": {"title": "B", "date": "2020-01-01"}})
+        doc1 = SimpleNamespace(
+            dict=lambda: {
+                "page_content": "c1",
+                "metadata": {"title": "A", "date": "2024-01-01"},
+            }
+        )
+        doc2 = SimpleNamespace(
+            dict=lambda: {
+                "page_content": "c2",
+                "metadata": {"title": "B", "date": "2020-01-01"},
+            }
+        )
         return [(doc1, 0.4), (doc2, 0.6)]
 
     inq.db_latest = SimpleNamespace(similarity_search_with_score=fake_sim_with_score)
@@ -60,9 +67,16 @@ def test_query_texts_parses_chain_response(monkeypatch):
     # Monkeypatch the chain loader to return an object whose invoke returns 'properties'
     # Return a parser-friendly JSON string under 'output_text' so Pydantic parser succeeds
     fake_response_text = '{"answer_provided": true, "most_likely_answer": "ANS", "highlighting1": [], "highlighting2": [], "highlighting3": [], "reasoning": "r"}'
-    fake_chain = SimpleNamespace(invoke=lambda payload, return_only_outputs=True: {"output_text": fake_response_text})
+    fake_chain = SimpleNamespace(
+        invoke=lambda payload, return_only_outputs=True: {
+            "output_text": fake_response_text
+        }
+    )
 
-    monkeypatch.setattr("statschat.generative.cloud_llm.load_qa_with_sources_chain", lambda *a, **k: fake_chain)
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.load_qa_with_sources_chain",
+        lambda *a, **k: fake_chain,
+    )
 
     parsed = inq.query_texts("why", docs)
     assert isinstance(parsed, LlmResponse)
@@ -74,11 +88,26 @@ def test_make_query_uses_similarity_and_formats_answer(monkeypatch):
     inq.logger = MagicMock()
     inq.answer_threshold = 1
     inq.document_threshold = 1
+
     # Provide a stubbed similarity_search that returns two docs (dedup keeps both)
     def fake_similarity(q, latest_filter=True, return_dicts=True):
         return [
-            {"page_content": "one", "date": "2024-01-01", "title": "A", "score": 0.1, "page_url": "u1", "url": "u1"},
-            {"page_content": "two", "date": "2024-01-02", "title": "B", "score": 0.2, "page_url": "u2", "url": "u2"},
+            {
+                "page_content": "one",
+                "date": "2024-01-01",
+                "title": "A",
+                "score": 0.1,
+                "page_url": "u1",
+                "url": "u1",
+            },
+            {
+                "page_content": "two",
+                "date": "2024-01-02",
+                "title": "B",
+                "score": 0.2,
+                "page_url": "u2",
+                "url": "u2",
+            },
         ]
 
     inq.similarity_search = fake_similarity
@@ -97,11 +126,18 @@ def test_make_query_uses_similarity_and_formats_answer(monkeypatch):
     inq.query_texts = fake_query_texts
 
     # Patch highlighter used inside make_query to simply return the docs unchanged
-    monkeypatch.setattr("statschat.generative.cloud_llm.highlighter", lambda docs, validated_response, logger: docs)
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
     # Patch time_decay to avoid depending on external date format parsing
-    monkeypatch.setattr("statschat.generative.cloud_llm.time_decay", lambda date, latest=1: 1)
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.time_decay", lambda date, latest=1: 1
+    )
 
-    docs_out, answer_str, validated = inq.make_query("ask", latest_filter="on", highlighting=True, latest_weight=1)
+    docs_out, answer_str, validated = inq.make_query(
+        "ask", latest_filter="on", highlighting=True, latest_weight=1
+    )
     assert isinstance(validated, LlmResponse)
     assert "SOME ANSWER" in answer_str
     assert isinstance(docs_out, list)

@@ -3,7 +3,14 @@ from statschat.generative.response_model import LlmResponse
 
 def test_llmresponse_defaults_and_fields():
     # Provide required fields explicitly per model definition
-    r = LlmResponse(answer_provided=True, most_likely_answer=None, highlighting1=[], highlighting2=[], highlighting3=[], reasoning=None)
+    r = LlmResponse(
+        answer_provided=True,
+        most_likely_answer=None,
+        highlighting1=[],
+        highlighting2=[],
+        highlighting3=[],
+        reasoning=None,
+    )
     assert r.answer_provided is True
     # highlighting lists should be empty lists
     assert isinstance(r.highlighting1, list) and r.highlighting1 == []

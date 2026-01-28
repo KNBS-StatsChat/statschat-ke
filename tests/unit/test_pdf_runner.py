@@ -90,7 +90,9 @@ def test_main_pipeline_update_executes_merge(monkeypatch):
 
 
 def test_main_pipeline_invalid_mode_raises(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0)
+    )
     _patch_load_config(monkeypatch, "BADMODE")
 
     with pytest.raises(ValueError):
