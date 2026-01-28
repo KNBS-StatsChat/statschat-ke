@@ -47,6 +47,40 @@ def test_similarity_search_local_filters(monkeypatch):
     assert results[0]["page_content"] == "d1"
 
 
+def test_similarity_search_local_latest_filter_uses_latest_db(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.cwd", lambda *a, **k: tmp_path)
+    (tmp_path / "data" / "db_langchain_update").mkdir(parents=True)
+    (tmp_path / "data" / "db_langchain_latest").mkdir(parents=True)
+
+    seen = {}
+
+    def fake_load_local(root, embeddings, allow_dangerous_deserialization=True):
+        seen["root"] = root
+
+        def sim(query, k):
+            doc = SimpleNamespace(
+                model_dump=lambda: {
+                    "page_content": "d_latest",
+                    "metadata": {"title": "A", "date": "2024-01-01"},
+                }
+            )
+            return [(doc, 0.4)]
+
+        return SimpleNamespace(similarity_search_with_score=sim)
+
+    monkeypatch.setattr(
+        "statschat.generative.local_llm.HuggingFaceEmbeddings", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "statschat.generative.local_llm.FAISS.load_local", fake_load_local
+    )
+
+    results = local_llm.similarity_search("q", latest_filter=True, return_dicts=True)
+    assert seen["root"] == "data/db_langchain_latest"
+    assert len(results) == 1
+    assert results[0]["page_content"] == "d_latest"
+
+
 def test_generate_response_uses_tokenizer_and_model():
     # Fake tokenizer: returns object with input_ids/attention_mask that has .to()
     class FakeInputIDs:
