@@ -50,7 +50,7 @@ def test_highlighter_marks_most_likely_answer():
 
 
 def test_time_decay_downweights_older_dates():
-    """Assigns higher weight to more recent dates than older dates."""
+    """Assigns larger decay multipliers to older dates."""
     newer = time_decay("2024-01-01")
     older = time_decay("2020-01-01")
     assert older > newer
