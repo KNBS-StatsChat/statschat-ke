@@ -1,8 +1,7 @@
 # Page Splitting Tests Documentation
 
-**Last Updated**: November 6, 2025
-**Test Count**: 6 tests
-**Coverage**: Essential (integration tests + critical error handling)
+> NOTE: This guide is intentionally written to be durable.
+> It avoids hard-coding test counts, exact timings, or "last updated" dates; use `pytest` output for those.
 
 ## Overview
 
@@ -13,9 +12,9 @@ The page splitting tests validate that PDF to JSON conversion maintains page int
 - Critical error conditions (corruption, mismatches) are detected
 
 
-**Recent Updates**:
-- ✅ Phase 1: Migrated from PyPDF2 to pypdf, strengthened assertions
-- ✅ Phase 2: Created 4 new tests (6 in total).
+**Historical context (optional)**:
+- Migrated from PyPDF2 to pypdf and strengthened assertions.
+- Streamlined to focus on real-world scenarios and critical error handling.
 
 ---
 
@@ -38,20 +37,20 @@ pytest tests/unit/pdf_processing/test_page_splitting.py -k "malformed or mismatc
 pytest tests/unit/pdf_processing/test_page_splitting.py -k "empty" -v
 ```
 
-**Expected Result**: `6 passed in ~2.5s`
+**Expected**: All tests pass.
 
 ---
 
 ## Test Structure
 
-### Test Organization (6 essential tests)
+### Test Organization
 
 ```
-Core Integration Tests (2)     - Use real production data
+Core integration tests     - Use real production data
 ├── test_get_pdf_page_counts
 └── test_validate_page_splitting
 
-Edge Case & Error Handling (4) - Use tmp_path isolation
+Edge case & error handling tests - Use tmp_path isolation
 ├── test_get_pdf_page_counts_empty_directory
 ├── test_validate_page_splitting_malformed_json
 ├── test_validate_page_splitting_page_count_mismatch
@@ -514,7 +513,7 @@ with open(pdf_path, 'rb') as f:
 pytest tests/unit/pdf_processing/test_page_splitting.py -v
 ```
 
-**Expected**: `6 passed in ~2.5s`
+**Expected**: All tests pass.
 
 ---
 
@@ -566,21 +565,11 @@ Shows the slowest tests.
 
 ---
 
-## Test Performance
+## Performance Considerations
 
-### Execution Time Breakdown
-```
-Total: ~2.5s (6 tests)
-
-Integration tests (2):  ~2.48s  (uses real PDFs/JSONs)
-Error handling (4):     ~0.02s  (isolated, uses tmp_path)
-```
-
-### Performance Tips
-- Integration tests are slow (read real files)
-- Isolated tests are fast (<0.02s combined)
-- Run isolated tests during development
-- Run integration tests before commits
+- Integration-style tests read real PDFs/JSONs from configured directories and can be noticeably slower.
+- tmp_path-isolated tests should remain fast and deterministic.
+- During development, prefer running isolated tests; run integration-style checks before merging changes.
 
 ---
 
@@ -637,25 +626,25 @@ pytest tests/unit/pdf_processing/test_page_splitting.py::test_my_new_scenario -v
 
 ## Migration History
 
-### Phase 1 (November 5, 2025)
+### Phase 1 (Historical)
 - ✅ Migrated from deprecated PyPDF2 to pypdf
 - ✅ Removed module-level config loading
 - ✅ Cleaned up Jupyter notebook artifacts
 - ✅ Strengthened assertions with detailed validation
 - ✅ Added comprehensive docstrings
 
-### Phase 2 Expansion (November 5, 2025)
+### Phase 2 Expansion (Historical)
 - ✅ Added 4 edge case tests
 - ✅ Added 5 error handling tests
 - ✅ Added 3 negative test cases
 - ✅ Added 10 parameterized test instances
-- ✅ Expanded coverage: 2 → 23 tests (+1,050%)
+- ✅ Expanded coverage significantly (historical context)
 
-### Phase 2 Streamlining (November 6, 2025)
+### Phase 2 Streamlining (Historical)
 - ✅ Removed 17 redundant tests based on user feedback
 - ✅ Kept only essential tests: 2 integration + 4 error handling
 - ✅ Rationale: User's pipeline controls JSON creation, so missing field scenarios don't occur in practice
-- ✅ Final count: 23 → 6 tests (focused on real-world issues)
+- ✅ Focused on real-world issues and maintainability
 
 ---
 
@@ -683,5 +672,4 @@ pytest tests/unit/pdf_processing/test_page_splitting.py::test_my_new_scenario -v
 
 ---
 
-**Last Updated**: November 6, 2025
-**Status**: ✅ Streamlined to 6 essential tests
+If this guide starts drifting from the current suite, prefer updating the wording/structure rather than adding hard-coded counts or timings.

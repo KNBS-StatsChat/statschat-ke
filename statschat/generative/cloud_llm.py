@@ -264,7 +264,13 @@ class Inquirer:
         )
 
         if len(docs1) == 0:
-            return docs1, ""
+            empty_response = LlmResponse(
+                answer_provided=False,
+                highlighting1=[],
+                highlighting2=[],
+                highlighting3=[],
+            )
+            return docs1, "", empty_response
         docs = deduplicator(docs1, keys=["title", "date"])
 
         if latest_weight > 0:
@@ -323,6 +329,12 @@ class Inquirer:
 
             context_string = "No context available. Please refer to response"
 
+            # Ensure the answer text is consistent with placeholder references.
+            # (Avoid suggesting that links are available when they are not.)
+            answer_str = (
+                "No suitable PDFs found for this question. Please try rephrasing."
+            )
+
             docs.clear()
 
             docs.extend([document_string, context_string])
@@ -345,8 +357,29 @@ if __name__ == "__main__":
     # question = "Where can I find the registered births by age of mother and county?"
     # question = "What is the sample size of the Real Estate Survey?"
     # question = "How is core inflation calculated?"
-    question = "What was inflation in Kenya in December 2022?"
+    # question = "What was inflation in Kenya in December 2022?"
     # question = "What is football?"
+    # question = "What was the population of Kenya in 2019?"
+    # question = "How many counties are there in Kenya?"
+    # question = "What is the Kenya National Bureau of Statistics?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "What was Kenya's GDP growth rate in 2023?"
+    # question = "What is the total area of Kenya?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "What was Kenya's inflation rate in Q1 2023?"
+    # question = "What is the latest official GDP figure for 2025?"
+    # question = "What was Kenya's GDP growth rate in Q3 2025?"
+    # question = "How much did the economy expand in the third quarter of 2025?"
+    # question = "What was inflation in Kenya in 2022?"
+    # question = "What was the inflation rate in Kenya in 2021?"
+    # question = "What was the inflation rate in Kenya in July 2022?"
+    # question = "What was the inflation rate in Kenya in August 2022?"
+    # question = "What was the year on year inflation rate in August 2022?"
+    # question = "What was the inflation rate in December 2022?"
+    # question = "What was Kenya's Consumer Price Index inflation rate in December 2022?"
+    # question = "What was inflation in Kenya in 2023?"
+    # question = "By how much did Kenya's GDP grow in 2024?"
+    question = "What proportion of women own agricultural land in Kenya?"
 
     docs, answer, response = inquirer.make_query(
         question,
@@ -362,22 +395,28 @@ if __name__ == "__main__":
 
     elif test_thresholds == "NO":
         print(answer)
-        page_url = docs[0]["page_url"]
-        # Extract document name from URL
-        document_url = docs[0]["url"]
-        split_url = document_url.split("/")
-        doc_id = split_url[-1]
-        document_name = doc_id[:-4]
-        document_title = docs[0]["title"]
+        if not docs or not isinstance(docs[0], dict):
+            print("No document metadata available for this question.")
+        else:
+            page_url = docs[0]["page_url"]
+            # Extract document name from URL
+            document_url = docs[0]["url"]
+            split_url = document_url.split("/")
+            doc_id = split_url[-1]
+            document_name = doc_id[:-4]
+            document_title = docs[0]["title"]
 
     print("-------------------- DOCUMENT -------------------")
     if test_thresholds == "YES":
         print(docs[0])
 
     elif test_thresholds == "NO":
-        print(f"The document title is {document_title}.")
-        print(f"The file name is {document_name}.")
-        print(f"You can read more from the document at {page_url}.")
+        if "document_title" in locals():
+            print(f"The document title is {document_title}.")
+            print(f"The file name is {document_name}.")
+            print(f"You can read more from the document at {page_url}.")
+        else:
+            print("No document details available.")
 
     print("------------------ CONTEXT INFO ------------------")
     if test_thresholds == "YES":

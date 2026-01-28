@@ -75,7 +75,7 @@ def test_json_splitter_preserves_metadata(tmp_path, caplog):
     prepper = PrepareVectorStore.__new__(PrepareVectorStore)
     prepper.directory = str(json_dir)
     prepper.split_directory = str(split_dir)
-    prepper.latest_only = False
+    prepper.latest_only = True
     prepper.logger = logger
 
     # Run the splitter
@@ -206,7 +206,7 @@ def test_json_splitter_skips_short_text(tmp_path):
     prepper = PrepareVectorStore.__new__(PrepareVectorStore)
     prepper.directory = str(json_dir)
     prepper.split_directory = str(split_dir)
-    prepper.latest_only = False
+    prepper.latest_only = True
     prepper.logger = logger
 
     prepper._json_splitter()
@@ -216,7 +216,7 @@ def test_json_splitter_skips_short_text(tmp_path):
     assert len(split_files) == 2
 
 
-def test_json_splitter_handles_missing_latest_key(tmp_path):
+def test_json_splitter_handles_missing_latest_key(tmp_path, caplog):
     """
     Verify graceful handling when 'latest' key is missing.
 
@@ -247,13 +247,16 @@ def test_json_splitter_handles_missing_latest_key(tmp_path):
     prepper = PrepareVectorStore.__new__(PrepareVectorStore)
     prepper.directory = str(json_dir)
     prepper.split_directory = str(split_dir)
-    prepper.latest_only = False
+    prepper.latest_only = True
     prepper.logger = logger
+
+    caplog.set_level(logging.WARNING)
 
     # Should not crash
     prepper._json_splitter()
 
-    # With latest_only=False, should process the file anyway
+    assert any("Could not parse" in record.message for record in caplog.records)
+
+    # With latest_only=True and missing key, no split files should be created
     split_files = list(split_dir.glob("*.json"))
-    # May be 0 or 1 depending on error handling - either is acceptable
-    assert len(split_files) >= 0
+    assert len(split_files) == 0

@@ -12,20 +12,23 @@ class LlmResponse(BaseModel):
         the provided text. Empty if answer_provided=False."""
     )
     highlighting1: List[str] = Field(
+        default=[],
         description="""List of short exact subphrases from the first context document,
         that are most relevant to the question and should therefore be highlighted
-        within the context."""
+        within the context.""",
     )
     highlighting2: List[str] = Field(
+        default=[],
         description="""List of short exact subphrases from the second context document,
         that are most relevant to the question and should therefore be highlighted
-        within the context."""
+        within the context.""",
     )
     highlighting3: List[str] = Field(
+        default=[],
         description="""List of short exact subphrases from the third and any further
         context document, that are most relevant to the question and should therefore
         be highlighted within the context.
-        Empty of the number of context documents is smaller."""
+        Empty of the number of context documents is smaller.""",
     )
     reasoning: Optional[str] = Field(
         description="""Step by step reasoning why an answer has been selected or could

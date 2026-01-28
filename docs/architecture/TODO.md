@@ -1,6 +1,6 @@
 # Architecture Documentation - TODO
 
-Tracking planned documentation work and improvements.
+Tracking planned documentation work and improvements in the Architecture folder.
 
 ---
 

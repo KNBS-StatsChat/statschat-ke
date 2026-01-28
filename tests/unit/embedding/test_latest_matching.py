@@ -10,6 +10,7 @@ Run:
 
 import json
 import os
+from unittest.mock import MagicMock
 
 
 def test_compare_latest_exact_match(tmp_path):
@@ -242,6 +243,45 @@ def test_update_split_documents_flags(tmp_path):
     with open(split_dir / "other-pub_0.json") as f:
         other = json.load(f)
     assert other["latest"] is True, "Unrelated publication should remain latest=True"
+
+
+def test_find_matching_chunks():
+    """Selects chunk IDs whose metadata source matches a target publication."""
+    from statschat.embedding.latest_updates import find_matching_chunks
+
+    db_dict = {
+        "chunk1": MagicMock(metadata={"source": "2024-Economic-Survey.json_section"}),
+        "chunk2": MagicMock(metadata={"source": "Other"}),
+    }
+    matches = find_matching_chunks(db_dict, ["2024-Economic-Survey.json"])
+    assert matches == ["chunk1"]
+
+
+def test_find_matching_chunks_returns_multiple_matches():
+    """Returns all chunk IDs when multiple sources match a doc prefix."""
+    from statschat.embedding.latest_updates import find_matching_chunks
+
+    db_dict = {
+        "chunk1": MagicMock(metadata={"source": "2025-Economic-Survey.json_001"}),
+        "chunk2": MagicMock(metadata={"source": "2025-Economic-Survey.json_002"}),
+        "chunk3": MagicMock(metadata={"source": "Other"}),
+    }
+
+    matches = find_matching_chunks(db_dict, ["2025-Economic-Survey.json"])
+    assert set(matches) == {"chunk1", "chunk2"}
+
+
+def test_find_matching_chunks_no_matches():
+    """Returns empty list when no sources match any doc prefix."""
+    from statschat.embedding.latest_updates import find_matching_chunks
+
+    db_dict = {
+        "chunk1": MagicMock(metadata={"source": "2025-Economic-Survey_001"}),
+        "chunk2": MagicMock(metadata={"source": "2025-Economic-Survey_002"}),
+    }
+
+    matches = find_matching_chunks(db_dict, ["Population-Census.json"])
+    assert matches == []
 
 
 def test_compare_latest_handles_empty_temp_dir(tmp_path):

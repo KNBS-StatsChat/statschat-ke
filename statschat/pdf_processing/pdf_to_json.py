@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 import numpy as np
-from typing import List
+from typing import Callable, List
 from tqdm import tqdm
 from bs4 import BeautifulSoup
 from urllib.request import Request, urlopen
@@ -222,10 +222,9 @@ def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
             modification_date_obj = datetime.strptime(pdf_modification_date, "%Y-%m-%d")
 
             # Check if the modification date is >5 years earlier than the creation date
-            if (
-                modification_date_obj - creation_date_obj
-            ).days > 1825:  # ~5 years in days
-                return pdf_creation_date  # Default to creation date
+            # (some PDFs have incorrect ModDate values far in the past).
+            if (creation_date_obj - modification_date_obj).days > 1825:  # ~5 years
+                return pdf_creation_date
 
             return pdf_modification_date
         else:
@@ -234,6 +233,56 @@ def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
     except (AttributeError, ValueError, KeyError):
         # Fallback to creation date if modification date is unavailable or invalid
         return pdf_creation_date
+
+
+def _default_id_factory() -> str:
+    return str(np.random.randint(1000000, 9999999))
+
+
+def assemble_pdf_info(
+    *,
+    file_name: str,
+    pdf_metadata: dict,
+    pdf_add_metadata: dict,
+    pdf_url: str,
+    pdf_creation_date: str,
+    content: list,
+    id_factory: Callable[[], str] = _default_id_factory,
+) -> dict:
+    """Pure helper: assemble the JSON payload for a single PDF.
+
+    This is separated from `build_json()` so unit tests can validate schema and
+    invariants without needing network/PDF parsing.
+    """
+
+    title = file_name.replace(".pdf", "").replace("-", " ")
+    if not title:
+        title = str(pdf_metadata.get("title", ""))
+
+    pdf_info = {
+        "id": id_factory(),
+        "title": title,
+        "release_date": pdf_creation_date,
+        "modification_date": extract_pdf_modification_date(
+            pdf_metadata, pdf_creation_date
+        ),
+        "overview": pdf_add_metadata.get("overview", ""),
+        "theme": pdf_add_metadata.get("publication_theme", ""),
+        "release_type": pdf_add_metadata.get("publication_type", ""),
+        "url": pdf_url,
+        "latest": True,
+        "url_keywords": extract_url_keywords_from_filename(file_name),
+        "contact_name": "Kenya National Bureau of Statistics",
+        "contact_link": "datarequest@knbs.or.ke",
+        "content": content,
+    }
+
+    # Keep this legacy invariant: if the overview is just the title + trailing
+    # space, blank it out.
+    if pdf_info["overview"] == pdf_info["title"] + " ":
+        pdf_info["overview"] = " "
+
+    return pdf_info
 
 
 def extract_pdf_metadata(pdf_file_path: Path) -> tuple:
@@ -435,8 +484,16 @@ def convert_to_date(date_str: str) -> str:
 
 
 def build_json(
-    pdf_file_path: Path, pdf_website_url: str, report_page: str, JSON_DIR: Path
-) -> int:
+    pdf_file_path: Path,
+    pdf_website_url: str,
+    report_page: str,
+    JSON_DIR: Path,
+    *,
+    abstract_metadata_getter: Callable[[str], dict] = get_abstract_metadata,
+    metadata_extractor: Callable[[Path], tuple[str, dict]] = extract_pdf_metadata,
+    text_extractor: Callable[[Path, str], list] = extract_pdf_text,
+    id_factory: Callable[[], str] = _default_id_factory,
+) -> Path:
     """
     Processes a PDF file, extracts metadata and content, then saves it as JSON.
 
@@ -444,23 +501,22 @@ def build_json(
         pdf_file_path (Path): The path to the PDF file.
         pdf_website_url (str): The URL of the PDF document.
         report_page (str): The URL of the report page.
-        counter (int): A running count of files missing reliable date information.
         JSON_DIR (Path): The path to the chosen json folder - latest or old
 
     Returns:
-        int: Updated counter for files missing an explicit creation date.
+        Path: Path to the generated JSON file.
     """
 
     # Notify which file is being processed
     # print(f"Processing: {pdf_file_path.name}")
 
     # Extract Metadata & Pre-Process
-    file_name, pdf_metadata = extract_pdf_metadata(pdf_file_path)
+    file_name, pdf_metadata = metadata_extractor(pdf_file_path)
 
     # Construct the document's URL
     pdf_url = pdf_website_url
     # Obtain additional metadata from pdf report page
-    pdf_add_metadata = get_abstract_metadata(report_page)
+    pdf_add_metadata = abstract_metadata_getter(report_page)
     try:
         pdf_creation_date = convert_to_date(pdf_add_metadata["date"])
     except Exception:
@@ -468,32 +524,15 @@ def build_json(
         pdf_creation_date, _ = extract_pdf_creation_date(pdf_metadata, file_name, 0)
         print("Defaulting to PDF metadata or filename for creation date.")
 
-    # Construct Ordered Metadata Dictionary
-    pdf_info = {
-        "id": str(np.random.randint(1000000, 9999999)),  # Unique ID first
-        "title": file_name.replace(".pdf", "").replace("-", " ")
-        or pdf_metadata.title,  # Title next
-        "release_date": pdf_creation_date,  # Release date field
-        "modification_date": extract_pdf_modification_date(
-            pdf_metadata, pdf_creation_date
-        ),
-        "overview": pdf_add_metadata["overview"],  # Overview of the document
-        "theme": pdf_add_metadata["publication_theme"],  # Publication theme
-        "release_type": pdf_add_metadata["publication_type"],  # Report, Survey, etc.
-        "url": pdf_url,  # URL for document access
-        "latest": True,  # Boolean flag for latest version
-        "url_keywords": extract_url_keywords_from_filename(
-            file_name
-        ),  # Extracted keywords
-        "contact_name": "Kenya National Bureau of Statistics",  # Contact details
-        "contact_link": "datarequest@knbs.or.ke",
-        "content": extract_pdf_text(
-            pdf_file_path, pdf_url
-        ),  # Extracted text at the end
-    }
-    # check if overview is equal to the title
-    if pdf_info["overview"] == pdf_info["title"] + " ":
-        pdf_info["overview"] = " "  # Set overview to empty string
+    pdf_info = assemble_pdf_info(
+        file_name=file_name,
+        pdf_metadata=pdf_metadata,
+        pdf_add_metadata=pdf_add_metadata,
+        pdf_url=pdf_url,
+        pdf_creation_date=pdf_creation_date,
+        content=text_extractor(pdf_file_path, pdf_url),
+        id_factory=id_factory,
+    )
 
     # Export JSON
     JSON_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
@@ -502,7 +541,7 @@ def build_json(
     with open(json_file_path, "w") as json_file:
         json.dump(pdf_info, json_file, indent=4)
 
-    return None
+    return json_file_path
 
 
 def normalize_dict_keys(file_dict: dict) -> dict:

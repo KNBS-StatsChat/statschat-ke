@@ -19,6 +19,7 @@ def deduplicator(records: list[dict], keys: list[str]) -> list[dict]:
         signature = "::".join([str(record[field]) for field in keys])
         if signature not in signatures:
             to_return.append(record)
+            signatures.append(signature)
     return to_return
 
 

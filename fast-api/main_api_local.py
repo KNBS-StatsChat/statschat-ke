@@ -100,6 +100,9 @@ async def search(
         logger.warning('Unknown content type. Fallback to "latest".')
         content_type = "latest"
 
+    answer_threshold = float(CONFIG.get("search", {}).get("answer_threshold", 0.5))
+    document_threshold = float(CONFIG.get("search", {}).get("document_threshold", 0.9))
+
     # Choose your model (e.g., Mistral-7B, DeepSeek, Llama-3, etc.)
     MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
     # Load model and tokenizer
@@ -114,42 +117,84 @@ async def search(
     )
 
     # Get the most relevant text chunks
-    relevant_texts = similarity_search(question, latest_filter=True)
+    relevant_texts = similarity_search(
+        question, latest_filter=(content_type == "latest")
+    )
+
+    # Handle: no search results
+    if not relevant_texts:
+        results = {
+            "question": question,
+            "content_type": content_type,
+            "answer": "No suitable PDFs found for this question. Please try rephrasing.",
+            "references": "",
+            "context_from": "",
+            "context_reference": "",
+            "relevant_publication_one": "",
+            "relevant_publication_two": "",
+        }
+        logger.info(f"Sending following response: {results}")
+        return results
+
+    # Local retrieval normally provides a numeric similarity score. In tests/mocks it may be absent.
+    # Defaulting to 0.0 avoids incorrectly treating results as "no suitable PDFs".
+    top_score = float(relevant_texts[0].get("score", 0.0))
+
+    # Handle: "no suitable PDFs" (keep answer consistent with references)
+    if top_score > document_threshold:
+        results = {
+            "question": question,
+            "content_type": content_type,
+            "answer": "No suitable PDFs found for this question. Please try rephrasing.",
+            "references": "",
+            "context_from": "",
+            "context_reference": "",
+            "relevant_publication_one": "",
+            "relevant_publication_two": "",
+        }
+        logger.info(f"Sending following response: {results}")
+        return results
+
+    # Safely select up to two contexts (local prompt currently supports 2)
+    context_1 = relevant_texts[0]["page_content"]
+    context_2 = relevant_texts[1]["page_content"] if len(relevant_texts) > 1 else ""
 
     specific_prompt = _extractive_prompt.format(
         QuestionPlaceholder=question,
-        ContextPlaceholder1=relevant_texts[0]["page_content"],
-        ContextPlaceholder2=relevant_texts[1]["page_content"],
+        ContextPlaceholder1=context_1,
+        ContextPlaceholder2=context_2,
     )
     user_input = _core_prompt + specific_prompt + _format_instructions
 
     raw_response = generate_response(user_input, model, tokenizer)
     formatted_response = format_response(raw_response)
 
-    # If no suitable answer
-    if formatted_response.get("most_likely_answer") is None:
-        results = {
-            "question": question,
-            "content_type": content_type,
-            "answer": "No suitable answer, but relevant information may in a PDF.",
-            "references": relevant_texts[0]["page_url"],
-            "context_from": formatted_response["where_context_from"],
-            "context_reference": formatted_response["context_reference"],
-            "relevant_publication_one": relevant_texts[0]["title"],
-            "relevant_publication_two": relevant_texts[1]["title"],
-        }
+    pub_one = relevant_texts[0].get("title", "")
+    pub_two = relevant_texts[1].get("title", "") if len(relevant_texts) > 1 else ""
+    reference_url = relevant_texts[0].get("page_url", "")
 
+    # If context is weak, avoid pretending we have a grounded answer.
+    if top_score > answer_threshold:
+        answer = (
+            "No suitable answer found. "
+            "However relevant information may be found in a PDF. "
+            "Please check the link(s) provided."
+        )
     else:
-        results = {
-            "question": question,
-            "content_type": content_type,
-            "answer": formatted_response["most_likely_answer"],
-            "references": relevant_texts[0]["page_url"],
-            "context_from": formatted_response["where_context_from"],
-            "context_reference": formatted_response["context_reference"],
-            "relevant_publication_one": relevant_texts[0]["title"],
-            "relevant_publication_two": relevant_texts[1]["title"],
-        }
+        answer = formatted_response.get("most_likely_answer")
+        if not answer:
+            answer = "No suitable answer found."
+
+    results = {
+        "question": question,
+        "content_type": content_type,
+        "answer": answer,
+        "references": reference_url,
+        "context_from": formatted_response.get("where_context_from", ""),
+        "context_reference": formatted_response.get("context_reference", ""),
+        "relevant_publication_one": pub_one,
+        "relevant_publication_two": pub_two,
+    }
 
     logger.info(f"Sending following response: {results}")
     return results

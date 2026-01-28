@@ -36,6 +36,11 @@ These documents detail the journey of data from the KNBS website to the user's s
     -   *Scope*: Prompt engineering, LLM interaction (Cloud vs Local), and response parsing.
     -   *Key Scripts*: `cloud_llm.py`, `local_llm.py`, `prompts_cloud.py`.
 
+#### Cross-cutting
+-   **[Input/Output (I/O) Overview](pipeline-input-output.md)**
+    -   *Scope*: What goes in (PDFs, chunks, questions) and what comes out (answers, references) across both the pipeline and query-time API.
+
+
 ### 2. Configuration & Operations
 
 -   **[Token Usage & Cost Guide](token-usage-guide.md)**
