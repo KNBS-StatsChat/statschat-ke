@@ -83,7 +83,7 @@ If the retrieved context is too weak (based on thresholds), StatsChat may return
 
 > "No suitable answer found. However relevant information may be found in a PDF. Please check the link(s) provided."
 
-If the top match is worse than `document_threshold` (i.e., “no suitable PDFs found”), the cloud path replaces `references` with placeholder strings rather than returning chunk dicts.
+If the top match is worse than `document_threshold` (i.e., “no suitable PDFs found”), the cloud path returns an empty `references` list rather than returning chunk dicts.
 
 Note: the cloud implementation also adjusts the answer text in this case so it does not suggest that links are available.
 
@@ -92,12 +92,112 @@ Note: the cloud implementation also adjusts the answer text in this case so it d
   "question": "...",
   "content_type": "latest",
   "answer": "...",
+  "references": []
+}
+```
+
+#### Interpreting `cloud_llm.py` script output
+
+When you run `python statschat/generative/cloud_llm.py` directly, it prints a
+developer-friendly view of the same pieces the cloud `/search` endpoint returns.
+This output is meant for inspection/debugging, so it is more verbose and not
+identical to the API response shape.
+
+For example, for the question:
+
+> "By how much did Kenya's GDP grow in 2024?"
+
+you may see:
+
+- **`-------------------- ANSWER --------------------`**
+  - This is the user-facing *answer string* (maps to the API `answer` field).
+  - The cloud API contract targets **plain text** here (no embedded HTML).
+    You may still see HTML in `references[*].page_content` depending on how the
+    PDF text was extracted.
+
+- **`-------------------- DOCUMENT -------------------`**
+  - A friendly summary of the **top retrieved source** (title + PDF/page URL).
+  - In the API response, this information is contained inside the first element
+    of the `references` list (e.g., `title`, `page_url`).
+
+- **`------------------ CONTEXT INFO ------------------`**
+  - The retrieved evidence shown as a Python list of dicts (each dict is a
+    retrieved **chunk** plus metadata and a similarity `score`).
+  - This corresponds most directly to the API `references` field.
+  - Score note: in this setup, **lower scores are better** (more similar). The
+    retrieval and filtering thresholds control whether chunks are returned and
+    whether the system claims it found “suitable” documents.
+
+- **`------------------ FULL RESPONSE -----------------`**
+  - A structured internal summary: whether an answer was provided, the extracted
+    “most likely” answer, highlight strings, and a short reasoning statement.
+  - In the cloud API, this is closest to what you would include under
+    `debug_response` when `debug=true`.
+
+In short: the script’s “ANSWER” becomes `answer`, the “CONTEXT INFO” list becomes
+`references`, and the “FULL RESPONSE” maps naturally to `debug_response`.
+
+#### Proposed web-ready response contract (spec update)
+
+Because the primary client is expected to be a KNBS website/chat UI, the API
+response should be optimized for safe rendering and user readability.
+
+**Spec goals**
+
+- `answer` is **plain text** (no embedded HTML).
+- `references` is always a **list of chunk objects** (or an empty list). It should
+  never be a string, and it should never contain placeholder strings.
+- Threshold behavior stays consistent with current intent:
+  - If the best score is worse than `answer_threshold`, return a fallback answer
+    but still include `references` if documents were retrieved.
+  - If the best score is worse than `document_threshold`, return a “no PDFs found”
+    answer and return `references: []`.
+
+**Recommended fields**
+
+- `answer` (string): plain-language answer suitable for direct display.
+- `references` (list[object]): retrieved chunks with provenance (`title`, `page_url`,
+  `page_content`, `score`, and any other useful metadata).
+- `debug_response` (object, optional): only when `debug=true`; contains model fields
+  like `most_likely_answer`, `highlighting*`, and `reasoning`.
+
+**Example: high-confidence answer (above thresholds)**
+
+```json
+{
+  "question": "By how much did Kenya's GDP grow in 2024?",
+  "content_type": "latest",
+  "answer": "Kenya’s real GDP grew by 4.7% in 2024.",
   "references": [
-    "No suitable PDFs found. Please refer to context",
-    "No context available. Please refer to response"
+    {
+      "title": "2025 Facts and Figures",
+      "date": "01 May 2025",
+      "page_url": "https://www.knbs.or.ke/wp-content/uploads/2025/09/2025-Facts-and-Figures.pdf#page=31",
+      "page_number": 31,
+      "page_content": "In 2024, Kenya’s real Gross Domestic Product (GDP) grew by 4.7 per cent ...",
+      "score": 0.32
+    }
   ]
 }
 ```
+
+**Example: no suitable PDFs (worse than `document_threshold`)**
+
+```json
+{
+  "question": "...",
+  "content_type": "latest",
+  "answer": "No suitable PDFs found for this question. Please try rephrasing.",
+  "references": []
+}
+```
+
+Notes:
+
+- This spec intentionally keeps presentation markup (HTML) out of `answer`. If the
+  frontend wants rich formatting, prefer rendering it client-side.
+- The cloud implementation is expected to keep `answer` as plain text and keep
+  `references` as a list of chunk objects (or an empty list).
 
 ### Local `/search` (legacy/alternative)
 
@@ -154,7 +254,7 @@ If the local path cannot find suitable PDFs (no results, or the top match is wor
 
 **Edge case: “no suitable PDFs”**
 
-If the best retrieved chunk’s score is worse than `document_threshold`, the code clears references and returns two placeholder strings instead.
+If the best retrieved chunk’s score is worse than `document_threshold`, the code returns an empty `references` list.
 
 ### Local API path (legacy/alternative)
 

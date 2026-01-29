@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEndpoint
@@ -121,6 +122,11 @@ class Inquirer:
     def flatten_meta(d):
         """Utility, raise metadata within nested dicts."""
         return d | d.pop("metadata")
+
+    @staticmethod
+    def _strip_html(text: str) -> str:
+        """Remove simple HTML markup from text for safe display."""
+        return re.sub(r"<[^>]+>", "", text)
 
     def similarity_search(
         self, query: str, latest_filter: bool = True, return_dicts: bool = True
@@ -307,12 +313,23 @@ class Inquirer:
         if validated_response.answer_provided is False:
             answer_str = ""
         else:
-            answer_str = (
-                "Most relevant quote from publications below: "
-                + '<h4 class="ons-u-fs-xxl"> <div id="answer">'
-                + validated_response.most_likely_answer
-                + "</div> </h4>"
+            # Web/chat clients expect a human-readable plain-text answer.
+            # Prefer the model-provided highlight sentence when available.
+            highlighted = (
+                validated_response.highlighting1[0]
+                if getattr(validated_response, "highlighting1", None)
+                and len(validated_response.highlighting1) > 0
+                else ""
             )
+            highlighted = self._strip_html(highlighted).strip()
+            if highlighted and not highlighted.endswith((".", "!", "?")):
+                highlighted += "."
+
+            most_likely = self._strip_html(
+                getattr(validated_response, "most_likely_answer", "") or ""
+            ).strip()
+
+            answer_str = highlighted or most_likely
 
         if docs[0]["score"] > self.answer_threshold:
             answer_str = (
@@ -378,8 +395,8 @@ if __name__ == "__main__":
     # question = "What was the inflation rate in December 2022?"
     # question = "What was Kenya's Consumer Price Index inflation rate in December 2022?"
     # question = "What was inflation in Kenya in 2023?"
-    # question = "By how much did Kenya's GDP grow in 2024?"
-    question = "What proportion of women own agricultural land in Kenya?"
+    question = "By how much did Kenya's GDP grow in 2024?"
+    # question = "What proportion of women own agricultural land in Kenya?"
 
     docs, answer, response = inquirer.make_query(
         question,
