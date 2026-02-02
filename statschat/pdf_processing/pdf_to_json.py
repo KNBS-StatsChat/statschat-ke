@@ -489,10 +489,10 @@ def build_json(
     report_page: str,
     JSON_DIR: Path,
     *,
-    abstract_metadata_getter: Callable[[str], dict] = get_abstract_metadata,
-    metadata_extractor: Callable[[Path], tuple[str, dict]] = extract_pdf_metadata,
-    text_extractor: Callable[[Path, str], list] = extract_pdf_text,
-    id_factory: Callable[[], str] = _default_id_factory,
+    abstract_metadata_getter: Callable[[str], dict] | None = None,
+    metadata_extractor: Callable[[Path], tuple[str, dict]] | None = None,
+    text_extractor: Callable[[Path, str], list] | None = None,
+    id_factory: Callable[[], str] | None = None,
 ) -> Path:
     """
     Processes a PDF file, extracts metadata and content, then saves it as JSON.
@@ -509,6 +509,15 @@ def build_json(
 
     # Notify which file is being processed
     # print(f"Processing: {pdf_file_path.name}")
+
+    if abstract_metadata_getter is None:
+        abstract_metadata_getter = get_abstract_metadata
+    if metadata_extractor is None:
+        metadata_extractor = extract_pdf_metadata
+    if text_extractor is None:
+        text_extractor = extract_pdf_text
+    if id_factory is None:
+        id_factory = _default_id_factory
 
     # Extract Metadata & Pre-Process
     file_name, pdf_metadata = metadata_extractor(pdf_file_path)

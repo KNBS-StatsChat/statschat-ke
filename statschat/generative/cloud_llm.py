@@ -392,10 +392,10 @@ if __name__ == "__main__":
     # question = "What was the inflation rate in Kenya in July 2022?"
     # question = "What was the inflation rate in Kenya in August 2022?"
     # question = "What was the year on year inflation rate in August 2022?"
-    # question = "What was the inflation rate in December 2022?"
+    question = "What was the inflation rate in December 2022?"
     # question = "What was Kenya's Consumer Price Index inflation rate in December 2022?"
     # question = "What was inflation in Kenya in 2023?"
-    question = "By how much did Kenya's GDP grow in 2024?"
+    # question = "By how much did Kenya's GDP grow in 2024?"
     # question = "What proportion of women own agricultural land in Kenya?"
 
     docs, answer, response = inquirer.make_query(
