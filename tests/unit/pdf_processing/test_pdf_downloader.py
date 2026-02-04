@@ -508,7 +508,12 @@ def test_pdf_download_redirect_not_saved(tmp_path, monkeypatch):
 
 def test_pdf_download_timeout_raises(tmp_path, monkeypatch):
     """
-    Test that a timeout during PDF download propagates and no url_dict.json is written.
+    Test that a timeout during PDF download is handled and the run completes.
+
+    The downloader should:
+    - skip the failed PDF
+    - still write url_dict.json (possibly empty)
+    - write a download report in outputs/
     """
     logger.info("Running timeout download test...")
     mock_config = {
@@ -549,12 +554,17 @@ def test_pdf_download_timeout_raises(tmp_path, monkeypatch):
     import statschat.pdf_processing.pdf_downloader as dl
 
     importlib.reload(dl)
-    with pytest.raises(Timeout):
-        dl.main()
+    dl.main()
 
     data_dir = tmp_path / "data" / "pdf_downloads"
     url_dict_path = data_dir / "url_dict.json"
-    assert not url_dict_path.exists()
+    assert url_dict_path.exists()
+    url_dict = json.loads(url_dict_path.read_text())
+    assert "sample.pdf" not in url_dict
+
+    outputs_dir = tmp_path / "outputs"
+    reports = list(outputs_dir.glob("pdf_download_report_setup_*.json"))
+    assert reports, "Expected a download report to be written"
 
 
 def test_url_dict_and_file_mismatch(tmp_path, monkeypatch):
@@ -609,10 +619,11 @@ def test_pdf_validity_with_fitz(tmp_path, monkeypatch):
     data_dir.mkdir(parents=True)
     # Valid PDF
     valid_pdf = data_dir / "valid.pdf"
-    # Minimal valid PDF bytes
-    valid_pdf.write_bytes(
-        b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\nxref\n0 2\n0000000000 65535 f \n0000000009 00000 n \ntrailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n38\n%%EOF"
-    )
+    # Create a valid PDF using PyMuPDF for cross-version stability
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(valid_pdf)
+    doc.close()
     # Corrupted PDF
     corrupted_pdf = data_dir / "corrupt.pdf"
     corrupted_pdf.write_bytes(b"not a pdf")

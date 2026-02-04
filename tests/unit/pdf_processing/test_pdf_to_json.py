@@ -8,21 +8,11 @@ These tests focus on high-ROI, deterministic behaviors:
 
 import importlib
 import json
-import sys
 from datetime import datetime
-from types import ModuleType
 
 import pytest
 
-fake_fitz = ModuleType("fitz")
-
-
-def _fake_open(*args, **kwargs):
-    raise RuntimeError("fake fitz.open called - should be monkeypatched in tests")
-
-
-fake_fitz.open = _fake_open
-sys.modules.setdefault("fitz", fake_fitz)
+pytest.importorskip("fitz")
 
 pdf_to_json = importlib.import_module("statschat.pdf_processing.pdf_to_json")
 

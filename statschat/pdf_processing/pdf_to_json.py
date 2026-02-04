@@ -2,6 +2,7 @@
 # import modules
 import os
 import fitz  # PyMuPDF
+import pdfplumber
 import json
 import re
 from pathlib import Path
@@ -317,26 +318,114 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
         list: A list of dictionaries containing page number, URL, and extracted text.
     """
 
-    pages_text = []
-    doc = fitz.open(pdf_file_path)
+    pages_text: list[dict] = []
+    extraction_errors: list[dict] = []
+    plumber_doc = None
 
-    for page_num in range(1, len(doc) + 1):
-        page = doc[page_num - 1]  # PyMuPDF uses 0-based indexing
-        text = page.get_text()
-        if text:
-            text = text.replace("\n", "")
-
-        page_link = f"{pdf_url}#page={page_num}"
-        pages_text.append(
+    try:
+        doc = fitz.open(pdf_file_path)
+    except Exception as exc:  # PyMuPDF raises various RuntimeError / fitz.* errors
+        print(f"ERROR: Failed to open PDF for extraction: {pdf_file_path} ({exc})")
+        extraction_errors.append(
             {
-                "page_number": page_num,
-                "page_url": page_link,
-                "page_text": text or "",
+                "pdf": str(pdf_file_path),
+                "page": None,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
             }
         )
+        _maybe_persist_extraction_errors(extraction_errors)
+        return pages_text
 
-    doc.close()
+    try:
+        for page_num in range(1, len(doc) + 1):
+            page_link = f"{pdf_url}#page={page_num}"
+            text = ""
+            try:
+                page = doc[page_num - 1]  # PyMuPDF uses 0-based indexing
+                extracted = page.get_text()
+                if extracted:
+                    text = extracted.replace("\n", "")
+            except Exception as exc:
+                # MuPDF shading/colorspace errors tend to surface here.
+                print(
+                    "WARNING: Text extraction failed for "
+                    f"{pdf_file_path.name} page {page_num}: {exc}"
+                )
+                extraction_errors.append(
+                    {
+                        "pdf": str(pdf_file_path),
+                        "page": page_num,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    }
+                )
+
+                # Best-effort fallback to pdfplumber (pdfminer) for this page.
+                # Enabled by default; can be disabled with STATSCHAT_PDFPLUMBER_FALLBACK=0.
+                if os.environ.get("STATSCHAT_PDFPLUMBER_FALLBACK", "1") == "1":
+                    try:
+                        if plumber_doc is None:
+                            plumber_doc = pdfplumber.open(pdf_file_path)
+                        ptext = plumber_doc.pages[page_num - 1].extract_text() or ""
+                        text = ptext.replace("\n", "")
+                    except Exception as fallback_exc:
+                        extraction_errors.append(
+                            {
+                                "pdf": str(pdf_file_path),
+                                "page": page_num,
+                                "error": str(fallback_exc),
+                                "error_type": type(fallback_exc).__name__,
+                                "fallback": "pdfplumber",
+                            }
+                        )
+
+            pages_text.append(
+                {
+                    "page_number": page_num,
+                    "page_url": page_link,
+                    "page_text": text,
+                }
+            )
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+        if plumber_doc is not None:
+            try:
+                plumber_doc.close()
+            except Exception:
+                pass
+
+    _maybe_persist_extraction_errors(extraction_errors)
+
     return pages_text
+
+
+def _maybe_persist_extraction_errors(errors: list[dict]) -> None:
+    """Persist extraction errors to outputs when explicitly enabled.
+
+    Disabled by default to avoid writing artifacts during normal runs.
+    """
+
+    if not errors:
+        return
+
+    if os.environ.get("STATSCHAT_WRITE_EXTRACTION_WARNINGS") != "1":
+        return
+
+    try:
+        outputs_dir = Path.cwd() / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        out_path = outputs_dir / "pdf_text_extraction_warnings.jsonl"
+        with out_path.open("a", encoding="utf-8") as f:
+            for item in errors:
+                f.write(json.dumps(item) + "\n")
+    except Exception:
+        # Never let reporting break extraction
+        return
 
 
 def get_abstract_metadata(url: str) -> dict:  # noqa: C901
@@ -618,6 +707,7 @@ def process_pdfs(mode: str, config: dict):
 
     # Process PDFs
     count = 0
+    failures: list[dict] = []
     for pdf in tqdm(
         pdf_list,
         desc="Converting PDF file(s) to json(s)",
@@ -634,8 +724,28 @@ def process_pdfs(mode: str, config: dict):
         report_page = url_dict.get(f"{pdf}.pdf", {}).get(
             "report_page", "Unknown Overview URL"
         )
-        build_json(pdf_path, pdf_url, report_page, json_dir)
-        count += 1
+        try:
+            build_json(pdf_path, pdf_url, report_page, json_dir)
+            count += 1
+        except Exception as exc:
+            failures.append(
+                {
+                    "pdf": str(pdf_path),
+                    "pdf_url": pdf_url,
+                    "report_page": report_page,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                }
+            )
+            print(f"ERROR: Failed to convert {pdf_path.name} to JSON: {exc}")
+
+    if failures:
+        outputs_dir = Path.cwd() / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        failure_path = outputs_dir / f"pdf_to_json_failures_{mode.lower()}_{ts}.json"
+        failure_path.write_text(json.dumps(failures, indent=2))
+        print(f"Wrote {len(failures)} conversion failures to {failure_path}")
 
     print(f"Processed {count} PDFs. JSON files saved to {json_dir}.")
 
