@@ -9,8 +9,8 @@ import os
 import sys
 import types
 
+import httpx
 import pytest
-from fastapi.testclient import TestClient
 
 
 def _load_app_with_dummy_inquirer(make_query_impl):
@@ -46,12 +46,14 @@ def _load_app_with_dummy_inquirer(make_query_impl):
 def client_factory():
     def _factory(make_query_impl):
         app, ns = _load_app_with_dummy_inquirer(make_query_impl)
-        return TestClient(app)
+        transport = httpx.ASGITransport(app=app)
+        return httpx.AsyncClient(transport=transport, base_url="http://testserver")
 
     return _factory
 
 
-def test_search_invalid_content_type_falls_back(client_factory):
+@pytest.mark.anyio
+async def test_search_invalid_content_type_falls_back(client_factory):
     """Falls back to the default content_type when an invalid value is provided."""
 
     def make_query_impl(question, latest_filter, latest_weight, highlighting):
@@ -61,22 +63,25 @@ def test_search_invalid_content_type_falls_back(client_factory):
             types.SimpleNamespace(__dict__={"raw": True}),
         )
 
-    client = client_factory(make_query_impl)
-    resp = client.get("/search", params={"q": "What is GDP?", "content_type": "bad"})
+    async with client_factory(make_query_impl) as client:
+        resp = await client.get(
+            "/search", params={"q": "What is GDP?", "content_type": "bad"}
+        )
     assert resp.status_code == 200
     data = resp.json()
     assert data["content_type"] == "latest"
     assert data["answer"] == "Answer"
 
 
-def test_search_handles_empty_results(client_factory):
+@pytest.mark.anyio
+async def test_search_handles_empty_results(client_factory):
     """Returns 200 with empty references/answer when retrieval yields no hits."""
 
     def make_query_impl(question, latest_filter, latest_weight, highlighting):
         return ([], "", types.SimpleNamespace(__dict__={}))
 
-    client = client_factory(make_query_impl)
-    resp = client.get("/search", params={"q": "No docs?"})
+    async with client_factory(make_query_impl) as client:
+        resp = await client.get("/search", params={"q": "No docs?"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["references"] == []

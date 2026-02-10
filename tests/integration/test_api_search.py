@@ -12,9 +12,10 @@ Why:
     - Ensures integration with the `statschat` package logic without heavy dependencies.
 """
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import patch
+
+import httpx
+import pytest
 import sys
 import os
 import importlib.util
@@ -37,8 +38,12 @@ app = main_api_local.app
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+async def client():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as async_client:
+        yield async_client
 
 
 @pytest.fixture
@@ -93,11 +98,12 @@ def mock_llm_logic():
         yield {"search": mock_sim, "generate": mock_gen, "format": mock_fmt}
 
 
-def test_search_endpoint_happy_path(client, mock_llm_logic):
+@pytest.mark.anyio
+async def test_search_endpoint_happy_path(client, mock_llm_logic):
     """
     Test GET /search with valid query.
     """
-    response = client.get("/search", params={"q": "What is inflation?"})
+    response = await client.get("/search", params={"q": "What is inflation?"})
 
     assert response.status_code == 200
     data = response.json()
@@ -105,39 +111,43 @@ def test_search_endpoint_happy_path(client, mock_llm_logic):
     assert data["answer"] == "Inflation is high."
 
 
-def test_search_endpoint_missing_query(client):
+@pytest.mark.anyio
+async def test_search_endpoint_missing_query(client):
     """
     Test GET /search without 'q' param.
     Why: FastAPI requires 'q', so this should fail validation.
     """
-    response = client.get("/search")
+    response = await client.get("/search")
     assert response.status_code == 422
 
 
-def test_search_endpoint_empty_query_string(client):
+@pytest.mark.anyio
+async def test_search_endpoint_empty_query_string(client):
     """
     Test GET /search with empty 'q' string.
     Why: The code explicitly checks if question in ["None", ""] -> raise HTTPException(422).
     """
-    response = client.get("/search", params={"q": ""})
+    response = await client.get("/search", params={"q": ""})
     assert response.status_code == 422
     assert response.json()["detail"] == "Empty question"
 
 
-def test_search_endpoint_invalid_content_type_falls_back_to_latest(
+@pytest.mark.anyio
+async def test_search_endpoint_invalid_content_type_falls_back_to_latest(
     client, mock_llm_logic
 ):
     """
     Test GET /search with an invalid content_type; should fall back to 'latest'.
     """
-    response = client.get(
+    response = await client.get(
         "/search", params={"q": "What is GDP?", "content_type": "invalid"}
     )
     assert response.status_code == 200
     assert response.json()["content_type"] == "latest"
 
 
-def test_feedback_endpoint_accepts_payload(client):
+@pytest.mark.anyio
+async def test_feedback_endpoint_accepts_payload(client):
     """
     Test POST /feedback accepts the documented payload and returns 202.
     """
@@ -148,6 +158,6 @@ def test_feedback_endpoint_accepts_payload(client):
         "content_type": "latest",
         "answer": "A",
     }
-    response = client.post("/feedback", json=payload)
+    response = await client.post("/feedback", json=payload)
     assert response.status_code == 202
     assert response.json() == ""
