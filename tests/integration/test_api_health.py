@@ -77,6 +77,9 @@ def _build_client(monkeypatch):
         lambda *a, **k: DummyModel(),
     )
 
+    main_api_local.MODEL = DummyModel()
+    main_api_local.TOKENIZER = DummyTokenizer()
+
     monkeypatch.setattr(
         main_api_local,
         "similarity_search",
