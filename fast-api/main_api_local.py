@@ -15,6 +15,7 @@ from statschat.generative.local_llm import (
     generate_response,
     format_response,
 )
+#from statschat.generative.cloud_llm import Inquirer
 from statschat.generative.prompts_local import (
     _extractive_prompt,
     _core_prompt,
@@ -23,6 +24,8 @@ from statschat.generative.prompts_local import (
 
 # Config file to load
 CONFIG = load_config(name="main")
+
+inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"]) #remove this line when using local_llm
 
 # define session_id that will be used for log file and feedback
 SESSION_NAME = f"statschat_api_{format(datetime.now(), '%Y_%m_%d_%H:%M')}"
@@ -117,7 +120,7 @@ async def search(
 
     # Get the most relevant text chunks
     relevant_texts = similarity_search(question, latest_filter=False)
-
+    #relevant_texts = inquirer.similarity_search(question, latest_filter=False) #comment when using local_llm
     specific_prompt = _extractive_prompt.format(
         QuestionPlaceholder=question,
         ContextPlaceholder1=relevant_texts[0]["page_content"],

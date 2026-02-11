@@ -99,12 +99,43 @@ async def search(
         latest_filter=content_type == "latest",
         latest_weight=latest_weight,
     )
-    results = {
-        "question": question,
-        "content_type": content_type,
-        "answer": answer,
-        "references": docs,
-    }
+
+    if docs and isinstance(docs, list) and len(docs) > 0:
+        top_doc = docs[0]
+
+        results = {
+            "question": question,
+            "answer": answer if answer else "No suitable answer found.",
+            "context_from": top_doc.get(
+                "contact_name", "Kenya National Bureau of Statistics"
+            ),
+            "context_reference": top_doc.get("title", ""),
+            "references": top_doc.get("page_url", top_doc.get("url", "")),
+            "relevant_publication_one": docs[0].get("title", "")
+            if len(docs) > 0
+            else "",
+            "relevant_publication_two": docs[1].get("title", "")
+            if len(docs) > 1
+            else "",
+        }
+    else:
+        results = {
+            "question": question,
+            "answer": "No suitable answer found.",
+            "context_from": "",
+            "context_reference": "",
+            "references": "",
+            "relevant_publication_one": "",
+            "relevant_publication_two": "",
+        }
+
+   # results = {
+   #     "question": question,
+   #     "content_type": content_type,
+   #     "answer": answer,
+   #     "references": docs,
+   # }
+
     if debug:
         results["debug_response"] = response.__dict__
     logger.info(f"Sending following response: {results}")
