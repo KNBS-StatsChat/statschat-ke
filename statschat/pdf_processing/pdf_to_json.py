@@ -1,8 +1,6 @@
 # %%
 # import modules
 import os
-import fitz  # PyMuPDF
-import pdfplumber
 import json
 import re
 from pathlib import Path
@@ -89,6 +87,8 @@ def get_name_and_meta(pdf_file_path):
         file_name: file for PDF file
         pdf_metadata: metadata dictionary for PDF (dates etc)
     """
+    import fitz  # PyMuPDF
+
     file_name = pdf_file_path.name
     doc = fitz.open(pdf_file_path)
     pdf_metadata = doc.metadata
@@ -323,6 +323,8 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
     plumber_doc = None
 
     try:
+        import fitz  # PyMuPDF
+
         doc = fitz.open(pdf_file_path)
     except Exception as exc:  # PyMuPDF raises various RuntimeError / fitz.* errors
         print(f"ERROR: Failed to open PDF for extraction: {pdf_file_path} ({exc})")
@@ -365,10 +367,22 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
                 # Enabled by default; can be disabled with STATSCHAT_PDFPLUMBER_FALLBACK=0.
                 if os.environ.get("STATSCHAT_PDFPLUMBER_FALLBACK", "1") == "1":
                     try:
+                        import pdfplumber
+
                         if plumber_doc is None:
                             plumber_doc = pdfplumber.open(pdf_file_path)
                         ptext = plumber_doc.pages[page_num - 1].extract_text() or ""
                         text = ptext.replace("\n", "")
+                    except ImportError as import_exc:
+                        extraction_errors.append(
+                            {
+                                "pdf": str(pdf_file_path),
+                                "page": page_num,
+                                "error": str(import_exc),
+                                "error_type": type(import_exc).__name__,
+                                "fallback": "pdfplumber",
+                            }
+                        )
                     except Exception as fallback_exc:
                         extraction_errors.append(
                             {
