@@ -8,6 +8,8 @@ These tests focus on high-ROI, deterministic behaviors:
 
 import importlib
 import json
+import sys
+import types
 from datetime import datetime
 
 import pytest
@@ -193,9 +195,9 @@ def test_extract_pdf_text_with_mocked_fitz(tmp_path, monkeypatch):
     def fake_open(path):
         return FakeDoc([FakePage("Line1\nLine2"), FakePage("OnlyOneLine")])
 
-    monkeypatch.setattr(
-        pdf_to_json, "fitz", type("M", (), {"open": staticmethod(fake_open)})
-    )
+    fitz_stub = types.ModuleType("fitz")
+    fitz_stub.open = staticmethod(fake_open)
+    monkeypatch.setitem(sys.modules, "fitz", fitz_stub)
 
     pages = pdf_to_json.extract_pdf_text(pdf_path, "https://example.com/doc.pdf")
     assert isinstance(pages, list)
@@ -219,9 +221,9 @@ def test_get_name_and_meta_and_extract_pdf_metadata(monkeypatch, tmp_path):
     def fake_open(path):
         return FakeDoc({"creationDate": "D:20220101000000Z", "title": "My Title"})
 
-    monkeypatch.setattr(
-        pdf_to_json, "fitz", type("M", (), {"open": staticmethod(fake_open)})
-    )
+    fitz_stub = types.ModuleType("fitz")
+    fitz_stub.open = staticmethod(fake_open)
+    monkeypatch.setitem(sys.modules, "fitz", fitz_stub)
 
     name, meta = pdf_to_json.get_name_and_meta(pdf_path)
     assert name == "sample.pdf"

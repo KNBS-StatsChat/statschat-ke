@@ -52,6 +52,9 @@ def _load_main_api_local():
 def _build_client(monkeypatch):
     main_api_local = _load_main_api_local()
 
+    main_api_local.MODEL = object()
+    main_api_local.TOKENIZER = object()
+
     monkeypatch.setattr(
         main_api_local,
         "similarity_search",
