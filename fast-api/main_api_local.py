@@ -57,6 +57,35 @@ app = FastAPI(
 )
 
 
+# Model configuration (loaded once at startup)
+MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
+MODEL: Optional[AutoModelForCausalLM] = None
+TOKENIZER: Optional[AutoTokenizer] = None
+
+
+@app.on_event("startup")
+async def load_model() -> None:
+    """Load the model and tokenizer once at startup for faster queries."""
+    global MODEL, TOKENIZER
+    if MODEL is not None and TOKENIZER is not None:
+        return
+
+    logger.info("Building the tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    logger.info("Loading the model...")
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_ID,
+        torch_dtype=torch.float16,  # Use float16 for efficiency if using a GPU
+        device_map="auto",  # Automatically selects GPU if available
+    )
+
+    TOKENIZER = tokenizer
+    MODEL = model
+
+
 @app.get("/", tags=["Principle Endpoints"])
 async def about():
     """Access the API documentation in json format.
@@ -103,18 +132,8 @@ async def search(
     answer_threshold = float(CONFIG.get("search", {}).get("answer_threshold", 0.5))
     document_threshold = float(CONFIG.get("search", {}).get("document_threshold", 0.9))
 
-    # Choose your model (e.g., Mistral-7B, DeepSeek, Llama-3, etc.)
-    MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
-    # Load model and tokenizer
-    print("Building the tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-
-    print("Loading the model...")
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
-        torch_dtype=torch.float16,  # Use float16 for efficiency if using a GPU
-        device_map="auto",  # Automatically selects GPU if available
-    )
+    if MODEL is None or TOKENIZER is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
 
     # Get the most relevant text chunks
     relevant_texts = similarity_search(
@@ -166,7 +185,7 @@ async def search(
     )
     user_input = _core_prompt + specific_prompt + _format_instructions
 
-    raw_response = generate_response(user_input, model, tokenizer)
+    raw_response = generate_response(user_input, MODEL, TOKENIZER)
     formatted_response = format_response(raw_response)
 
     pub_one = relevant_texts[0].get("title", "")
