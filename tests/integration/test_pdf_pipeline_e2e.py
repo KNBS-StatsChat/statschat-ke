@@ -3,6 +3,7 @@
 import json
 import importlib
 import sys
+import types
 from unittest.mock import MagicMock
 
 
@@ -84,6 +85,11 @@ def test_pdf_pipeline_update_end_to_end(tmp_path, monkeypatch):
     pdf_downloader.main()
 
     # Stub pdf_to_json extractors to avoid heavy deps
+    if "pdfplumber" not in sys.modules:
+        sys.modules["pdfplumber"] = types.ModuleType("pdfplumber")
+    if "fitz" not in sys.modules:
+        sys.modules["fitz"] = types.ModuleType("fitz")
+
     from statschat.pdf_processing import pdf_to_json
 
     monkeypatch.setattr(

@@ -11,6 +11,7 @@ PDF parsing. It verifies that:
 import importlib
 import json
 import sys
+import types
 
 
 def test_update_flow_processes_only_new(tmp_path, monkeypatch):
@@ -62,6 +63,11 @@ def test_update_flow_processes_only_new(tmp_path, monkeypatch):
     )
 
     # Mock pdf_to_json internals to avoid heavy deps
+    if "pdfplumber" not in sys.modules:
+        sys.modules["pdfplumber"] = types.ModuleType("pdfplumber")
+    if "fitz" not in sys.modules:
+        sys.modules["fitz"] = types.ModuleType("fitz")
+
     from statschat.pdf_processing import pdf_to_json
 
     monkeypatch.setattr(
