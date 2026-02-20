@@ -35,28 +35,52 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         logger: logging.Logger = None,
         latest_only: bool = False,
         mode: str = "SETUP",
+        max_files: int | None = None,
+        skip_existing_json: bool = False,
     ):
+        data_dir_path = Path(str(data_dir))
+        data_dir_name = data_dir_path.name
+
         self.directory = os.path.join(
-            data_dir, ("latest_" if mode == "UPDATE" else "") + directory
+            str(data_dir_path), ("latest_" if mode == "UPDATE" else "") + str(directory)
         )
         self.split_directory = os.path.join(
-            data_dir, ("latest_" if mode == "UPDATE" else "") + split_directory
+            str(data_dir_path),
+            ("latest_" if mode == "UPDATE" else "") + str(split_directory),
         )
-        self.download_dir = os.path.join(data_dir, download_dir)
+        self.download_dir = os.path.join(str(data_dir_path), str(download_dir))
         self.split_length = split_length
         self.split_overlap = split_overlap
         self.embedding_model_name = embedding_model_name
         self.redundant_similarity_threshold = redundant_similarity_threshold
-        self.faiss_db_root = os.path.join(
-            data_dir, faiss_db_root + ("_latest" if mode == "UPDATE" else "")
-        )
-        if mode == "UPDATE" and self.faiss_db_root.endswith("_latest"):
-            self.original_faiss_db_root = self.faiss_db_root[:-7]
-        else:
-            self.original_faiss_db_root = os.path.join(data_dir, faiss_db_root)
+
+        def _resolve_db_root(root: str) -> Path:
+            """Resolve FAISS root path relative to repo root.
+
+            Config can be either:
+            - "db_langchain" (relative to data_dir), or
+            - "data/db_langchain" (already includes data_dir).
+
+            We normalize so we don't accidentally create nested "data/data/...".
+            """
+
+            candidate = Path(root)
+            if candidate.is_absolute():
+                return candidate
+            if candidate.parts and candidate.parts[0] == data_dir_name:
+                return candidate
+            return data_dir_path / candidate
+
+        base_db_root = _resolve_db_root(str(faiss_db_root))
+        self.original_faiss_db_root = str(base_db_root)
+
+        suffix = "_latest" if mode == "UPDATE" else ""
+        self.faiss_db_root = str(_resolve_db_root(str(faiss_db_root) + suffix))
         self.db = db
         self.latest_only = latest_only
         self.mode = mode
+        self.max_files = max_files
+        self.skip_existing_json = skip_existing_json
 
         # Initialise logger
         if logger is None:
@@ -102,7 +126,9 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         isExist = os.path.exists(self.split_directory)
         if not isExist:
             os.makedirs(self.split_directory)
-        found_publications = glob.glob(f"{self.directory}/*.json")
+        found_publications = sorted(glob.glob(f"{self.directory}/*.json"))
+        if isinstance(self.max_files, int) and self.max_files > 0:
+            found_publications = found_publications[: self.max_files]
         self.logger.info(f"Found {len(found_publications)} articles for splitting")
         print(f"Found {len(found_publications)} articles for splitting, please wait..")
 

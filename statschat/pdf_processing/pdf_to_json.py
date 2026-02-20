@@ -331,6 +331,7 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
         extraction_errors.append(
             {
                 "pdf": str(pdf_file_path),
+                "pdf_url": pdf_url,
                 "page": None,
                 "error": str(exc),
                 "error_type": type(exc).__name__,
@@ -345,7 +346,34 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
             text = ""
             try:
                 page = doc[page_num - 1]  # PyMuPDF uses 0-based indexing
+
+                # Capture MuPDF warnings (e.g., shading/colorspace) which may not
+                # raise exceptions but are still valuable diagnostics.
+                if os.environ.get("STATSCHAT_WRITE_EXTRACTION_WARNINGS") == "1":
+                    try:
+                        fitz.TOOLS.reset_mupdf_warnings()
+                    except Exception:
+                        pass
+
                 extracted = page.get_text()
+
+                if os.environ.get("STATSCHAT_WRITE_EXTRACTION_WARNINGS") == "1":
+                    try:
+                        mupdf_warnings = fitz.TOOLS.mupdf_warnings()
+                        if mupdf_warnings:
+                            extraction_errors.append(
+                                {
+                                    "pdf": str(pdf_file_path),
+                                    "pdf_url": pdf_url,
+                                    "page": page_num,
+                                    "page_url": page_link,
+                                    "warning": mupdf_warnings,
+                                    "error_type": "MuPDFWarning",
+                                }
+                            )
+                    except Exception:
+                        pass
+
                 if extracted:
                     text = extracted.replace("\n", "")
             except Exception as exc:
@@ -357,7 +385,9 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
                 extraction_errors.append(
                     {
                         "pdf": str(pdf_file_path),
+                        "pdf_url": pdf_url,
                         "page": page_num,
+                        "page_url": page_link,
                         "error": str(exc),
                         "error_type": type(exc).__name__,
                     }
@@ -387,7 +417,9 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
                         extraction_errors.append(
                             {
                                 "pdf": str(pdf_file_path),
+                                "pdf_url": pdf_url,
                                 "page": page_num,
+                                "page_url": page_link,
                                 "error": str(fallback_exc),
                                 "error_type": type(fallback_exc).__name__,
                                 "fallback": "pdfplumber",
@@ -433,7 +465,15 @@ def _maybe_persist_extraction_errors(errors: list[dict]) -> None:
     try:
         outputs_dir = Path.cwd() / "outputs"
         outputs_dir.mkdir(parents=True, exist_ok=True)
-        out_path = outputs_dir / "pdf_text_extraction_warnings.jsonl"
+        configured_path = os.environ.get("STATSCHAT_EXTRACTION_WARNINGS_PATH")
+        if configured_path:
+            out_path = Path(configured_path)
+            if not out_path.is_absolute():
+                out_path = Path.cwd() / out_path
+        else:
+            out_path = outputs_dir / "pdf_text_extraction_warnings.jsonl"
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         with out_path.open("a", encoding="utf-8") as f:
             for item in errors:
                 f.write(json.dumps(item) + "\n")
@@ -454,7 +494,18 @@ def get_abstract_metadata(url: str) -> dict:  # noqa: C901
     """
     # Scrape PDF links from KNBS website
     req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    web_byte = urlopen(req).read()
+    try:
+        # Avoid indefinite hangs during conversion.
+        web_byte = urlopen(req, timeout=20).read()
+    except Exception as exc:
+        print(f"WARNING: Failed to fetch report-page metadata: {url} ({exc})")
+        return {
+            "date": "Unknown",
+            "overview": "",
+            "publication_type": "Unknown",
+            "publication_theme": "Unknown",
+            "pdf_abstract_url": "No PDF link found",
+        }
 
     soup = BeautifulSoup(web_byte, features="html.parser")
 
@@ -627,8 +678,21 @@ def build_json(
 
     # Construct the document's URL
     pdf_url = pdf_website_url
-    # Obtain additional metadata from pdf report page
-    pdf_add_metadata = abstract_metadata_getter(report_page)
+    # Obtain additional metadata from pdf report page (best-effort; must not break conversion)
+    try:
+        pdf_add_metadata = abstract_metadata_getter(report_page)
+    except Exception as exc:
+        print(
+            "WARNING: Failed to extract report-page metadata for "
+            f"{pdf_file_path.name} from {report_page}: {exc}"
+        )
+        pdf_add_metadata = {
+            "date": "Unknown",
+            "overview": "",
+            "publication_type": "Unknown",
+            "publication_theme": "Unknown",
+            "pdf_abstract_url": "No PDF link found",
+        }
     try:
         pdf_creation_date = convert_to_date(pdf_add_metadata["date"])
     except Exception:
@@ -689,7 +753,7 @@ def process_pdfs(mode: str, config: dict):
         print("Running in SETUP mode: Processing all PDFs.")
         pdf_dir = DATA_DIR
         json_dir = JSON_DIR
-        pdf_list = get_pdf_list(pdf_dir)
+        pdf_list = sorted(get_pdf_list(pdf_dir))
 
     elif mode == "UPDATE":
         # Dynamically generate "latest" directories
@@ -700,13 +764,25 @@ def process_pdfs(mode: str, config: dict):
         # Compare old and new PDFs
         new_pdfs = get_pdf_list(pdf_dir)
         old_pdfs = get_pdf_list(DATA_DIR)
-        pdf_list = compare_pdfs(new_pdfs, old_pdfs)
+        pdf_list = sorted(compare_pdfs(new_pdfs, old_pdfs))
 
         if not pdf_list:
             print("No new PDFs to process. Exiting.")
             return
 
         print(f"Found {len(pdf_list)} new PDFs to process.")
+
+    # Optional cap for canary/debug runs
+    max_files = config.get("preprocess", {}).get("max_files")
+    if isinstance(max_files, int) and max_files > 0 and len(pdf_list) > max_files:
+        pdf_list = pdf_list[:max_files]
+        print(
+            f"Capped PDF-to-JSON conversion to {len(pdf_list)} PDFs (preprocess.max_files={max_files})."
+        )
+
+    skip_existing_json = bool(
+        config.get("preprocess", {}).get("skip_existing_json", False)
+    )
 
     # Load URL dictionary
     url_dict_path = pdf_dir.joinpath("url_dict.json")
@@ -721,11 +797,12 @@ def process_pdfs(mode: str, config: dict):
 
     # Process PDFs
     count = 0
+    skipped = 0
     failures: list[dict] = []
     for pdf in tqdm(
         pdf_list,
         desc="Converting PDF file(s) to json(s)",
-        total=len(url_dict),
+        total=len(pdf_list),
         colour="red",
         dynamic_ncols=True,
         bar_format=(
@@ -734,6 +811,12 @@ def process_pdfs(mode: str, config: dict):
         ),
     ):
         pdf_path = pdf_dir.joinpath(f"{pdf}.pdf")
+        if skip_existing_json:
+            existing_json = json_dir / f"{pdf}.json"
+            if existing_json.exists():
+                skipped += 1
+                continue
+
         pdf_url = url_dict.get(f"{pdf}.pdf", {}).get("pdf_url", "Unknown URL")
         report_page = url_dict.get(f"{pdf}.pdf", {}).get(
             "report_page", "Unknown Overview URL"
@@ -761,6 +844,8 @@ def process_pdfs(mode: str, config: dict):
         failure_path.write_text(json.dumps(failures, indent=2))
         print(f"Wrote {len(failures)} conversion failures to {failure_path}")
 
+    if skip_existing_json:
+        print(f"Skipped {skipped} PDFs with existing JSON conversions.")
     print(f"Processed {count} PDFs. JSON files saved to {json_dir}.")
 
 

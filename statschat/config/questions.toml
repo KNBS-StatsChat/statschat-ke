@@ -1,4 +1,4 @@
-["how many people watched the kings coronation?"]
+gi["how many people watched the kings coronation?"]
 should_answer = true
 should_provide_relevant = true
 expected_keywords =["watched","coronation","king","queen"]

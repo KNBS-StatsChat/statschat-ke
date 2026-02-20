@@ -105,6 +105,11 @@ async def search(
         content_type = "latest"
     latest_weight = get_latest_flag({"q": question}, CONFIG["app"]["latest_max"])
 
+    # If the user explicitly asks about a month/year, do not bias retrieval toward
+    # recency; it can push the correct dated bulletin out of the top results.
+    if Inquirer._extract_month_year(question) is not None:
+        latest_weight = 0
+
     docs, answer, response = inquirer.make_query(
         question,
         latest_filter=content_type == "latest",

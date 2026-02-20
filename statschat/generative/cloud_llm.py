@@ -1,6 +1,8 @@
 import logging
 import os
 import re
+from pathlib import Path
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEndpoint
@@ -83,6 +85,12 @@ class Inquirer:
         elif provider == "openrouter":
             sec_key = os.getenv("OPENROUTER_API_KEY")
             api_base = os.getenv("OPENROUTER_BASE_URL")
+
+            if not sec_key or not api_base:
+                raise ValueError(
+                    "Missing OpenRouter configuration. Set OPENROUTER_API_KEY and OPENROUTER_BASE_URL in your .env."
+                )
+
             self.llm = ChatOpenAI(
                 model=generative_model_name,
                 temperature=llm_temperature,
@@ -107,16 +115,65 @@ class Inquirer:
         embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
 
         # Load FAISS databases
-        self.db = FAISS.load_local(
-            faiss_db_root, embeddings, allow_dangerous_deserialization=True
-        )
+        resolved_root = self._resolve_faiss_root(faiss_db_root)
+
         if faiss_db_root_latest is None:
-            faiss_db_root_latest = faiss_db_root + "_latest"
+            faiss_db_root_latest = f"{faiss_db_root}_latest"
+        resolved_latest_root = self._resolve_faiss_root(
+            faiss_db_root_latest,
+            fallback_name=Path(resolved_root).name,
+            fallback_path=resolved_root,
+        )
+
+        self.db = FAISS.load_local(
+            resolved_root, embeddings, allow_dangerous_deserialization=True
+        )
         self.db_latest = FAISS.load_local(
-            faiss_db_root_latest, embeddings, allow_dangerous_deserialization=True
+            resolved_latest_root, embeddings, allow_dangerous_deserialization=True
         )
 
         return None
+
+    @staticmethod
+    def _resolve_faiss_root(
+        root: str,
+        *,
+        fallback_name: str | None = None,
+        fallback_path: str | None = None,
+    ) -> str:
+        """Resolve a FAISS DB directory path.
+
+        The project typically uses `data/db_langchain` (and optionally
+        `data/db_langchain_latest`). In some local runs the database can
+        end up nested as `data/data/db_langchain` (e.g., if the pipeline
+        was executed from within the `data/` directory).
+
+        If `root` does not exist, we try a small set of sane fallbacks.
+        """
+
+        candidate = Path(root)
+        if candidate.exists():
+            return str(candidate)
+
+        # Common accidental nesting: data/data/<db_name>
+        db_name = candidate.name
+        nested = Path("data") / "data" / db_name
+        if nested.exists():
+            return str(nested)
+
+        # Optional explicit fallback (e.g., use base DB when _latest missing)
+        if fallback_path is not None and Path(fallback_path).exists():
+            return str(Path(fallback_path))
+
+        # Provide a focused, actionable error message.
+        expected_files = [candidate / "index.faiss", candidate / "index.pkl"]
+        hint = (
+            "Vector store not found. Expected FAISS files like "
+            f"{expected_files[0]} and {expected_files[1]}. "
+            "Create/update the vector store by running `python3 statschat/pdf_runner.py` "
+            "from the repo root, or update `statschat/config/main.toml` to point at the correct `faiss_db_root`."
+        )
+        raise FileNotFoundError(hint)
 
     @staticmethod
     def flatten_meta(d):
@@ -127,6 +184,48 @@ class Inquirer:
     def _strip_html(text: str) -> str:
         """Remove simple HTML markup from text for safe display."""
         return re.sub(r"<[^>]+>", "", text)
+
+    @staticmethod
+    def _extract_month_year(text: str) -> str | None:
+        """Extract a 'Month YYYY' substring from text, if present.
+
+        Used to bias retrieval when a user asks about a specific month/year.
+        """
+
+        months = (
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        )
+        month_re = "|".join(months)
+        m = re.search(rf"\b({month_re})\s+(20\d{{2}})\b", text, flags=re.IGNORECASE)
+        if not m:
+            return None
+
+        return f"{m.group(1).capitalize()} {m.group(2)}"
+
+    @staticmethod
+    def _parse_latest_filter(latest_filter) -> bool:
+        """Normalize the user/API `latest_filter` input to a boolean."""
+
+        if isinstance(latest_filter, bool):
+            return latest_filter
+        if latest_filter is None:
+            return True
+        if isinstance(latest_filter, str):
+            value = latest_filter.strip().lower()
+            return value in {"on", "true", "1", "yes"}
+
+        return bool(latest_filter)
 
     def similarity_search(
         self, query: str, latest_filter: bool = True, return_dicts: bool = True
@@ -144,18 +243,36 @@ class Inquirer:
             List[dict]: List of top k article chunks by relevance
         """
         self.logger.info("Retrieving most relevant text chunks")
+
+        month_year_hint = self._extract_month_year(query)
+        k_docs = self.k_docs
+        if month_year_hint is not None:
+            # Date-specific questions can require a larger top-k to surface the
+            # correct month/year bulletin.
+            k_docs = max(k_docs, 50)
+
         if latest_filter:
             top_matches = self.db_latest.similarity_search_with_score(
-                query=query, k=self.k_docs
+                query=query, k=k_docs
             )
         else:
-            top_matches = self.db.similarity_search_with_score(
-                query=query, k=self.k_docs
-            )
+            top_matches = self.db.similarity_search_with_score(query=query, k=k_docs)
 
         # filter to document matches with similarity scores less than...
         # i.e. closest cosine distances to query
         top_matches = [x for x in top_matches if x[-1] <= self.similarity_threshold]
+
+        # If a month/year is explicitly requested (e.g. "April 2025"), promote
+        # docs with matching metadata date ("01 April 2025" contains "April 2025").
+        if month_year_hint is not None:
+
+            def _sort_key(item: tuple[Document, float]) -> tuple[int, float]:
+                doc, score = item
+                date_str = str((getattr(doc, "metadata", None) or {}).get("date", ""))
+                is_match = month_year_hint.lower() in date_str.lower()
+                return (0 if is_match else 1, float(score))
+
+            top_matches.sort(key=_sort_key)
 
         if return_dicts:
             return [
@@ -265,8 +382,13 @@ class Inquirer:
             LlmResponse: Generated response to query (pydantic model)
         """
         self.logger.info(f"Search query: {question}")
+
+        month_year_hint = self._extract_month_year(question)
+        # For explicit month/year questions, do not bias toward recency.
+        effective_latest_weight = 0 if month_year_hint is not None else latest_weight
+
         docs1 = self.similarity_search(
-            question, latest_filter=latest_filter in ["On", "on", "true", "True", False]
+            question, latest_filter=self._parse_latest_filter(latest_filter)
         )
 
         if len(docs1) == 0:
@@ -279,18 +401,18 @@ class Inquirer:
             return docs1, "", empty_response
         docs = deduplicator(docs1, keys=["title", "date"])
 
-        if latest_weight > 0:
+        if effective_latest_weight > 0:
             for doc in docs:
                 # Divided by decay term because similarity scores are inverted
                 # Original score is L2 distance; lower is better
                 # https://python.langchain.com/docs/integrations/vectorstores/faiss
                 doc["score"] = doc["score"] / time_decay(
-                    doc["date"], latest=latest_weight
+                    doc["date"], latest=effective_latest_weight
                 )
             docs.sort(key=lambda doc: doc["score"])
             self.logger.info(
                 "Weighted and reordered docs to latest with "
-                + f"decay = {latest_weight}"
+                + f"decay = {effective_latest_weight}"
             )
 
         for doc in docs:
@@ -392,11 +514,13 @@ if __name__ == "__main__":
     # question = "What was the inflation rate in Kenya in July 2022?"
     # question = "What was the inflation rate in Kenya in August 2022?"
     # question = "What was the year on year inflation rate in August 2022?"
-    question = "What was the inflation rate in December 2022?"
+    # question = "What was the inflation rate in December 2022?"
     # question = "What was Kenya's Consumer Price Index inflation rate in December 2022?"
     # question = "What was inflation in Kenya in 2023?"
     # question = "By how much did Kenya's GDP grow in 2024?"
     # question = "What proportion of women own agricultural land in Kenya?"
+    # question = "What is the latest official GDP figure for 2025?"
+    question = "What is the consumer price index in April 2025?"
 
     docs, answer, response = inquirer.make_query(
         question,
