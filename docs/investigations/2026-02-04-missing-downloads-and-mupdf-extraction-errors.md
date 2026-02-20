@@ -103,6 +103,41 @@ The downloader used to do a single `find(...)` for `.pdf` links on each report p
 Fix:
 - change to `find_all(...)` and record **every** PDF anchor on the report page.
 
+Evidence: KNBS report pages can contain multiple PDF links
+
+These examples come directly from the `multi_pdf_reports` section of the generated KNBS comparison reports:
+
+- https://www.knbs.or.ke/reports/2025-economic-survey/
+  - https://www.knbs.or.ke/wp-content/uploads/2025/05/2025-Economic-Survey.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2025/05/2025-Economic-Survey-Popular-Version.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2025/05/2025-Economic-Survey-Highlights-DG-Presentation.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2025/05/CS-Speech-2025-Economic-Survey-Report-Launch.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2025/05/Speech-PS-SDEP-2025-Economic-Survey-Report-Launch.pdf
+
+- https://www.knbs.or.ke/reports/economic-value-of-unpaid-domestic-and-care-work-in-kenya-2025/
+  - https://www.knbs.or.ke/wp-content/uploads/2025/11/Economic-Value-of-Unpaid-Domestic-and-Care-Work-in-Kenya-2025.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2025/11/Economic-Value-of-Unpaid-Domestic-and-Care-Work-in-Kenya-2025-Technical-Note.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2025/10/Economic-Value-of-Unpaid-Domestic-and-Care-Work-in-Kenya-2025-Technical-Note_1.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2025/10/Economic-Value-of-Unpaid-Domestic-and-Care-Work-in-Kenya-2025-Popular-Version.pdf
+
+- https://www.knbs.or.ke/reports/quarterly-gross-domestic-product-first-quarter-2024/
+  - https://www.knbs.or.ke/wp-content/uploads/2024/07/Kenya-quarterly-gross-domestic-product-first-quarter-2024.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2024/07/Kenya-quarterly-gross-domestic-product-first-quarter-2024_Infographic.pdf
+
+- https://www.knbs.or.ke/reports/kenya-vital-statistics-report-2024/
+  - https://www.knbs.or.ke/wp-content/uploads/2025/06/Kenya-Vital-Statistics-Report-2024.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2025/06/2024-Kenya-Vital-Statistics-Report-Abridged-Version.pdf
+
+- https://www.knbs.or.ke/reports/2014-global-adult-tobacco-survey-report/
+  - https://www.knbs.or.ke/wp-content/uploads/2023/09/2014-Global-Adult-Tobacco-Survey-Report.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2023/09/2014-Global-Adult-Tobacco-Survey-Executive-Summary.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2023/09/2014-Global-Adult-Tobacco-Survey-Fact-Sheet.pdf
+  - https://www.knbs.or.ke/wp-content/uploads/2023/09/2014-Global-Adult-Tobacco-Survey-Press-Release.pdf
+
+For many more examples, see:
+- `outputs/missing_downloads_report_20260204_094052.json` (pages 1–5)
+- `outputs/missing_downloads_report_20260203_224610.json` (pages 1–41)
+
 Other hardening added at the same time:
 - request timeouts + User-Agent
 - catch request exceptions
@@ -192,6 +227,43 @@ What we should do on our side:
 - Treat repeated 404s as **known dead links** so we don’t retry forever.
 - Keep recording them in the download report so we can audit what we’re missing and, if needed, send KNBS the exact broken URLs/report pages.
 
+## Fresh end-to-end validation rerun (from scratch)
+
+To verify the downloader fix in a clean environment (while keeping the existing dataset intact), we did a full re-run with a fresh `data/` directory:
+
+1) Renamed the existing `data/` folder to a timestamped backup.
+2) Ran **SETUP** on pages **1–5** to build a new baseline `data/pdf_downloads/`.
+3) Ran **UPDATE** on pages **1–50** to fetch everything else discoverable in that range.
+4) Re-ran the KNBS comparison report to confirm there are no “undiscovered” PDFs left.
+
+### SETUP rerun (pages 1–5)
+
+- Downloader discovered **174** unique PDF filenames and successfully recorded **173** locally.
+- The single remaining missing filename was:
+  - `Economic-Value-of-Unpaid-Domestic-and-Care-Work-in-Kenya-2025-Technical-Note_1.pdf`
+  - This corresponds to an **HTTP 404** (KNBS link rot), not a discovery bug.
+
+Artifacts:
+- Download failures report: `outputs/pdf_download_report_setup_20260206_141340.json`
+- Offline audit (url_dict vs disk): `outputs/download_audit_setup_20260206_141348.json` (0 findings)
+- KNBS comparison report: `outputs/missing_downloads_report_20260206_141432.json`
+
+### UPDATE rerun (pages 1–50)
+
+- KNBS discovery returned **1091** unique PDF filenames.
+- Local (post-merge) contained **1088** filenames.
+- The remaining **3** “missing” filenames were exactly the **3 HTTP 404s** encountered during the UPDATE download run:
+  - `Economic-Value-of-Unpaid-Domestic-and-Care-Work-in-Kenya-2025-Technical-Note_1.pdf`
+  - `Kenya-Leading-Economic-Indicators-January-2010.pdf`
+  - `Kenya-Leading-Economic-Indicators-October-2009.pdf`
+
+This is the expected outcome if the fix is working: **missing == download failures (404s)**.
+
+Artifacts:
+- Download failures report: `outputs/pdf_download_report_update_20260206_150722.json`
+- Offline audit (url_dict vs disk): `outputs/download_audit_update_20260206_150818.json` (0 findings)
+- KNBS comparison report: `outputs/missing_downloads_report_20260206_151328.json`
+
 ### Important note on crawl window
 
 The confirm script uses `app.page_start/app.page_end`.
@@ -248,6 +320,55 @@ python -m statschat.pdf_processing.scan_text_extraction_errors --dir data/pdf_do
 ```
 
 3) Use the JSONL warnings + scan report to identify PDFs/pages and attach them to the GitHub issue for targeted remediation.
+
+## Addendum (2026-02-09): End-to-end canary PDF→JSON + downstream + MuPDF warning capture
+
+To validate that we are not “just downloading”, and to actively surface PyMuPDF/MuPDF issues during conversion, we ran a canary conversion and downstream build.
+
+### Canary controls
+
+To make canary runs practical (and repeatable), we introduced an optional cap:
+
+- `preprocess.max_files` in `statschat/config/main.toml`
+  - caps both PDF→JSON conversion and downstream JSON splitting/embedding.
+
+### Canary run executed
+
+Configuration:
+
+- `preprocess.mode = "SETUP"`
+- `preprocess.max_files = 200`
+
+Environment:
+
+- `STATSCHAT_WRITE_EXTRACTION_WARNINGS=1`
+- `STATSCHAT_PDFPLUMBER_FALLBACK=1`
+
+Results:
+
+- PDF→JSON completed for the capped set: **200 PDFs**.
+- Downstream preprocessing + FAISS build succeeded for the capped set.
+
+### MuPDF warnings observed (no shading/colorspace in canary)
+
+We updated extraction to also capture MuPDF warnings (via `fitz.TOOLS.mupdf_warnings()`), not just exceptions, because shading/colorspace problems may be emitted as warnings.
+
+Artifact written:
+
+- `outputs/pdf_text_extraction_warnings.jsonl`
+
+Summary from the canary run:
+
+- Total warnings captured: **896**
+- PDFs with at least one warning: **83**
+- Warning types observed: font-related warnings only (e.g., “non-embedded font using identity encoding…”, “bogus font ascent/descent values…”)
+- **No** occurrences of `shading`, `colorspace`, `icc`, or similar keywords were found in the warning text for this canary batch.
+
+This does not prove the shading/colorspace condition never happens — only that it did not show up in the first 200 PDFs processed in this run.
+
+Suggested next step to chase the shading/colorspace issue specifically:
+
+- Increase `preprocess.max_files` (e.g., 500 → 1000 → all) with `STATSCHAT_WRITE_EXTRACTION_WARNINGS=1` enabled, then search the JSONL for keywords like `shading|colorspace|icc|pattern`.
 
 ## Files introduced/modified (index)
 
