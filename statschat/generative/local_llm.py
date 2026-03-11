@@ -166,7 +166,8 @@ if __name__ == "__main__":
     # question = "What was inflation in Kenya in 2022?"
     # question = "What was Kenya's Consumer Price Index inflation rate in December 2022?"
     # question = "By how much did Kenya's GDP grow in 2024?"
-    question = "What proportion of women own agricultural land in Kenya?"
+    # question = "What proportion of women own agricultural land in Kenya?"
+    question = "What percentage of national government revenue is allocated to the Equalization Funds each year?"
 
     # Get the most relevant text chunks
     relevant_texts = similarity_search(question, latest_filter=True)

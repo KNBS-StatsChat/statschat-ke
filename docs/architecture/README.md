@@ -26,12 +26,12 @@ These documents detail the journey of data from the KNBS website to the user's s
     -   *Scope*: Splitting JSONs, chunking text, generating embeddings, and FAISS indexing.
     -   *Key Scripts*: `preprocess.py`.
 
-#### Phase 2: Retrieval (Local)
+#### Phase 2: Retrieval
 -   **[Retrieval Pipeline](pipeline-retrieval.md)**
     -   *Scope*: Semantic search, time-decay reranking, and context selection.
     -   *Key Scripts*: `cloud_llm.py` (Inquirer class).
 
-#### Phase 3: Generation (Cloud)
+#### Phase 3: Generation
 -   **[Generation Pipeline](pipeline-generation.md)**
     -   *Scope*: Prompt engineering, LLM interaction (Cloud vs Local), and response parsing.
     -   *Key Scripts*: `cloud_llm.py`, `local_llm.py`, `prompts_cloud.py`.
