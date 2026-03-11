@@ -13,6 +13,23 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 
 
+def _resolve_data_path(data_dir: str | Path, target: str | Path) -> str:
+    """
+    Resolve a path under ``data_dir`` without duplicating the prefix.
+
+    This keeps backward compatibility for both styles:
+    - ``faiss_db_root = "db_langchain"``
+    - ``faiss_db_root = "data/db_langchain"``
+    """
+    data_dir_norm = os.path.normpath(str(data_dir))
+    target_norm = os.path.normpath(str(target))
+    if os.path.isabs(target_norm):
+        return target_norm
+    if target_norm == data_dir_norm or target_norm.startswith(data_dir_norm + os.sep):
+        return target_norm
+    return os.path.normpath(os.path.join(data_dir_norm, target_norm))
+
+
 class PrepareVectorStore(DirectoryLoader, JSONLoader):
     """
     Leveraging Langchain classes to split pre-scraped article
@@ -36,24 +53,21 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         latest_only: bool = False,
         mode: str = "SETUP",
     ):
-        self.directory = os.path.join(
-            data_dir, ("latest_" if mode == "UPDATE" else "") + directory
+        self.directory = _resolve_data_path(
+            data_dir, ("latest_" if mode == "UPDATE" else "") + str(directory)
         )
-        self.split_directory = os.path.join(
-            data_dir, ("latest_" if mode == "UPDATE" else "") + split_directory
+        self.split_directory = _resolve_data_path(
+            data_dir, ("latest_" if mode == "UPDATE" else "") + str(split_directory)
         )
-        self.download_dir = os.path.join(data_dir, download_dir)
+        self.download_dir = _resolve_data_path(data_dir, download_dir)
         self.split_length = split_length
         self.split_overlap = split_overlap
         self.embedding_model_name = embedding_model_name
         self.redundant_similarity_threshold = redundant_similarity_threshold
-        self.faiss_db_root = os.path.join(
-            data_dir, faiss_db_root + ("_latest" if mode == "UPDATE" else "")
+        self.faiss_db_root = _resolve_data_path(
+            data_dir, str(faiss_db_root) + ("_latest" if mode == "UPDATE" else "")
         )
-        if mode == "UPDATE" and self.faiss_db_root.endswith("_latest"):
-            self.original_faiss_db_root = self.faiss_db_root[:-7]
-        else:
-            self.original_faiss_db_root = os.path.join(data_dir, faiss_db_root)
+        self.original_faiss_db_root = _resolve_data_path(data_dir, faiss_db_root)
         self.db = db
         self.latest_only = latest_only
         self.mode = mode
