@@ -70,16 +70,23 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 
 This assumes the [vector store](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md) has already been created otherwise this will need to be done before.
 Make sure that you're terminal is running from **`statschat-ke`**. Then use the **`cloud_llm.py`**
-(requires huggingface api token) or **`local_llm.py`** script and change the **question** parameter
+(requires configured cloud API credentials) or **`local_llm.py`** script and change the **question** parameter
 with the desired question:
 
 ```shell
-# Cloud LLM (faster, requires HuggingFace API token)
+# Cloud LLM (faster, uses the provider/model configured in main.toml)
 python statschat/generative/cloud_llm.py
 
 # Local LLM (slower, runs Mistral-7B locally)
 python statschat/generative/local_llm.py
 ```
+
+> [!TIP]
+> To keep the shared repo default on the free OpenRouter model but use a paid model locally,
+> set `STATSCHAT_GENERATIVE_MODEL` in your `.env` file. Example:
+> `STATSCHAT_GENERATIVE_MODEL=mistralai/mistral-nemo`
+>
+> To go back to the repository default model, remove `STATSCHAT_GENERATIVE_MODEL` from your `.env` file.
 
 > [!NOTE]
 > **Local LLM Performance:** Running Mistral-7B locally requires ~16GB RAM and takes 3-5 minutes per query.
