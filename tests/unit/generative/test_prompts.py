@@ -19,8 +19,7 @@ def test_local_prompt_structure():
     """
     expected_vars = {
         "QuestionPlaceholder",
-        "ContextPlaceholder1",
-        "ContextPlaceholder2",
+        "ContextsPlaceholder",
     }
     assert set(LOCAL_PROMPT.input_variables) == expected_vars
 
@@ -42,8 +41,7 @@ def test_local_prompt_formatting():
     """
     formatted_prompt = LOCAL_PROMPT.format(
         QuestionPlaceholder="What is the GDP?",
-        ContextPlaceholder1="GDP is High.",
-        ContextPlaceholder2="Inflation is Low.",
+        ContextsPlaceholder="Context1: GDP is High.\n\nContext2: Inflation is Low.",
     )
 
     assert "What is the GDP?" in formatted_prompt

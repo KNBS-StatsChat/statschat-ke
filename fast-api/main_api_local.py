@@ -78,7 +78,7 @@ async def load_model() -> None:
     logger.info("Loading the model...")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
-        torch_dtype=torch.float16,  # Use float16 for efficiency if using a GPU
+        dtype=torch.float16,  # Use float16 for efficiency if using a GPU
         device_map="auto",  # Automatically selects GPU if available
     )
 
@@ -131,6 +131,9 @@ async def search(
 
     answer_threshold = float(CONFIG.get("search", {}).get("answer_threshold", 0.5))
     document_threshold = float(CONFIG.get("search", {}).get("document_threshold", 0.9))
+    k_contexts = int(CONFIG.get("search", {}).get("k_contexts", 2))
+    if k_contexts < 1:
+        k_contexts = 1
 
     if MODEL is None or TOKENIZER is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -174,18 +177,33 @@ async def search(
         logger.info(f"Sending following response: {results}")
         return results
 
-    # Safely select up to two contexts (local prompt currently supports 2)
-    context_1 = relevant_texts[0]["page_content"]
-    context_2 = relevant_texts[1]["page_content"] if len(relevant_texts) > 1 else ""
+    # Select top contexts for generation (configurable via search.k_contexts).
+    selected_contexts = [
+        str(match.get("page_content", "")).strip()
+        for match in relevant_texts[:k_contexts]
+        if str(match.get("page_content", "")).strip()
+    ]
+    if not selected_contexts:
+        selected_contexts = [str(relevant_texts[0].get("page_content", ""))]
+    contexts_block = "\n\n".join(
+        f"Context{i}: {text}" for i, text in enumerate(selected_contexts, start=1)
+    )
 
     specific_prompt = _extractive_prompt.format(
         QuestionPlaceholder=question,
-        ContextPlaceholder1=context_1,
-        ContextPlaceholder2=context_2,
+        ContextsPlaceholder=contexts_block,
     )
     user_input = _core_prompt + specific_prompt + _format_instructions
 
-    raw_response = generate_response(user_input, MODEL, TOKENIZER)
+    max_new_tokens = int(CONFIG.get("search", {}).get("llm_max_tokens", 512))
+    # Keep generation bounds reasonable for local runtime.
+    max_new_tokens = max(64, min(max_new_tokens, 800))
+    raw_response = generate_response(
+        user_input,
+        MODEL,
+        TOKENIZER,
+        max_new_tokens=max_new_tokens,
+    )
     formatted_response = format_response(raw_response)
 
     pub_one = relevant_texts[0].get("title", "")
