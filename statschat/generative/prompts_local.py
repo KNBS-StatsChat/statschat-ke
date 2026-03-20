@@ -33,8 +33,8 @@ from pdf of where context has been gotten from.
 
 
 Question: {QuestionPlaceholder}
-Contexts1: {ContextPlaceholder1}
-Contexts2: {ContextPlaceholder2}
+Contexts:
+{ContextsPlaceholder}
 """
 
 _format_instructions = """

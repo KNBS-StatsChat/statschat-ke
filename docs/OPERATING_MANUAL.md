@@ -48,3 +48,4 @@ When running in **UPDATE** mode, the system uses a staging approach to prevent d
 ## 3. Troubleshooting
 *   **Missing Files**: If PDFs are failing to download, check `logs/` for HTTP 404 errors or connection timeouts.
 *   **Zero-Byte Files**: ensure `pdf_downloader.py` is not being blocked by a firewall.
+*   **OpenRouter model errors**: If generation fails with `No endpoints found`, update `statschat/config/main.toml` to a currently served model. The current free default is `mistralai/mistral-small-3.1-24b-instruct:free`; a low-cost paid option to consider later is `mistralai/mistral-nemo`.

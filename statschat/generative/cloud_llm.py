@@ -11,6 +11,7 @@ from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain.docstore.document import Document
 from langchain.chains.qa_with_sources import load_qa_with_sources_chain
 from langchain.output_parsers import PydanticOutputParser
+from openai import NotFoundError, RateLimitError
 from statschat.generative.response_model import LlmResponse
 from statschat.generative.prompts_cloud import (
     EXTRACTIVE_PROMPT_PYDANTIC,
@@ -29,7 +30,7 @@ class Inquirer:
 
     def __init__(
         self,
-        generative_model_name: str = "mistralai/Mistral-7B-Instruct-v0.3",
+        generative_model_name: str = "mistralai/mistral-small-3.1-24b-instruct:free",
         faiss_db_root: str = "data/db_langchain",
         faiss_db_root_latest: str = "data/db_langchain",  # change to "data/db_langchain_latest" after "UPDATE"
         embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
@@ -69,9 +70,19 @@ class Inquirer:
         self.stuff_document_prompt = STUFF_DOCUMENT_PROMPT
         self.llm_temperature = llm_temperature
         self.llm_max_tokens = llm_max_tokens
+        self.provider = provider
 
         # Load variables from .env
         load_dotenv()
+
+        env_model_override = os.getenv("STATSCHAT_GENERATIVE_MODEL")
+        if env_model_override:
+            self.logger.info(
+                "Overriding generative model from environment: " f"{env_model_override}"
+            )
+            generative_model_name = env_model_override
+
+        self.generative_model_name = generative_model_name
 
         if provider == "openai":
             sec_key = os.getenv("OPENAI_API_KEY")
@@ -133,6 +144,49 @@ class Inquirer:
         )
 
         return None
+
+    def _raise_model_availability_error(self, exc: Exception) -> None:
+        """Raise a clearer provider/model configuration error."""
+
+        if self.provider == "openrouter":
+            message = (
+                "OpenRouter could not route the configured model "
+                f"'{self.generative_model_name}'. This can happen even if the "
+                "model still has a page on openrouter.ai. Update "
+                "statschat/config/main.toml to a currently served model, such as "
+                "'mistralai/mistral-small-3.1-24b-instruct:free' for no-cost "
+                "testing or 'mistralai/mistral-nemo' for a low-cost paid option."
+            )
+        else:
+            message = (
+                "The configured model "
+                f"'{self.generative_model_name}' is not available for provider "
+                f"'{self.provider}'."
+            )
+
+        self.logger.error(message)
+        raise RuntimeError(message) from exc
+
+    def _raise_rate_limit_error(self, exc: Exception) -> None:
+        """Raise a clearer rate-limit error for the configured provider/model."""
+
+        if self.provider == "openrouter":
+            message = (
+                "OpenRouter rate-limited the configured model "
+                f"'{self.generative_model_name}'. Free models can be temporarily "
+                "throttled upstream. Retry shortly, or switch "
+                "statschat/config/main.toml to a paid low-cost model such as "
+                "'mistralai/mistral-nemo' if you need more consistent access."
+            )
+        else:
+            message = (
+                "The configured model "
+                f"'{self.generative_model_name}' hit a rate limit for provider "
+                f"'{self.provider}'."
+            )
+
+        self.logger.error(message)
+        raise RuntimeError(message) from exc
 
     @staticmethod
     def _resolve_faiss_root(
@@ -328,10 +382,15 @@ class Inquirer:
         )
 
         # parameter values
-        response = chain.invoke(
-            {"input_documents": top_matches, "question": query},
-            return_only_outputs=True,
-        )
+        try:
+            response = chain.invoke(
+                {"input_documents": top_matches, "question": query},
+                return_only_outputs=True,
+            )
+        except NotFoundError as exc:
+            self._raise_model_availability_error(exc)
+        except RateLimitError as exc:
+            self._raise_rate_limit_error(exc)
 
         parser = PydanticOutputParser(pydantic_object=LlmResponse)
         try:

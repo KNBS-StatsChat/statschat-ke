@@ -15,7 +15,7 @@ max_files = 0  # 0 = no cap (process all)
 skip_existing_json = true  # if true, don't reconvert PDFs that already have a JSON
 
 [search]
-generative_model_name = "mistralai/Mistral-7B-Instruct-v0.3"  # "text-unicorn" "text-bison@001" "google/flan-t5-large" "lmsys/fastchat-t5-3b-v1.0" "google/flan-t5-large" "google/flan-ul2"
+generative_model_name = "mistralai/mistral-small-3.1-24b-instruct:free"  # Free OpenRouter default for experimentation; may be rate-limited. Consider "mistralai/mistral-nemo" as a low-cost paid upgrade later.
 k_docs = 2
 k_contexts = 5
 similarity_threshold = 2.0     # Threshold score below which a document is returned in a search

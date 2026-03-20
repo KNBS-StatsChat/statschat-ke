@@ -1,0 +1,5 @@
+__pycache__/
+StatsChat_QA_Auto*.xlsx
+StatsChat_QA_With_Answers.xlsx
+accuracy_results.csv
+qa_data_issues.csv

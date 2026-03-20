@@ -13,6 +13,23 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 
 
+def _resolve_data_path(data_dir: str | Path, target: str | Path) -> str:
+    """
+    Resolve a path under ``data_dir`` without duplicating the prefix.
+
+    This keeps backward compatibility for both styles:
+    - ``faiss_db_root = "db_langchain"``
+    - ``faiss_db_root = "data/db_langchain"``
+    """
+    data_dir_norm = os.path.normpath(str(data_dir))
+    target_norm = os.path.normpath(str(target))
+    if os.path.isabs(target_norm):
+        return target_norm
+    if target_norm == data_dir_norm or target_norm.startswith(data_dir_norm + os.sep):
+        return target_norm
+    return os.path.normpath(os.path.join(data_dir_norm, target_norm))
+
+
 class PrepareVectorStore(DirectoryLoader, JSONLoader):
     """
     Leveraging Langchain classes to split pre-scraped article
@@ -38,44 +55,21 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         max_files: int | None = None,
         skip_existing_json: bool = False,
     ):
-        data_dir_path = Path(str(data_dir))
-        data_dir_name = data_dir_path.name
-
-        self.directory = os.path.join(
-            str(data_dir_path), ("latest_" if mode == "UPDATE" else "") + str(directory)
+        self.directory = _resolve_data_path(
+            data_dir, ("latest_" if mode == "UPDATE" else "") + str(directory)
         )
-        self.split_directory = os.path.join(
-            str(data_dir_path),
-            ("latest_" if mode == "UPDATE" else "") + str(split_directory),
+        self.split_directory = _resolve_data_path(
+            data_dir, ("latest_" if mode == "UPDATE" else "") + str(split_directory)
         )
-        self.download_dir = os.path.join(str(data_dir_path), str(download_dir))
+        self.download_dir = _resolve_data_path(data_dir, download_dir)
         self.split_length = split_length
         self.split_overlap = split_overlap
         self.embedding_model_name = embedding_model_name
         self.redundant_similarity_threshold = redundant_similarity_threshold
-
-        def _resolve_db_root(root: str) -> Path:
-            """Resolve FAISS root path relative to repo root.
-
-            Config can be either:
-            - "db_langchain" (relative to data_dir), or
-            - "data/db_langchain" (already includes data_dir).
-
-            We normalize so we don't accidentally create nested "data/data/...".
-            """
-
-            candidate = Path(root)
-            if candidate.is_absolute():
-                return candidate
-            if candidate.parts and candidate.parts[0] == data_dir_name:
-                return candidate
-            return data_dir_path / candidate
-
-        base_db_root = _resolve_db_root(str(faiss_db_root))
-        self.original_faiss_db_root = str(base_db_root)
-
-        suffix = "_latest" if mode == "UPDATE" else ""
-        self.faiss_db_root = str(_resolve_db_root(str(faiss_db_root) + suffix))
+        self.faiss_db_root = _resolve_data_path(
+            data_dir, str(faiss_db_root) + ("_latest" if mode == "UPDATE" else "")
+        )
+        self.original_faiss_db_root = _resolve_data_path(data_dir, faiss_db_root)
         self.db = db
         self.latest_only = latest_only
         self.mode = mode

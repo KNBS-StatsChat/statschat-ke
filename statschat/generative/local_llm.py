@@ -8,6 +8,7 @@ from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from pathlib import Path
 import json
+from functools import lru_cache
 from statschat.generative.prompts_local import (
     _extractive_prompt,
     _core_prompt,
@@ -22,6 +23,68 @@ from statschat.generative.prompts_local import (
 def flatten_meta(d):
     """Utility, raise metadata within nested dicts."""
     return d | d.pop("metadata")
+
+
+@lru_cache(maxsize=1)
+def _get_embeddings(
+    embedding_model_name: str = "sentence-transformers/all-mpnet-base-v2",
+) -> HuggingFaceEmbeddings:
+    """Load embedding model once per process."""
+    return HuggingFaceEmbeddings(model_name=embedding_model_name)
+
+
+@lru_cache(maxsize=2)
+def _load_faiss_cached(
+    faiss_db_root: str,
+    embedding_model_name: str = "sentence-transformers/all-mpnet-base-v2",
+) -> FAISS:
+    """Load FAISS index once per db path per process."""
+    return FAISS.load_local(
+        faiss_db_root,
+        _get_embeddings(embedding_model_name),
+        allow_dangerous_deserialization=True,
+    )
+
+
+@lru_cache(maxsize=1)
+def _get_local_retrieval_config() -> dict[str, object]:
+    """
+    Read retrieval settings from main config with safe defaults.
+
+    Keeps local retrieval aligned with the configurable search parameters
+    used elsewhere in the project.
+    """
+    default = {
+        "k_docs": 3,
+        "similarity_threshold": 2.0,
+        "embedding_model_name": "sentence-transformers/all-mpnet-base-v2",
+    }
+    try:
+        from statschat import load_config
+
+        config = load_config(name="main")
+        search = config.get("search", {})
+        db = config.get("db", {})
+
+        k_docs = int(search.get("k_docs", default["k_docs"]))
+        if k_docs < 1:
+            k_docs = int(default["k_docs"])
+
+        similarity_threshold = float(
+            search.get("similarity_threshold", default["similarity_threshold"])
+        )
+
+        embedding_model_name = str(
+            db.get("embedding_model_name", default["embedding_model_name"])
+        )
+
+        return {
+            "k_docs": k_docs,
+            "similarity_threshold": similarity_threshold,
+            "embedding_model_name": embedding_model_name,
+        }
+    except Exception:
+        return default
 
 
 def similarity_search(
@@ -47,28 +110,24 @@ def similarity_search(
     # Check directories exist in "SETUP" MODE to avoid error
     BASE_DIR = Path.cwd().joinpath("data")
     DB_LANGCHAIN_DIR = BASE_DIR.joinpath("db_langchain")
-    DB_LANGCHAIN_UPDATE_DIR = BASE_DIR.joinpath("db_langchain_update")
+    DB_LANGCHAIN_LATEST_DIR = BASE_DIR.joinpath("db_langchain_latest")
 
-    if DB_LANGCHAIN_UPDATE_DIR.exists():
+    if DB_LANGCHAIN_LATEST_DIR.exists():
         faiss_db_root_latest = "data/db_langchain_latest"
 
     elif DB_LANGCHAIN_DIR.exists():
         faiss_db_root_latest = "data/db_langchain"
 
-    k_docs = 3
-    similarity_threshold = 2.0
-    embedding_model_name = "sentence-transformers/all-mpnet-base-v2"
-    embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
+    retrieval_cfg = _get_local_retrieval_config()
+    k_docs = int(retrieval_cfg["k_docs"])
+    similarity_threshold = float(retrieval_cfg["similarity_threshold"])
+    embedding_model_name = str(retrieval_cfg["embedding_model_name"])
 
     if latest_filter:
-        db_latest = FAISS.load_local(
-            faiss_db_root_latest, embeddings, allow_dangerous_deserialization=True
-        )
+        db_latest = _load_faiss_cached(faiss_db_root_latest, embedding_model_name)
         top_matches = db_latest.similarity_search_with_score(query=query, k=k_docs)
     else:
-        db = FAISS.load_local(
-            faiss_db_root, embeddings, allow_dangerous_deserialization=True
-        )
+        db = _load_faiss_cached(faiss_db_root, embedding_model_name)
         top_matches = db.similarity_search_with_score(query=query, k=k_docs)
 
     # filter to document matches with similarity scores less than...
@@ -84,7 +143,12 @@ def similarity_search(
 
 
 # Define a function to generate responses
-def generate_response(question: str, model: str, tokenizer) -> str:
+def generate_response(
+    question: str,
+    model: str,
+    tokenizer,
+    max_new_tokens: int = 800,
+) -> str:
     """
     Generate a response to the given question using the pre-trained model.
 
@@ -92,6 +156,7 @@ def generate_response(question: str, model: str, tokenizer) -> str:
         question (str): The input question to generate a response for.
         model (str): The model from huggingface that is being downloaded
         tokenizer (): Pretrained tokenizer from huggingface
+        max_new_tokens (int): Maximum number of tokens to generate.
 
     Returns
         str: The generated response.
@@ -104,7 +169,7 @@ def generate_response(question: str, model: str, tokenizer) -> str:
     output = model.generate(
         input_ids,
         attention_mask=attention_mask,
-        max_new_tokens=800,
+        max_new_tokens=max_new_tokens,
         do_sample=False,
         pad_token_id=tokenizer.eos_token_id,
     )
@@ -227,10 +292,14 @@ if __name__ == "__main__":
         device_map="auto",  # Automatically selects GPU if available
     )
     print("Model loaded successfully.")
+    contexts_block = "\n\n".join(
+        f"Context{i}: {str(text.get('page_content', '')).strip()}"
+        for i, text in enumerate(relevant_texts[:3], start=1)
+        if str(text.get("page_content", "")).strip()
+    )
     specific_prompt = _extractive_prompt.format(
         QuestionPlaceholder=question,
-        ContextPlaceholder1=key_context_1,
-        ContextPlaceholder2=key_context_2,
+        ContextsPlaceholder=contexts_block,
     )
     user_input = _core_prompt + specific_prompt + _format_instructions
 

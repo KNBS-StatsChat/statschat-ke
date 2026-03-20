@@ -19,6 +19,13 @@ The application requires API credentials to access language models. These creden
    OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
    ```
 
+   #### Optional: Override the default model locally
+   ```
+   STATSCHAT_GENERATIVE_MODEL=mistralai/mistral-nemo
+   ```
+
+   If you want to use the repository default model instead, leave `STATSCHAT_GENERATIVE_MODEL` unset (or remove it from `.env`).
+
    #### For OpenAI
    ```
    OPENAI_API_KEY=your_openai_api_key_here
@@ -59,6 +66,10 @@ provider = "openrouter"  # Options: "openrouter", "openai", "huggingface_inferen
 ```
 
 Change the `provider` value to match your chosen LLM provider and ensure the corresponding API key is set in your `.env` file.
+
+When using OpenRouter, choose a model that is currently routable through the API. A model page can still exist on the OpenRouter site even when no live API endpoints are available for it. For free experimentation, the current default is `mistralai/mistral-small-3.1-24b-instruct:free`, though free models may be temporarily rate-limited. When you move to paid usage, `mistralai/mistral-nemo` is a good low-cost option to evaluate.
+
+If you want to keep the repository default on the free model but use a paid model locally, set `STATSCHAT_GENERATIVE_MODEL` in your `.env` file. This overrides the model from `statschat/config/main.toml` without changing shared project config. If `STATSCHAT_GENERATIVE_MODEL` is not set, StatsChat uses the repository default from `statschat/config/main.toml`.
 
 ## Security Notes
 
