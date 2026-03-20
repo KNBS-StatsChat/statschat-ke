@@ -1,5 +1,8 @@
 from statschat.generative.response_model import LlmResponse
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def deduplicator(records: list[dict], keys: list[str]) -> list[dict]:
@@ -99,17 +102,23 @@ def time_decay(date_str: str, latest: float = 1.0) -> float:
     Applies a decay factor to a document's score based on its age.
 
     Args:
-        date_str (str): Date string in ISO format (e.g., '2021-12-01').
+        date_str (str): Date string, either "%d %B %Y" (e.g. '01 March 2024')
+            as stored in FAISS metadata, or ISO format (e.g. '2024-03-01').
         latest (float): Weighting factor for recency. Higher = more emphasis on newer docs.
 
     Returns:
         float: Decay multiplier (lower = newer, higher = older).
     """
     try:
-        doc_date = datetime.fromisoformat(date_str)
-        days_old = (datetime.now() - doc_date).days
-        decay = 1 + (days_old / 365.0) * latest
-        return decay
-    except Exception:
-        # If date is missing or malformed, return neutral decay
-        return 1.0
+        doc_date = datetime.strptime(date_str, "%d %B %Y")
+    except (ValueError, TypeError):
+        try:
+            doc_date = datetime.fromisoformat(date_str)
+        except (ValueError, TypeError):
+            logger.warning(
+                "time_decay: unparseable date '%s', returning neutral 1.0", date_str
+            )
+            return 1.0
+    days_old = (datetime.now() - doc_date).days
+    decay = 1 + (days_old / 365.0) * latest
+    return decay

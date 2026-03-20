@@ -462,10 +462,12 @@ class Inquirer:
 
         if effective_latest_weight > 0:
             for doc in docs:
-                # Divided by decay term because similarity scores are inverted
-                # Original score is L2 distance; lower is better
+                # Multiply by decay term to penalise older documents.
+                # Original score is L2 distance; lower is better.
+                # Older docs get a larger decay (>1), inflating their
+                # distance so they rank lower (less relevant).
                 # https://python.langchain.com/docs/integrations/vectorstores/faiss
-                doc["score"] = doc["score"] / time_decay(
+                doc["score"] = doc["score"] * time_decay(
                     doc["date"], latest=effective_latest_weight
                 )
             docs.sort(key=lambda doc: doc["score"])
