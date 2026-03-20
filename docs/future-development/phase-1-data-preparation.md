@@ -12,6 +12,10 @@ This file tracks future ideas for improving the data preparation stage of the St
 
 ## Candidate Improvements
 
+-
+
+### Additional Improvements
+
 - Improve download retry and backoff behaviour for intermittent KNBS availability issues.
 - Track provenance more explicitly for each downloaded file and conversion output.
 - Add stronger validation for extracted metadata such as publication dates, titles, and source URLs.
