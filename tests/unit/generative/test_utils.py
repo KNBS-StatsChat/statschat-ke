@@ -56,6 +56,26 @@ def test_time_decay_downweights_older_dates():
     assert older > newer
 
 
+def test_time_decay_parses_faiss_metadata_format():
+    """Parses the '%d %B %Y' format stored in FAISS metadata."""
+    result = time_decay("01 March 2024", latest=1.0)
+    assert result > 1.0  # Should apply actual decay, not neutral 1.0
+
+
+def test_time_decay_faiss_and_iso_agree():
+    """Both date formats for the same date produce the same decay."""
+    faiss_result = time_decay("01 March 2024", latest=1.0)
+    iso_result = time_decay("2024-03-01", latest=1.0)
+    assert abs(faiss_result - iso_result) < 0.01
+
+
+def test_time_decay_unparseable_returns_neutral(caplog):
+    """Unparseable dates return 1.0 and log a warning."""
+    result = time_decay("not-a-date", latest=1.0)
+    assert result == 1.0
+    assert "unparseable date" in caplog.text
+
+
 def test_trim_context_strips_edges():
     """Trims a context string to the intended core span."""
     assert trim_context("hello there world") == "there"
