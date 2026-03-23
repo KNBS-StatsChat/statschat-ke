@@ -2,6 +2,16 @@
 
 StatsChat has two independent mechanisms for prioritising recent publications. They operate at different stages of the retrieval pipeline.
 
+> **Current status (March 2026):**
+>
+> - **Hard filter** — disabled.
+
+With `latest_only = false` in config, both FAISS indexes contain all documents, so the query-time index switch has no effect. We don't anticipate needing this; the soft bias is a better approach for our corpus.
+
+> - **Soft bias** — active and recently fixed.
+
+Two bugs previously rendered it non-functional: a wrong operator (`/` instead of `*`) and a date format mismatch that caused silent parse failures. See [2026-03-13-time-decay-reweighting-bug.md](../investigations/2026-03-13-time-decay-reweighting-bug.md) and [2026-03-21-time-decay-date-format-mismatch.md](../investigations/2026-03-21-time-decay-date-format-mismatch.md) for details.
+
 ---
 
 ## 1. Hard filter — the `latest` flag
