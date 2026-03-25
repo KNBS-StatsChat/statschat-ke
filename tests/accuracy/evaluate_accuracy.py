@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import re
 import string
 import sys
@@ -66,9 +67,9 @@ class EvaluationResult:
     predicted_answer: str
     api_mode: Optional[str]
     reference_count: Optional[int]
-    reference_url: Optional[str]
-    reference_doc_id: Optional[str]
-    reference_page: Optional[int]
+    reference_urls: Optional[str]
+    reference_doc_ids: Optional[str]
+    reference_pages: Optional[str]
     evidence_page_match: Optional[bool]
     exact_match: Optional[int]
     token_f1: Optional[float]
@@ -263,7 +264,8 @@ class SemanticSimilarityEvaluator:
 
 
 def normalize_doc_id(value: str) -> str:
-    text = value.strip().lower()
+    original = value.strip().lower()
+    text = original
     if "://" in text:
         parsed = urlparse(text)
         if parsed.path:
@@ -274,7 +276,8 @@ def normalize_doc_id(value: str) -> str:
         text = text[: -len(".pdf")]
     text = re.sub(r"[_\s]+", "-", text)
     text = re.sub(r"-+", "-", text)
-    return text.strip("-")
+    result = text.strip("-")
+    return result if result else original
 
 
 def extract_page_from_url(url: str) -> Optional[int]:
@@ -335,34 +338,40 @@ def detect_api_mode(payload: dict) -> str:
 
 def extract_reference_details(
     payload: dict,
-) -> tuple[Optional[str], Optional[str], Optional[int], Optional[int]]:
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[int]]:
+    """Extract reference URLs, doc IDs, and pages from the API response.
+
+    Returns semicolon-joined strings for URLs, doc IDs, and pages so that
+    all documents returned by the API are captured (not just the first).
+    """
     references = payload.get("references")
+    urls: list[str] = []
     if isinstance(references, str):
-        reference_url = references.strip() or None
-        reference_count = 1 if reference_url else 0
+        url = references.strip()
+        if url:
+            urls.append(url)
     elif isinstance(references, list):
-        reference_count = len(references)
-        reference_url = None
         for item in references:
             if isinstance(item, dict):
                 candidate = str(item.get("page_url", "")).strip()
                 if candidate:
-                    reference_url = candidate
-                    break
+                    urls.append(candidate)
             elif isinstance(item, str) and item.strip():
-                reference_url = item.strip()
-                break
-    else:
-        reference_url = None
-        reference_count = None
+                urls.append(item.strip())
+    reference_count = len(urls) if isinstance(references, (str, list)) else None
 
-    reference_doc_id = None
-    reference_page = None
-    if reference_url:
-        parsed_ref = urlparse(reference_url)
-        reference_doc_id = normalize_doc_id(Path(parsed_ref.path).name)
-        reference_page = extract_page_from_url(reference_url)
-    return reference_url, reference_doc_id, reference_page, reference_count
+    doc_ids: list[str] = []
+    pages: list[str] = []
+    for url in urls:
+        parsed_ref = urlparse(url)
+        doc_ids.append(normalize_doc_id(Path(parsed_ref.path).name))
+        page = extract_page_from_url(url)
+        pages.append(str(page) if page is not None else "")
+
+    reference_urls = ";".join(urls) if urls else None
+    reference_doc_ids = ";".join(doc_ids) if doc_ids else None
+    reference_pages = ";".join(pages) if pages else None
+    return reference_urls, reference_doc_ids, reference_pages, reference_count
 
 
 def compute_retrieval_metrics(
@@ -618,9 +627,9 @@ def evaluate(
         api_mode_used: Optional[str] = None
         reference_count: Optional[int] = None
         retrieved_doc_ids: Optional[str] = None
-        reference_url: Optional[str] = None
-        reference_doc_id: Optional[str] = None
-        reference_page: Optional[int] = None
+        reference_urls: Optional[str] = None
+        reference_doc_ids: Optional[str] = None
+        reference_pages: Optional[str] = None
         evidence_page_match: Optional[bool] = None
         retrieval_metric_source: Optional[str] = None
 
@@ -634,9 +643,9 @@ def evaluate(
                     predicted_answer="",
                     api_mode=None,
                     reference_count=None,
-                    reference_url=None,
-                    reference_doc_id=None,
-                    reference_page=None,
+                    reference_urls=None,
+                    reference_doc_ids=None,
+                    reference_pages=None,
                     evidence_page_match=None,
                     exact_match=None,
                     token_f1=None,
@@ -670,15 +679,20 @@ def evaluate(
             predicted = str(payload.get("answer", "")).strip()
             detected_api_mode = detect_api_mode(payload)
             api_mode_used = detected_api_mode if api_mode == "auto" else api_mode
-            reference_url, reference_doc_id, reference_page, reference_count = (
+            reference_urls, reference_doc_ids, reference_pages, reference_count = (
                 extract_reference_details(payload)
             )
-            if reference_page is not None and reference_doc_id is not None:
-                pages = evidence_pages.get(reference_doc_id, set())
-                if pages:
-                    evidence_page_match = reference_page in pages
-                else:
-                    evidence_page_match = False
+            if reference_doc_ids and reference_pages:
+                ref_doc_list = reference_doc_ids.split(";")
+                ref_page_list = reference_pages.split(";")
+                evidence_page_match = False
+                for ref_doc, ref_page_str in zip(ref_doc_list, ref_page_list):
+                    if not ref_page_str:
+                        continue
+                    pages = evidence_pages.get(ref_doc, set())
+                    if int(ref_page_str) in pages:
+                        evidence_page_match = True
+                        break
         except Exception as exc:  # noqa: BLE001
             results.append(
                 EvaluationResult(
@@ -689,9 +703,9 @@ def evaluate(
                     predicted_answer="",
                     api_mode=api_mode_used,
                     reference_count=reference_count,
-                    reference_url=reference_url,
-                    reference_doc_id=reference_doc_id,
-                    reference_page=reference_page,
+                    reference_urls=reference_urls,
+                    reference_doc_ids=reference_doc_ids,
+                    reference_pages=reference_pages,
                     evidence_page_match=evidence_page_match,
                     exact_match=None,
                     token_f1=None,
@@ -718,7 +732,11 @@ def evaluate(
         else:
             error = None
 
-        if compute_retrieval and relevant_doc_ids and api_mode_used == "local":
+        if (
+            compute_retrieval
+            and relevant_doc_ids
+            and api_mode_used in {"local", "cloud"}
+        ):
             retrieval_metric_source = "local_similarity_search_proxy"
             try:
                 top_matches = similarity_search(
@@ -798,9 +816,9 @@ def evaluate(
                 predicted_answer=predicted,
                 api_mode=api_mode_used,
                 reference_count=reference_count,
-                reference_url=reference_url,
-                reference_doc_id=reference_doc_id,
-                reference_page=reference_page,
+                reference_urls=reference_urls,
+                reference_doc_ids=reference_doc_ids,
+                reference_pages=reference_pages,
                 evidence_page_match=evidence_page_match,
                 exact_match=exact_match,
                 token_f1=token_f1,
@@ -995,6 +1013,33 @@ def report_condition_alignment(excel_path: Path, content_type: str) -> None:
         print("Config alignment OK (or no comparable metadata fields).")
 
 
+_PROVIDER_ENV_KEYS: dict[str, str] = {
+    "openrouter": "OPENROUTER_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "huggingface_inference": "HF_TOKEN",
+}
+
+
+def _check_cloud_api_key() -> None:
+    """Fail fast when required cloud API key is missing."""
+    try:
+        from statschat import load_config
+
+        cfg = load_config(name="main")
+        provider = cfg.get("search", {}).get("provider", "openrouter")
+    except Exception:
+        provider = "openrouter"
+
+    env_var = _PROVIDER_ENV_KEYS.get(provider, "")
+    if env_var and not os.environ.get(env_var):
+        print(
+            f"Cloud mode requires the {env_var} environment variable "
+            f"(provider={provider}). Set it and retry.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate StatsChat QA accuracy.")
     parser.add_argument(
@@ -1162,6 +1207,9 @@ def main() -> None:
 
     if args.validate_only:
         return
+
+    if args.api_mode == "cloud":
+        _check_cloud_api_key()
 
     semantic_model = None
     if not args.no_semantic:

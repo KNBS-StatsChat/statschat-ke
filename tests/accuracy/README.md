@@ -53,7 +53,7 @@ Important behavior:
 
 - it can run validation only, without calling the API
 - it checks generation/evaluation condition alignment if the sheet contains `Generation_Metadata`
-- retrieval metrics are computed only for local mode and use `statschat.generative.local_llm.similarity_search(...)` as a proxy for ranked retrieval
+- Retrieval metrics are computed for both local and cloud modes using `statschat.generative.local_llm.similarity_search(...)` as a proxy for ranked retrieval. Both modes share the same FAISS index.
 
 ## Recommended Workflow
 
@@ -106,6 +106,8 @@ uvicorn fast-api.main_api_local:app --host 127.0.0.1 --port 8000
 
 ### 4. Evaluate Against The API
 
+In a new terminal window:
+
 ```bash
 python tests/accuracy/evaluate_accuracy.py \
   --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
@@ -113,6 +115,35 @@ python tests/accuracy/evaluate_accuracy.py \
   --content-type all \
   --timeout 420
 ```
+
+### 4b. Evaluate Against The Cloud API
+
+Start the cloud API and evaluate against it. The evaluator auto-detects the response
+format or you can force cloud mode with `--api-mode cloud`.
+
+```bash
+# Terminal 1: start the cloud API
+uvicorn fast-api.main_api_cloud:app --host 127.0.0.1 --port 8001
+
+# Terminal 2: run evaluation
+python tests/accuracy/evaluate_accuracy.py \
+  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
+  --host http://127.0.0.1:8001 \
+  --api-mode cloud \
+  --content-type all \
+  --timeout 420
+```
+
+The cloud API requires an API key for its configured provider.
+Set the appropriate environment variable before starting the API:
+
+- `openrouter` provider: `export OPENROUTER_API_KEY=...`
+- `openai` provider: `export OPENAI_API_KEY=...`
+- `huggingface_inference` provider: `export HF_TOKEN=...`
+
+The provider is read from `statschat/config/main.toml` under `[search] provider`.
+If the key is missing and `--api-mode cloud` is set, the evaluator will fail fast
+with an actionable error message.
 
 ### 5. Smoke Test A Small Subset
 
@@ -168,9 +199,9 @@ Important result columns include:
 - `semantic_similarity`
 - `is_refusal`
 - `is_correct`
-- `reference_url`
-- `reference_doc_id`
-- `reference_page`
+- `reference_urls`
+- `reference_doc_ids`
+- `reference_pages`
 - `evidence_page_match`
 - `precision_at_k`
 - `recall_at_k`
@@ -242,7 +273,7 @@ For LLM-generated QA, reviewer initials are intentionally optional.
 
 - `generate_qa_with_refs.py` creates silver data, not a reviewed benchmark.
 - The generator currently uses local Hugging Face or OpenAI providers. It does **not** use RAGAS.
-- Retrieval metrics do not use the exact ranked list returned by the API response. In local mode they use `similarity_search(...)` as a proxy.
+- Retrieval metrics do not use the exact ranked list returned by the API response. They use `similarity_search(...)` as a proxy, which provides a consistent comparison across local and cloud modes.
 - Table-heavy questions can still be brittle even with strict filters.
 - If generation and evaluation use different corpus modes or different index contents, measured accuracy can collapse for reasons unrelated to model quality.
 

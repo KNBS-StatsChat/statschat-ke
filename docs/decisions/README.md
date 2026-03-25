@@ -25,3 +25,4 @@ Example: `001-pymupdf-migration.md`
 |-----|-------|------|
 | 001 | [PyMuPDF Migration](./001-pymupdf-migration.md) | 2025-12-02 |
 | 002 | [OpenRouter Default Model Selection (2026-03-11)](./002-2026-03-11-openrouter-default-model-selection.md) | 2026-03-11 |
+| 003 | [Accuracy Evaluator — Cloud Mode Support](./003-accuracy-evaluator-cloud-mode.md) | 2026-03-25 |
