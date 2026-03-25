@@ -170,8 +170,15 @@ Important result columns include:
 - `is_correct`
 - `reference_url`
 - `reference_doc_id`
+- `reference_doc_ids_all`
 - `reference_page`
+- `reference_pages_all`
+- `reference_doc_match`
+- `any_reference_doc_match`
 - `evidence_page_match`
+- `any_reference_page_match`
+- `doc_hit_at_1`
+- `doc_hit_at_k`
 - `precision_at_k`
 - `recall_at_k`
 - `mrr`
@@ -179,7 +186,34 @@ Important result columns include:
 - `retrieved_doc_ids`
 - `error`
 
-## Metric Definitions
+## How Document Matching Works
+
+There are three different "document" concepts in the evaluator. Keeping them separate avoids a lot of confusion.
+
+- `relevant_doc_ids`: the gold relevant document IDs from the QA spreadsheet. This is the ground truth.
+- `retrieved_doc_ids`: the ranked document IDs produced during evaluation by local retrieval proxy `similarity_search(...)`. These are used for retrieval metrics such as `Precision@k`, `Recall@k`, `MRR`, and `nDCG`.
+- `reference_doc_id` / `reference_doc_ids_all`: the document IDs extracted from the API response `references` field. These are used for citation-style checks, not for the retrieval formulas.
+
+Important distinction:
+
+- retrieval metrics compare `relevant_doc_ids` against `retrieved_doc_ids`
+- reference and page-match metrics compare gold evidence against the API's returned references
+
+This means a first-reference mismatch does **not** automatically mean the `Precision@k` or `Recall@k` formula is wrong. It usually means the API cited a different document first, or returned multiple references and the gold one was not first.
+
+## Metric Definitions And Formulas
+
+For retrieval metrics, the script first:
+
+- normalizes all document IDs
+- removes duplicate retrieved documents while keeping rank order
+- keeps the first `k` unique retrieved docs
+
+Let:
+
+- `G` = set of normalized gold relevant document IDs from `relevant_doc_ids`
+- `R_k` = first `k` normalized unique retrieved document IDs
+- `rel_i = 1` if the document at rank `i` in `R_k` is in `G`, otherwise `0`
 
 ### Accuracy
 
@@ -205,10 +239,111 @@ Numeric answers are also checked with absolute and relative tolerance, including
 
 ### Retrieval Metrics
 
-- `Precision@k`: relevant retrieved docs in top `k`, divided by `k`
-- `Recall@k`: unique relevant docs found in top `k`, divided by total relevant docs
-- `MRR`: reciprocal rank of the first relevant retrieved doc
-- `nDCG`: discounted ranking quality relative to an ideal ranking
+#### `Precision@k`
+
+Mathematical expression:
+
+```text
+Precision@k = (sum from i=1 to k of rel_i) / k
+```
+
+Implementation notes:
+
+- the denominator is always `k`
+- if fewer than `k` unique docs are retrieved, the remaining ranks are treated as non-relevant (`0`)
+
+#### `Recall@k`
+
+Mathematical expression:
+
+```text
+Recall@k = |R_k ∩ G| / |G|
+```
+
+Implementation notes:
+
+- recall uses unique relevant docs found in the top `k`
+- if a row has only one gold document, `Recall@k` can only be `0` or `1`
+
+#### `MRR`
+
+If the first relevant retrieved document appears at rank `r`, then:
+
+```text
+MRR = 1 / r
+```
+
+If no relevant document appears in the top `k`, then:
+
+```text
+MRR = 0
+```
+
+#### `DCG@k`
+
+```text
+DCG@k = sum from i=1 to k of rel_i / log2(i + 1)
+```
+
+#### `IDCG@k`
+
+The ideal ranking places all relevant documents first:
+
+```text
+IDCG@k = sum from i=1 to min(|G|, k) of 1 / log2(i + 1)
+```
+
+#### `nDCG@k`
+
+```text
+nDCG@k = DCG@k / IDCG@k
+```
+
+#### `Doc Hit@1`
+
+```text
+Doc Hit@1 = 1 if the first retrieved unique document is in G, else 0
+```
+
+#### `Doc Hit@k`
+
+```text
+Doc Hit@k = 1 if any document in R_k is in G, else 0
+```
+
+### Reference And Evidence Match Metrics
+
+These are different from retrieval metrics. They are based on the API response `references` field.
+
+#### `First Reference Doc Match`
+
+```text
+First Reference Doc Match = 1 if reference_doc_id is in G, else 0
+```
+
+#### `Any Reference Doc Match`
+
+```text
+Any Reference Doc Match = 1 if any doc in reference_doc_ids_all is in G, else 0
+```
+
+#### `First Reference Page Hit`
+
+```text
+First Reference Page Hit = 1 if the first returned (doc, page) pair matches the
+gold evidence page for that document, else 0
+```
+
+#### `Any Reference Page Hit`
+
+```text
+Any Reference Page Hit = 1 if any returned (doc, page) pair matches the
+gold evidence pages, else 0
+```
+
+Implementation note:
+
+- the evaluator now records both the first returned reference and the full returned reference set, so citation analysis is no longer limited to only one returned reference
 
 ### Safe Response Rate
 
@@ -243,6 +378,9 @@ For LLM-generated QA, reviewer initials are intentionally optional.
 - `generate_qa_with_refs.py` creates silver data, not a reviewed benchmark.
 - The generator currently uses local Hugging Face or OpenAI providers. It does **not** use RAGAS.
 - Retrieval metrics do not use the exact ranked list returned by the API response. In local mode they use `similarity_search(...)` as a proxy.
+- Reference-based metrics and retrieval metrics are intentionally different:
+  - retrieval metrics evaluate ranked retrieval against `relevant_doc_ids`
+  - reference/page metrics evaluate what the API actually cited in `references`
 - Table-heavy questions can still be brittle even with strict filters.
 - If generation and evaluation use different corpus modes or different index contents, measured accuracy can collapse for reasons unrelated to model quality.
 

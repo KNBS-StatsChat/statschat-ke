@@ -69,7 +69,14 @@ class EvaluationResult:
     reference_url: Optional[str]
     reference_doc_id: Optional[str]
     reference_page: Optional[int]
+    reference_doc_ids_all: Optional[str]
+    reference_pages_all: Optional[str]
+    reference_doc_match: Optional[bool]
+    any_reference_doc_match: Optional[bool]
     evidence_page_match: Optional[bool]
+    any_reference_page_match: Optional[bool]
+    doc_hit_at_1: Optional[bool]
+    doc_hit_at_k: Optional[bool]
     exact_match: Optional[int]
     token_f1: Optional[float]
     semantic_similarity: Optional[float]
@@ -335,23 +342,24 @@ def detect_api_mode(payload: dict) -> str:
 
 def extract_reference_details(
     payload: dict,
-) -> tuple[Optional[str], Optional[str], Optional[int], Optional[int]]:
+) -> tuple[Optional[str], Optional[str], Optional[int], Optional[int], list[str]]:
     references = payload.get("references")
+    reference_urls: list[str] = []
     if isinstance(references, str):
         reference_url = references.strip() or None
         reference_count = 1 if reference_url else 0
+        if reference_url:
+            reference_urls.append(reference_url)
     elif isinstance(references, list):
         reference_count = len(references)
-        reference_url = None
         for item in references:
             if isinstance(item, dict):
-                candidate = str(item.get("page_url", "")).strip()
+                candidate = str(item.get("page_url") or item.get("url") or "").strip()
                 if candidate:
-                    reference_url = candidate
-                    break
+                    reference_urls.append(candidate)
             elif isinstance(item, str) and item.strip():
-                reference_url = item.strip()
-                break
+                reference_urls.append(item.strip())
+        reference_url = reference_urls[0] if reference_urls else None
     else:
         reference_url = None
         reference_count = None
@@ -362,7 +370,13 @@ def extract_reference_details(
         parsed_ref = urlparse(reference_url)
         reference_doc_id = normalize_doc_id(Path(parsed_ref.path).name)
         reference_page = extract_page_from_url(reference_url)
-    return reference_url, reference_doc_id, reference_page, reference_count
+    return (
+        reference_url,
+        reference_doc_id,
+        reference_page,
+        reference_count,
+        reference_urls,
+    )
 
 
 def compute_retrieval_metrics(
@@ -402,6 +416,38 @@ def compute_retrieval_metrics(
     idcg = sum(hit / math.log2(idx + 1) for idx, hit in enumerate(ideal_hits, start=1))
     ndcg = dcg / idcg if idcg else 0.0
     return precision, recall, mrr, ndcg
+
+
+def compute_doc_hit_flags(
+    relevant_doc_ids: list[str],
+    retrieved_doc_ids: list[str],
+    k: int,
+) -> tuple[bool, bool]:
+    relevant_set = {normalize_doc_id(doc_id) for doc_id in relevant_doc_ids}
+    retrieved_norm_all = [normalize_doc_id(doc_id) for doc_id in retrieved_doc_ids]
+    retrieved_unique: list[str] = []
+    seen: set[str] = set()
+    for doc_id in retrieved_norm_all:
+        if not doc_id or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        retrieved_unique.append(doc_id)
+
+    top_k = retrieved_unique[:k]
+    doc_hit_at_1 = bool(top_k) and top_k[0] in relevant_set
+    doc_hit_at_k = any(doc_id in relevant_set for doc_id in top_k)
+    return doc_hit_at_1, doc_hit_at_k
+
+
+def unique_preserve_order(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
 
 
 def validate_rows(
@@ -621,7 +667,14 @@ def evaluate(
         reference_url: Optional[str] = None
         reference_doc_id: Optional[str] = None
         reference_page: Optional[int] = None
+        reference_doc_ids_all: Optional[str] = None
+        reference_pages_all: Optional[str] = None
+        reference_doc_match: Optional[bool] = None
+        any_reference_doc_match: Optional[bool] = None
         evidence_page_match: Optional[bool] = None
+        any_reference_page_match: Optional[bool] = None
+        doc_hit_at_1: Optional[bool] = None
+        doc_hit_at_k: Optional[bool] = None
         retrieval_metric_source: Optional[str] = None
 
         if not query_text:
@@ -637,7 +690,14 @@ def evaluate(
                     reference_url=None,
                     reference_doc_id=None,
                     reference_page=None,
+                    reference_doc_ids_all=None,
+                    reference_pages_all=None,
+                    reference_doc_match=None,
+                    any_reference_doc_match=None,
                     evidence_page_match=None,
+                    any_reference_page_match=None,
+                    doc_hit_at_1=None,
+                    doc_hit_at_k=None,
                     exact_match=None,
                     token_f1=None,
                     semantic_similarity=None,
@@ -670,15 +730,60 @@ def evaluate(
             predicted = str(payload.get("answer", "")).strip()
             detected_api_mode = detect_api_mode(payload)
             api_mode_used = detected_api_mode if api_mode == "auto" else api_mode
-            reference_url, reference_doc_id, reference_page, reference_count = (
-                extract_reference_details(payload)
+            (
+                reference_url,
+                reference_doc_id,
+                reference_page,
+                reference_count,
+                reference_urls,
+            ) = extract_reference_details(payload)
+            all_reference_doc_ids: list[str] = []
+            all_reference_pages: list[int] = []
+            reference_pairs: list[tuple[str, int]] = []
+            for ref_url in reference_urls:
+                parsed_ref = urlparse(ref_url)
+                doc_id = normalize_doc_id(Path(parsed_ref.path).name)
+                if doc_id:
+                    all_reference_doc_ids.append(doc_id)
+                page = extract_page_from_url(ref_url)
+                if page is not None:
+                    all_reference_pages.append(page)
+                if doc_id and page is not None:
+                    reference_pairs.append((doc_id, page))
+
+            all_reference_doc_ids = unique_preserve_order(all_reference_doc_ids)
+            all_reference_pages_text = unique_preserve_order(
+                [str(page) for page in all_reference_pages]
             )
-            if reference_page is not None and reference_doc_id is not None:
-                pages = evidence_pages.get(reference_doc_id, set())
-                if pages:
-                    evidence_page_match = reference_page in pages
+            if all_reference_doc_ids:
+                reference_doc_ids_all = ";".join(all_reference_doc_ids)
+            if all_reference_pages_text:
+                reference_pages_all = ";".join(all_reference_pages_text)
+
+            gold_doc_ids = {
+                normalize_doc_id(doc_id)
+                for doc_id in relevant_doc_ids
+                if doc_id.strip()
+            }
+            if relevant_doc_ids:
+                reference_doc_match = (
+                    reference_doc_id in gold_doc_ids
+                    if reference_doc_id is not None
+                    else False
+                )
+                any_reference_doc_match = any(
+                    doc_id in gold_doc_ids for doc_id in all_reference_doc_ids
+                )
+            if evidence_pages:
+                if reference_page is not None and reference_doc_id is not None:
+                    pages = evidence_pages.get(reference_doc_id, set())
+                    evidence_page_match = reference_page in pages if pages else False
                 else:
                     evidence_page_match = False
+                any_reference_page_match = any(
+                    page in evidence_pages.get(doc_id, set())
+                    for doc_id, page in reference_pairs
+                )
         except Exception as exc:  # noqa: BLE001
             results.append(
                 EvaluationResult(
@@ -692,7 +797,14 @@ def evaluate(
                     reference_url=reference_url,
                     reference_doc_id=reference_doc_id,
                     reference_page=reference_page,
+                    reference_doc_ids_all=reference_doc_ids_all,
+                    reference_pages_all=reference_pages_all,
+                    reference_doc_match=reference_doc_match,
+                    any_reference_doc_match=any_reference_doc_match,
                     evidence_page_match=evidence_page_match,
+                    any_reference_page_match=any_reference_page_match,
+                    doc_hit_at_1=doc_hit_at_1,
+                    doc_hit_at_k=doc_hit_at_k,
                     exact_match=None,
                     token_f1=None,
                     semantic_similarity=None,
@@ -733,11 +845,18 @@ def evaluate(
                     retrieved_doc_ids=retrieved_raw,
                     k=retrieval_k,
                 )
+                doc_hit_at_1, doc_hit_at_k = compute_doc_hit_flags(
+                    relevant_doc_ids=relevant_doc_ids,
+                    retrieved_doc_ids=retrieved_raw,
+                    k=retrieval_k,
+                )
             except Exception as exc:  # noqa: BLE001
                 precision_at_k = None
                 recall_at_k = None
                 mrr = None
                 ndcg = None
+                doc_hit_at_1 = None
+                doc_hit_at_k = None
                 retrieved_doc_ids = None
                 retrieval_metric_source = "local_similarity_search_proxy_failed"
                 error = str(exc) if error is None else f"{error}; {exc}"
@@ -801,7 +920,14 @@ def evaluate(
                 reference_url=reference_url,
                 reference_doc_id=reference_doc_id,
                 reference_page=reference_page,
+                reference_doc_ids_all=reference_doc_ids_all,
+                reference_pages_all=reference_pages_all,
+                reference_doc_match=reference_doc_match,
+                any_reference_doc_match=any_reference_doc_match,
                 evidence_page_match=evidence_page_match,
+                any_reference_page_match=any_reference_page_match,
+                doc_hit_at_1=doc_hit_at_1,
+                doc_hit_at_k=doc_hit_at_k,
                 exact_match=exact_match,
                 token_f1=token_f1,
                 semantic_similarity=semantic_similarity,
@@ -824,7 +950,7 @@ def evaluate(
     return results
 
 
-def print_summary(results: list[EvaluationResult]) -> None:
+def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
     evaluated = [r for r in results if r.is_correct is not None]
     total = len(evaluated)
     answerable = [r for r in evaluated if r.should_answer is True]
@@ -895,6 +1021,71 @@ def print_summary(results: list[EvaluationResult]) -> None:
     )
     if retrieval_sources:
         print(f"Retrieval metric source(s): {', '.join(retrieval_sources)}")
+
+    doc_hit_rows = [r for r in evaluated if r.doc_hit_at_k is not None]
+    if doc_hit_rows:
+        doc_hit_1_count = sum(1 for r in doc_hit_rows if r.doc_hit_at_1)
+        doc_hit_k_count = sum(1 for r in doc_hit_rows if r.doc_hit_at_k)
+        print(
+            f"Doc Hit@1: {doc_hit_1_count / len(doc_hit_rows):.3f} "
+            f"({doc_hit_1_count}/{len(doc_hit_rows)})"
+        )
+        print(
+            f"Doc Hit@{retrieval_k}: {doc_hit_k_count / len(doc_hit_rows):.3f} "
+            f"({doc_hit_k_count}/{len(doc_hit_rows)})"
+        )
+
+    first_reference_doc_rows = [
+        r for r in evaluated if r.reference_doc_match is not None
+    ]
+    if first_reference_doc_rows:
+        first_reference_doc_count = sum(
+            1 for r in first_reference_doc_rows if r.reference_doc_match
+        )
+        print(
+            f"First Reference Doc Match: "
+            f"{first_reference_doc_count / len(first_reference_doc_rows):.3f} "
+            f"({first_reference_doc_count}/{len(first_reference_doc_rows)})"
+        )
+
+    any_reference_doc_rows = [
+        r for r in evaluated if r.any_reference_doc_match is not None
+    ]
+    if any_reference_doc_rows:
+        any_reference_doc_count = sum(
+            1 for r in any_reference_doc_rows if r.any_reference_doc_match
+        )
+        print(
+            f"Any Reference Doc Match: "
+            f"{any_reference_doc_count / len(any_reference_doc_rows):.3f} "
+            f"({any_reference_doc_count}/{len(any_reference_doc_rows)})"
+        )
+
+    first_reference_page_rows = [
+        r for r in evaluated if r.evidence_page_match is not None
+    ]
+    if first_reference_page_rows:
+        first_reference_page_count = sum(
+            1 for r in first_reference_page_rows if r.evidence_page_match
+        )
+        print(
+            f"First Reference Page Hit: "
+            f"{first_reference_page_count / len(first_reference_page_rows):.3f} "
+            f"({first_reference_page_count}/{len(first_reference_page_rows)})"
+        )
+
+    any_reference_page_rows = [
+        r for r in evaluated if r.any_reference_page_match is not None
+    ]
+    if any_reference_page_rows:
+        any_reference_page_count = sum(
+            1 for r in any_reference_page_rows if r.any_reference_page_match
+        )
+        print(
+            f"Any Reference Page Hit: "
+            f"{any_reference_page_count / len(any_reference_page_rows):.3f} "
+            f"({any_reference_page_count}/{len(any_reference_page_rows)})"
+        )
 
     safe_response_rate = overall_accuracy
     print(f"Safe response rate: {safe_response_rate:.3f}")
@@ -1192,7 +1383,7 @@ def main() -> None:
     if args.write_answers_excel:
         save_results_excel(args.excel, results, args.answers_output)
         print(f"Excel with answers saved to: {args.answers_output}")
-    print_summary(results)
+    print_summary(results, retrieval_k=args.retrieval_k)
 
 
 if __name__ == "__main__":
