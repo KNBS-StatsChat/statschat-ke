@@ -1,77 +1,150 @@
 # Accuracy Workflow
 
-This folder contains the StatsChat accuracy workflow:
+This folder contains two independent workflows for measuring StatsChat answer quality:
 
-- `generate_qa_with_refs.py`: generates a synthetic QA spreadsheet from KNBS JSON conversions
+1. **Evaluation** (the main workflow): score StatsChat answers against a QA spreadsheet
+2. **QA Generation** (optional): create a synthetic QA spreadsheet from KNBS documents
+
+Most of the time you will only run the evaluation, using a curated set of questions that already exists.
+
+### Files
+
 - `evaluate_accuracy.py`: validates a QA spreadsheet and evaluates StatsChat answers against it
+- `generate_qa_with_refs.py`: generates a synthetic QA spreadsheet from KNBS JSON conversions
 - `StatsChat_QA_Template_2.xlsx`: Excel template used for the `QA_Data` sheet format
 - `KNBS_QA_Authoring_Instructions.docx`: manual QA authoring guidance
 - `StatsChat_Accuracy_Measurement.docx`: metric and process reference
 
-This is operational test tooling. The most useful documentation belongs in this folder next to the scripts and template. Broader pipeline architecture still belongs under `docs/`.
+---
 
-## What The Scripts Do
+## Part 1 — Evaluating StatsChat
 
-### `generate_qa_with_refs.py`
+This is the primary workflow. It takes an existing QA spreadsheet, sends each question to the StatsChat API, and scores the responses.
 
-This script creates a synthetic "silver" QA dataset from `data/json_conversions`.
+### Prerequisites
 
-What it does:
+- A QA spreadsheet with a `QA_Data` sheet containing the required columns (see [Validation Rules](#validation-rules))
+- The FAISS index at `data/db_langchain/` matching the corpus you want to test
+- The StatsChat API running (local or cloud)
 
-- samples JSON files and pages from KNBS conversions
-- prompts an LLM to generate:
-  - `query_text`
-  - `golden_answer`
-  - `source_text`
-- writes the results into the same `QA_Data` schema used by the manual Excel template
-- copies the `Instructions` and `Explanation` sheets from the template
-- adds a `Generation_Metadata` sheet recording generation settings
+### Quick Start
 
-Important behavior:
+The commands are the same for local and cloud — only the API URL changes.
 
-- it does **not** compute accuracy metrics
-- it uses strict grounding filters by default
-- it can restrict generation to PDFs that are present in the current FAISS index via `--align-with-index`
-- for local generation, it loads the Hugging Face model once and reuses it for all generated rows
+**Step 1 — Validate the QA sheet** (no API needed):
 
-This is a silver dataset, not a human-reviewed gold set.
+```bash
+python tests/accuracy/evaluate_accuracy.py \
+  --excel "tests/accuracy/your_qa_sheet.xlsx" \
+  --validate-only
+```
 
-### `evaluate_accuracy.py`
+**Step 2 — Start the API** (pick one):
 
-This script validates a QA sheet and optionally calls the StatsChat API to score responses.
+```bash
+# Local (loads Mistral-7B — allow a few minutes for model loading)
+uvicorn fast-api.main_api_local:app --host 127.0.0.1 --port 8000
 
-What it does:
+# Cloud (requires API key — starts in seconds)
+uvicorn fast-api.main_api_cloud:app --host 127.0.0.1 --port 8001
+```
 
-- checks that `QA_Data` has the required columns
-- validates row quality and authoring rules
-- calls `/search` for each question unless `--validate-only` is used
-- compares predicted answers against `golden_answer`
-- writes per-row results to CSV
-- optionally writes an Excel file with answers and metrics merged back into `QA_Data`
+For cloud mode, set the API key for the configured provider before starting:
 
-Important behavior:
+| Provider | Environment variable |
+|---|---|
+| `openrouter` | `OPENROUTER_API_KEY` |
+| `openai` | `OPENAI_API_KEY` |
+| `huggingface_inference` | `HF_TOKEN` |
 
-- it can run validation only, without calling the API
-- it checks generation/evaluation condition alignment if the sheet contains `Generation_Metadata`
-- Retrieval metrics are computed for both local and cloud modes using `statschat.generative.local_llm.similarity_search(...)` as a proxy for ranked retrieval. Both modes share the same FAISS index.
+The provider is read from `statschat/config/main.toml` under `[search] provider`.
 
-## Recommended Workflow
+**Step 3 — Run the evaluation** (in a new terminal):
 
-1. Make sure the FAISS index matches the corpus you want to test.
-2. Generate the QA sheet.
-3. Validate the QA sheet.
-4. Start the StatsChat API.
-5. Run the evaluation.
+```bash
+# Against local API
+python tests/accuracy/evaluate_accuracy.py \
+  --excel "tests/accuracy/your_qa_sheet.xlsx" \
+  --host http://127.0.0.1:8000 \
+  --content-type all \
+  --timeout 420
 
-If QA was generated from the full corpus in `data/json_conversions`, evaluate with `--content-type all`.
+# Against cloud API
+python tests/accuracy/evaluate_accuracy.py \
+  --excel "tests/accuracy/your_qa_sheet.xlsx" \
+  --host http://127.0.0.1:8001 \
+  --content-type all \
+  --timeout 420
+```
 
-If QA was generated from a latest-only corpus and latest index, evaluate with `--content-type latest`.
+The evaluator auto-detects local vs cloud from the API response. You can force a mode with `--api-mode local` or `--api-mode cloud`.
 
-Generation and evaluation should use the same corpus conditions. If they do not, variance will be high and results will be hard to interpret.
+If `--api-mode cloud` is set and the required API key is missing, the evaluator will fail fast with an actionable error message.
 
-## Run Commands
+**Smoke test** — evaluate only the first few rows:
 
-### 1. Generate QA With A Local Model
+```bash
+python tests/accuracy/evaluate_accuracy.py \
+  --excel "tests/accuracy/your_qa_sheet.xlsx" \
+  --host http://127.0.0.1:8000 \
+  --content-type all \
+  --timeout 420 \
+  --max-rows 3
+```
+
+### Evaluator Output
+
+By default:
+
+- `tests/accuracy/accuracy_results.csv` — per-row results
+- `tests/accuracy/qa_data_issues.csv` — validation issues (if any)
+- `tests/accuracy/StatsChat_QA_With_Answers.xlsx` — if `--write-answers-excel` is used
+
+Important result columns:
+
+| Column | Description |
+|---|---|
+| `predicted_answer` | The API response text |
+| `exact_match` | 1 if normalised answer matches gold |
+| `token_f1` | Token-overlap F1 score |
+| `semantic_similarity` | Cosine similarity of sentence embeddings |
+| `is_refusal` | Whether the response was a refusal |
+| `is_correct` | Overall correctness judgement |
+| `reference_urls` | All reference URLs returned (semicolon-joined) |
+| `reference_doc_ids` | Normalised doc IDs from references (semicolon-joined) |
+| `reference_pages` | Page numbers from references (semicolon-joined) |
+| `evidence_page_match` | Whether any reference matched the expected evidence |
+| `precision_at_k` | Precision@k from retrieval |
+| `recall_at_k` | Recall@k from retrieval |
+| `mrr` | Mean Reciprocal Rank |
+| `ndcg` | Normalised Discounted Cumulative Gain |
+| `retrieved_doc_ids` | Doc IDs from the retrieval proxy |
+| `error` | Error message if the API call failed |
+
+---
+
+## Part 2 — Generating QA Data (Optional)
+
+Use this when you need to create a new QA spreadsheet rather than using an existing one.
+
+### What It Does
+
+`generate_qa_with_refs.py` creates a synthetic "silver" QA dataset from `data/json_conversions`:
+
+- Samples JSON files and pages from KNBS conversions
+- Prompts an LLM to generate `query_text`, `golden_answer`, and `source_text`
+- Writes results into the `QA_Data` schema used by the manual Excel template
+- Adds a `Generation_Metadata` sheet recording generation settings
+
+This is a silver dataset, not a human-reviewed gold set. Use it as a starting point; review and curate rows before treating them as a benchmark.
+
+### When To Use
+
+- You need a new QA set aligned to a different corpus or index
+- You want to expand coverage beyond manually authored questions
+- You are bootstrapping initial test data for a new deployment
+
+### Run Commands
 
 ```bash
 python tests/accuracy/generate_qa_with_refs.py \
@@ -90,125 +163,29 @@ python tests/accuracy/generate_qa_with_refs.py \
   --seed 7
 ```
 
-### 2. Validate The Generated Sheet
+### Generator Parameters
 
-```bash
-python tests/accuracy/evaluate_accuracy.py \
-  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
-  --validate-only
-```
+| Flag | Purpose |
+|---|---|
+| `--max-files` | Maximum JSON documents to sample. `0` means all. |
+| `--pages-per-doc` | Pages sampled from each document |
+| `--max-questions` | Maximum accepted rows after filtering and deduplication |
+| `--min-text-length` | Minimum page text length to consider |
+| `--strict-filters` | Stricter filtering for grounded, less ambiguous QA |
+| `--align-with-index` | Only use PDFs present in the current FAISS index |
+| `--index-pkl` | FAISS metadata pickle for alignment (default: `data/db_langchain/index.pkl`) |
 
-### 3. Start The Local API
-
-```bash
-uvicorn fast-api.main_api_local:app --host 127.0.0.1 --port 8000
-```
-
-### 4. Evaluate Against The API
-
-In a new terminal window:
-
-```bash
-python tests/accuracy/evaluate_accuracy.py \
-  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
-  --host http://127.0.0.1:8000 \
-  --content-type all \
-  --timeout 420
-```
-
-### 4b. Evaluate Against The Cloud API
-
-Start the cloud API and evaluate against it. The evaluator auto-detects the response
-format or you can force cloud mode with `--api-mode cloud`.
-
-```bash
-# Terminal 1: start the cloud API
-uvicorn fast-api.main_api_cloud:app --host 127.0.0.1 --port 8001
-
-# Terminal 2: run evaluation
-python tests/accuracy/evaluate_accuracy.py \
-  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
-  --host http://127.0.0.1:8001 \
-  --api-mode cloud \
-  --content-type all \
-  --timeout 420
-```
-
-The cloud API requires an API key for its configured provider.
-Set the appropriate environment variable before starting the API:
-
-- `openrouter` provider: `export OPENROUTER_API_KEY=...`
-- `openai` provider: `export OPENAI_API_KEY=...`
-- `huggingface_inference` provider: `export HF_TOKEN=...`
-
-The provider is read from `statschat/config/main.toml` under `[search] provider`.
-If the key is missing and `--api-mode cloud` is set, the evaluator will fail fast
-with an actionable error message.
-
-### 5. Smoke Test A Small Subset
-
-```bash
-python tests/accuracy/evaluate_accuracy.py \
-  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
-  --host http://127.0.0.1:8000 \
-  --content-type all \
-  --timeout 420 \
-  --max-rows 3
-```
-
-## Generator Parameters
-
-The most important generation flags are:
-
-- `--max-files`: maximum number of JSON documents to sample. `0` means all.
-- `--pages-per-doc`: number of pages sampled from each selected document.
-- `--max-questions`: maximum number of accepted QA rows after filtering and deduplication.
-- `--min-text-length`: minimum page text length before a page is considered.
-- `--strict-filters`: enables stricter filtering for grounded and less ambiguous QA.
-- `--align-with-index`: only use PDFs that are present in the current FAISS index.
-- `--index-pkl`: FAISS metadata pickle used for alignment. Default is `data/db_langchain/index.pkl`.
-
-## Output Files
-
-### Generator output
-
-By default:
+### Generator Output
 
 - `tests/accuracy/StatsChat_QA_Auto.xlsx`
 
-Sheets:
+Sheets: `QA_Data`, `Instructions`, `Explanation`, `Generation_Metadata`
 
-- `QA_Data`: generated rows in the manual template schema
-- `Instructions`: copied from the template if present
-- `Explanation`: copied from the template if present
-- `Generation_Metadata`: generation parameters and selected evaluation config values
+### Important
 
-### Evaluator output
+Generation and evaluation should use the same corpus conditions (same `--content-type`, same index). If they do not, variance will be high and results will be hard to interpret.
 
-By default:
-
-- `tests/accuracy/accuracy_results.csv`
-- `tests/accuracy/qa_data_issues.csv` when validation issues are found
-- `tests/accuracy/StatsChat_QA_With_Answers.xlsx` if `--write-answers-excel` is used
-
-Important result columns include:
-
-- `predicted_answer`
-- `exact_match`
-- `token_f1`
-- `semantic_similarity`
-- `is_refusal`
-- `is_correct`
-- `reference_urls`
-- `reference_doc_ids`
-- `reference_pages`
-- `evidence_page_match`
-- `precision_at_k`
-- `recall_at_k`
-- `mrr`
-- `ndcg`
-- `retrieved_doc_ids`
-- `error`
+---
 
 ## Metric Definitions
 
@@ -235,6 +212,8 @@ Cosine similarity between sentence-transformer embeddings of the gold and predic
 Numeric answers are also checked with absolute and relative tolerance, including percent handling.
 
 ### Retrieval Metrics
+
+Computed for both local and cloud modes using `similarity_search(...)` as a proxy with the shared FAISS index — not from the ranked list in the API response. This provides a consistent comparison across modes.
 
 - `Precision@k`: relevant retrieved docs in top `k`, divided by `k`
 - `Recall@k`: unique relevant docs found in top `k`, divided by total relevant docs
