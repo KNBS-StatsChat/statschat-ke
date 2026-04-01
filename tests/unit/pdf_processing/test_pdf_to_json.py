@@ -202,7 +202,7 @@ def test_extract_pdf_text_with_mocked_fitz(tmp_path, monkeypatch):
     pages = pdf_to_json.extract_pdf_text(pdf_path, "https://example.com/doc.pdf")
     assert isinstance(pages, list)
     assert pages[0]["page_number"] == 1
-    assert pages[0]["page_text"] == "Line1Line2"
+    assert pages[0]["page_text"] == "Line1\nLine2"
     assert pages[1]["page_text"] == "OnlyOneLine"
 
 

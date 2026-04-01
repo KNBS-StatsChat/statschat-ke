@@ -306,6 +306,33 @@ def extract_pdf_metadata(pdf_file_path: Path) -> tuple:
     return file_name, pdf_metadata
 
 
+def normalize_page_text(raw_text: str) -> str:
+    """
+    Preserve line structure while cleaning per-line whitespace.
+
+    This is intentionally conservative for PDF/table-heavy content: we keep
+    newline boundaries instead of flattening pages into one long string.
+    """
+    if not raw_text:
+        return ""
+
+    text = raw_text.replace("\r\n", "\n").replace("\r", "\n").replace("\x0c", "\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+
+    normalized_lines: list[str] = []
+    previous_blank = False
+    for line in lines:
+        if not line:
+            if not previous_blank and normalized_lines:
+                normalized_lines.append("")
+            previous_blank = True
+            continue
+        normalized_lines.append(line)
+        previous_blank = False
+
+    return "\n".join(normalized_lines).strip()
+
+
 def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
     """
     Extracts text content from each page of a PDF file using PyMuPDF.
@@ -347,7 +374,7 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
                 page = doc[page_num - 1]  # PyMuPDF uses 0-based indexing
                 extracted = page.get_text()
                 if extracted:
-                    text = extracted.replace("\n", "")
+                    text = normalize_page_text(extracted)
             except Exception as exc:
                 # MuPDF shading/colorspace errors tend to surface here.
                 print(
@@ -372,7 +399,7 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
                         if plumber_doc is None:
                             plumber_doc = pdfplumber.open(pdf_file_path)
                         ptext = plumber_doc.pages[page_num - 1].extract_text() or ""
-                        text = ptext.replace("\n", "")
+                        text = normalize_page_text(ptext)
                     except ImportError as import_exc:
                         extraction_errors.append(
                             {

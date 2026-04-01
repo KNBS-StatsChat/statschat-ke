@@ -30,6 +30,25 @@ def _resolve_data_path(data_dir: str | Path, target: str | Path) -> str:
     return os.path.normpath(os.path.join(data_dir_norm, target_norm))
 
 
+def normalize_page_url(
+    page_url: str | None, base_url: str | None, page_number: object | None
+) -> str:
+    """Return a fully qualified page URL when enough metadata is available."""
+    page_url_str = str(page_url or "").strip()
+    base_url_str = str(base_url or "").strip()
+
+    if page_url_str and not page_url_str.startswith("#page="):
+        return page_url_str
+
+    if page_url_str.startswith("#page=") and base_url_str:
+        return f"{base_url_str}{page_url_str}"
+
+    if base_url_str and page_number not in (None, ""):
+        return f"{base_url_str}#page={page_number}"
+
+    return page_url_str
+
+
 class PrepareVectorStore(DirectoryLoader, JSONLoader):
     """
     Leveraging Langchain classes to split pre-scraped article
@@ -169,6 +188,11 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
 
             # Rename a few things
             metadata["source"] = metadata.pop("id")
+            metadata["page_url"] = normalize_page_url(
+                metadata.get("page_url"),
+                metadata.get("url"),
+                metadata.get("page_number"),
+            )
 
             # Remove the text from metadata
             metadata.pop("page_text")
@@ -193,8 +217,48 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
         )
 
         self.docs = self.loader.load()
+        self._enrich_loaded_documents()
         self.logger.info(f"{len(self.docs)} article sections loaded to memory")
         return None
+
+    def _enrich_loaded_documents(self) -> None:
+        """
+        Prepend lightweight document context to each page before chunking.
+
+        This helps retrieval distinguish otherwise similar numeric/table-heavy
+        passages by carrying the title, date, and page number into the chunk text.
+        """
+        enriched_docs = []
+        for doc in self.docs:
+            metadata = doc.metadata
+            prefix_lines: list[str] = []
+
+            title = str(metadata.get("title", "")).strip()
+            if title:
+                prefix_lines.append(f"Title: {title}")
+
+            date = str(metadata.get("date", "")).strip()
+            if date:
+                prefix_lines.append(f"Release date: {date}")
+
+            publication_type = str(metadata.get("publication_type", "")).strip()
+            if publication_type and publication_type != "Unknown":
+                prefix_lines.append(f"Publication type: {publication_type}")
+
+            publication_theme = str(metadata.get("publication_theme", "")).strip()
+            if publication_theme and publication_theme != "Unknown":
+                prefix_lines.append(f"Theme: {publication_theme}")
+
+            page_number = metadata.get("page_number")
+            if page_number not in (None, ""):
+                prefix_lines.append(f"Page number: {page_number}")
+
+            prefix = "\n".join(prefix_lines).strip()
+            body = str(doc.page_content).strip()
+            doc.page_content = f"{prefix}\n\n{body}" if prefix and body else body
+            enriched_docs.append(doc)
+
+        self.docs = enriched_docs
 
     def _instantiate_embeddings(self):
         """
@@ -205,10 +269,18 @@ class PrepareVectorStore(DirectoryLoader, JSONLoader):
 
         if self.embedding_model_name == "textembedding-gecko@001":
             model = "sentence-transformers/all-mpnet-base-v2"
-            self.embeddings = HuggingFaceEmbeddings(model_name=model)
+            self.logger.info(
+                "Embedding model %s is not available locally; using %s instead.",
+                self.embedding_model_name,
+                model,
+            )
         else:
-            model = "sentence-transformers/all-mpnet-base-v2"
-            self.embeddings = HuggingFaceEmbeddings(model_name=model)
+            model = self.embedding_model_name
+
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name=model,
+            model_kwargs={"local_files_only": True},
+        )
 
         return None
 

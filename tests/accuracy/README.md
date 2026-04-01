@@ -42,12 +42,16 @@ This script validates a QA sheet and optionally calls the StatsChat API to score
 
 What it does:
 
-- checks that `QA_Data` has the required columns
+- auto-detects the worksheet containing the QA table
+- checks that the QA sheet has the required columns
 - validates row quality and authoring rules
 - calls `/search` for each question unless `--validate-only` is used
 - compares predicted answers against `golden_answer`
 - writes per-row results to CSV
-- optionally writes an Excel file with answers and metrics merged back into `QA_Data`
+- writes aggregate summary metrics to a separate summary CSV
+- optionally writes an Excel file with:
+  - the original QA sheet unchanged
+  - a separate `Predicted_Answers` sheet containing tool outputs only
 
 Important behavior:
 
@@ -157,12 +161,21 @@ Sheets:
 By default:
 
 - `tests/accuracy/accuracy_results.csv`
+- `tests/accuracy/accuracy_results_summary.csv`
 - `tests/accuracy/qa_data_issues.csv` when validation issues are found
 - `tests/accuracy/StatsChat_QA_With_Answers.xlsx` if `--write-answers-excel` is used
 
 Important result columns include:
 
 - `predicted_answer`
+- `predicted_relevant_doc_ids`
+- `predicted_evidence_locations`
+- `predicted_source_text`
+- `model_answered`
+- `correct_refusal`
+- `false_answer`
+- `answered_when_expected`
+- `answer_missing`
 - `exact_match`
 - `token_f1`
 - `semantic_similarity`
@@ -185,6 +198,19 @@ Important result columns include:
 - `ndcg`
 - `retrieved_doc_ids`
 - `error`
+
+The Excel workbook written by `--write-answers-excel` now contains:
+
+- the original QA sheet unchanged
+- `Predicted_Answers` with:
+  - `query_id`
+  - `query_text`
+  - `predicted_answer`
+  - `predicted_relevant_doc_ids`
+  - `predicted_evidence_locations`
+  - `predicted_source_text`
+  - `reference_url`
+- any other non-QA sheets copied through, such as `Instructions`, `Explanation`, or `Notes`
 
 ## How Document Matching Works
 
@@ -217,9 +243,46 @@ Let:
 
 ### Accuracy
 
-- `Answerable accuracy`: fraction of answerable rows marked correct
-- `Unanswerable accuracy`: fraction of refusal rows marked correct
-- `Overall accuracy`: correct rows divided by total evaluated rows
+The evaluator first computes a per-row boolean `is_correct`, then aggregates it.
+
+For answerable rows (`should_answer = TRUE`):
+
+- a refusal-style answer is automatically incorrect
+- otherwise a row is marked correct if **any** of the following passes:
+  - exact match
+  - numeric match within tolerance
+  - RapidFuzz text similarity above threshold
+  - token F1 above threshold
+  - semantic similarity above threshold
+
+For unanswerable rows (`should_answer = FALSE`):
+
+- a row is marked correct if the model refused appropriately
+
+Aggregate accuracy metrics are then:
+
+#### `Answerable accuracy`
+
+```text
+Answerable accuracy =
+(# answerable rows with is_correct = TRUE) / (# answerable rows)
+```
+
+#### `Unanswerable accuracy`
+
+```text
+Unanswerable accuracy =
+(# unanswerable rows with is_correct = TRUE) / (# unanswerable rows)
+```
+
+This is effectively the current evaluator's refusal accuracy over `should_answer = FALSE` rows.
+
+#### `Overall accuracy`
+
+```text
+Overall accuracy =
+(# all evaluated rows with is_correct = TRUE) / (# all evaluated rows)
+```
 
 ### Exact Match (EM)
 
@@ -349,6 +412,59 @@ Implementation note:
 
 In the current implementation this is equal to `overall_accuracy`.
 
+### Refusal And Guardrail Metrics
+
+These metrics use the `should_answer` label together with the model's observed behavior.
+
+The evaluator derives:
+
+- `model_answered = TRUE` if the model returned a non-refusal answer
+- `model_answered = FALSE` if the model returned a refusal-style answer
+
+#### `Correct Refusal Rate`
+
+Over rows where `should_answer = FALSE`:
+
+```text
+Correct Refusal Rate =
+(# rows where model_answered = FALSE) / (# rows where should_answer = FALSE)
+```
+
+This corresponds to "the tool refused when it should refuse."
+
+#### `False Answer Rate`
+
+Over rows where `should_answer = FALSE`:
+
+```text
+False Answer Rate =
+(# rows where model_answered = TRUE) / (# rows where should_answer = FALSE)
+```
+
+This is the key guardrail failure rate.
+
+#### `Answer Coverage`
+
+Over rows where `should_answer = TRUE`:
+
+```text
+Answer Coverage =
+(# rows where model_answered = TRUE) / (# rows where should_answer = TRUE)
+```
+
+This measures whether the tool answered when an answer was expected.
+
+#### `Answer Missing Rate`
+
+Over rows where `should_answer = TRUE`:
+
+```text
+Answer Missing Rate =
+(# rows where model_answered = FALSE) / (# rows where should_answer = TRUE)
+```
+
+This detects overly cautious refusals or missing answers on answerable questions.
+
 ## Validation Rules
 
 For answerable rows, the evaluator expects:
@@ -361,6 +477,7 @@ For answerable rows, the evaluator expects:
 - `source_text`
 - `should_answer`
 - `Reviewers`
+- extra columns such as `source_url` are allowed and ignored unless explicitly used
 
 Additional checks include:
 
@@ -390,3 +507,7 @@ For LLM-generated QA, reviewer initials are intentionally optional.
 - Rebuild the index before QA generation if corpus contents changed.
 - Do not compare runs fairly unless corpus, index, thresholds, `k_docs`, and `k_contexts` were kept aligned.
 - Treat the generated QA file as a starting point for testing, not as a final benchmark without review.
+- For report writing, use:
+  - the Excel workbook for human-readable gold vs predicted comparison
+  - the per-row results CSV for detailed technical analysis
+  - the summary CSV for headline metrics such as overall accuracy, retrieval metrics, and refusal rates

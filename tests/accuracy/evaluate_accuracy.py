@@ -64,6 +64,14 @@ class EvaluationResult:
     should_answer: Optional[bool]
     golden_answer: str
     predicted_answer: str
+    predicted_relevant_doc_ids: Optional[str]
+    predicted_evidence_locations: Optional[str]
+    predicted_source_text: Optional[str]
+    model_answered: Optional[bool]
+    correct_refusal: Optional[bool]
+    false_answer: Optional[bool]
+    answered_when_expected: Optional[bool]
+    answer_missing: Optional[bool]
     api_mode: Optional[str]
     reference_count: Optional[int]
     reference_url: Optional[str]
@@ -97,6 +105,35 @@ class Issue:
     query_id: str
     issue: str
     detail: str
+
+
+def detect_qa_sheet_name(
+    excel_path: Path, preferred_sheet: str = "QA_Data"
+) -> tuple[str, list[str]]:
+    """Return the sheet containing the QA table and workbook sheet names."""
+    workbook = pd.ExcelFile(excel_path)
+    sheet_names = workbook.sheet_names
+
+    if preferred_sheet in sheet_names:
+        header_df = pd.read_excel(excel_path, sheet_name=preferred_sheet, nrows=0)
+        columns = {str(col).strip() for col in header_df.columns}
+        if REQUIRED_COLUMNS.issubset(columns):
+            return preferred_sheet, sheet_names
+
+    matching_sheets: list[str] = []
+    for sheet_name in sheet_names:
+        header_df = pd.read_excel(excel_path, sheet_name=sheet_name, nrows=0)
+        columns = {str(col).strip() for col in header_df.columns}
+        if REQUIRED_COLUMNS.issubset(columns):
+            matching_sheets.append(sheet_name)
+
+    if not matching_sheets:
+        raise ValueError(
+            "No worksheet contains the required QA columns. "
+            f"Required columns: {sorted(REQUIRED_COLUMNS)}"
+        )
+
+    return matching_sheets[0], sheet_names
 
 
 def is_blank(value: object) -> bool:
@@ -262,7 +299,10 @@ def exact_match_score(golden: str, answer: str) -> int:
 
 class SemanticSimilarityEvaluator:
     def __init__(self, model_name: str) -> None:
-        self.model = SentenceTransformer(model_name)
+        try:
+            self.model = SentenceTransformer(model_name, local_files_only=True)
+        except TypeError:
+            self.model = SentenceTransformer(model_name)
 
     def similarity(self, golden: str, answer: str) -> float:
         embeddings = self.model.encode([golden, answer], convert_to_tensor=True)
@@ -676,6 +716,14 @@ def evaluate(
         doc_hit_at_1: Optional[bool] = None
         doc_hit_at_k: Optional[bool] = None
         retrieval_metric_source: Optional[str] = None
+        predicted_relevant_doc_ids: Optional[str] = None
+        predicted_evidence_locations: Optional[str] = None
+        predicted_source_text: Optional[str] = None
+        model_answered: Optional[bool] = None
+        correct_refusal: Optional[bool] = None
+        false_answer: Optional[bool] = None
+        answered_when_expected: Optional[bool] = None
+        answer_missing: Optional[bool] = None
 
         if not query_text:
             results.append(
@@ -685,6 +733,14 @@ def evaluate(
                     should_answer=should_answer,
                     golden_answer=golden_answer,
                     predicted_answer="",
+                    predicted_relevant_doc_ids=None,
+                    predicted_evidence_locations=None,
+                    predicted_source_text=None,
+                    model_answered=None,
+                    correct_refusal=None,
+                    false_answer=None,
+                    answered_when_expected=None,
+                    answer_missing=None,
                     api_mode=None,
                     reference_count=None,
                     reference_url=None,
@@ -728,6 +784,7 @@ def evaluate(
             response.raise_for_status()
             payload = response.json()
             predicted = str(payload.get("answer", "")).strip()
+            predicted_source_text = str(payload.get("context_reference", "")).strip()
             detected_api_mode = detect_api_mode(payload)
             api_mode_used = detected_api_mode if api_mode == "auto" else api_mode
             (
@@ -759,6 +816,18 @@ def evaluate(
                 reference_doc_ids_all = ";".join(all_reference_doc_ids)
             if all_reference_pages_text:
                 reference_pages_all = ";".join(all_reference_pages_text)
+
+            if reference_pairs:
+                predicted_evidence_locations = ";".join(
+                    f"{doc_id}:p.{page}" for doc_id, page in reference_pairs
+                )
+            elif reference_page is not None:
+                if reference_doc_id is not None:
+                    predicted_evidence_locations = (
+                        f"{reference_doc_id}:p.{reference_page}"
+                    )
+                else:
+                    predicted_evidence_locations = f"p.{reference_page}"
 
             gold_doc_ids = {
                 normalize_doc_id(doc_id)
@@ -792,6 +861,14 @@ def evaluate(
                     should_answer=should_answer,
                     golden_answer=golden_answer,
                     predicted_answer="",
+                    predicted_relevant_doc_ids=predicted_relevant_doc_ids,
+                    predicted_evidence_locations=predicted_evidence_locations,
+                    predicted_source_text=predicted_source_text,
+                    model_answered=model_answered,
+                    correct_refusal=correct_refusal,
+                    false_answer=false_answer,
+                    answered_when_expected=answered_when_expected,
+                    answer_missing=answer_missing,
                     api_mode=api_mode_used,
                     reference_count=reference_count,
                     reference_url=reference_url,
@@ -840,6 +917,7 @@ def evaluate(
                 )
                 retrieved_raw = [extract_doc_id(doc) for doc in top_matches]
                 retrieved_doc_ids = ";".join(retrieved_raw)
+                predicted_relevant_doc_ids = retrieved_doc_ids
                 precision_at_k, recall_at_k, mrr, ndcg = compute_retrieval_metrics(
                     relevant_doc_ids=relevant_doc_ids,
                     retrieved_doc_ids=retrieved_raw,
@@ -868,6 +946,7 @@ def evaluate(
             retrieval_metric_source = "disabled_by_flag"
 
         refusal = is_refusal_answer(predicted, refusal_phrases)
+        model_answered = bool(predicted) and not refusal
         similarity_score: Optional[float] = None
         is_correct: Optional[bool] = None
         exact_match: Optional[int] = None
@@ -905,8 +984,12 @@ def evaluate(
                     or passes_f1
                     or passes_semantic
                 )
+            answered_when_expected = model_answered
+            answer_missing = not model_answered
         elif should_answer is False:
             is_correct = refusal
+            correct_refusal = refusal
+            false_answer = not refusal
 
         results.append(
             EvaluationResult(
@@ -915,6 +998,14 @@ def evaluate(
                 should_answer=should_answer,
                 golden_answer=golden_answer,
                 predicted_answer=predicted,
+                predicted_relevant_doc_ids=predicted_relevant_doc_ids,
+                predicted_evidence_locations=predicted_evidence_locations,
+                predicted_source_text=predicted_source_text,
+                model_answered=model_answered,
+                correct_refusal=correct_refusal,
+                false_answer=false_answer,
+                answered_when_expected=answered_when_expected,
+                answer_missing=answer_missing,
                 api_mode=api_mode_used,
                 reference_count=reference_count,
                 reference_url=reference_url,
@@ -950,7 +1041,9 @@ def evaluate(
     return results
 
 
-def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
+def build_summary(
+    results: list[EvaluationResult], retrieval_k: int
+) -> dict[str, object]:
     evaluated = [r for r in results if r.is_correct is not None]
     total = len(evaluated)
     answerable = [r for r in evaluated if r.should_answer is True]
@@ -967,17 +1060,19 @@ def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
         unanswerable_correct / len(unanswerable) if unanswerable else 0.0
     )
 
-    print("\nAccuracy summary")
-    print(f"Total evaluated: {total}")
-    print(f"Answerable: {len(answerable)}")
-    print(f"Unanswerable: {len(unanswerable)}")
-    print(f"Answerable accuracy: {answerable_accuracy:.3f}")
-    print(f"Unanswerable accuracy: {unanswerable_accuracy:.3f}")
-    print(f"Overall accuracy: {overall_accuracy:.3f}")
+    summary: dict[str, object] = {
+        "retrieval_k": retrieval_k,
+        "total_evaluated": total,
+        "answerable_count": len(answerable),
+        "unanswerable_count": len(unanswerable),
+        "answerable_accuracy": answerable_accuracy,
+        "unanswerable_accuracy": unanswerable_accuracy,
+        "overall_accuracy": overall_accuracy,
+    }
 
     api_modes = sorted({r.api_mode for r in results if r.api_mode})
     if api_modes:
-        print(f"API mode(s) observed: {', '.join(api_modes)}")
+        summary["api_modes_observed"] = ";".join(api_modes)
 
     em_scores = [r.exact_match for r in answerable if r.exact_match is not None]
     f1_scores = [r.token_f1 for r in answerable if r.token_f1 is not None]
@@ -985,13 +1080,11 @@ def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
         r.semantic_similarity for r in answerable if r.semantic_similarity is not None
     ]
     if em_scores:
-        print(f"Exact Match (EM): {sum(em_scores) / len(em_scores):.3f}")
+        summary["exact_match_avg"] = sum(em_scores) / len(em_scores)
     if f1_scores:
-        print(f"Token F1 (avg): {sum(f1_scores) / len(f1_scores):.3f}")
+        summary["token_f1_avg"] = sum(f1_scores) / len(f1_scores)
     if semantic_scores:
-        print(
-            f"Semantic Similarity (avg): {sum(semantic_scores) / len(semantic_scores):.3f}"
-        )
+        summary["semantic_similarity_avg"] = sum(semantic_scores) / len(semantic_scores)
 
     retrieval_metrics = [
         r
@@ -999,41 +1092,35 @@ def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
         if r.precision_at_k is not None and r.recall_at_k is not None
     ]
     if retrieval_metrics:
-        avg_precision = sum(r.precision_at_k for r in retrieval_metrics) / len(
-            retrieval_metrics
-        )
-        avg_recall = sum(r.recall_at_k for r in retrieval_metrics) / len(
-            retrieval_metrics
-        )
-        avg_mrr = sum(r.mrr for r in retrieval_metrics if r.mrr is not None) / len(
-            retrieval_metrics
-        )
-        avg_ndcg = sum(r.ndcg for r in retrieval_metrics if r.ndcg is not None) / len(
-            retrieval_metrics
-        )
-        print(f"Precision@k (avg): {avg_precision:.3f}")
-        print(f"Recall@k (avg): {avg_recall:.3f}")
-        print(f"MRR (avg): {avg_mrr:.3f}")
-        print(f"nDCG (avg): {avg_ndcg:.3f}")
+        summary["precision_at_k_avg"] = sum(
+            r.precision_at_k for r in retrieval_metrics
+        ) / len(retrieval_metrics)
+        summary["recall_at_k_avg"] = sum(
+            r.recall_at_k for r in retrieval_metrics
+        ) / len(retrieval_metrics)
+        summary["mrr_avg"] = sum(
+            r.mrr for r in retrieval_metrics if r.mrr is not None
+        ) / len(retrieval_metrics)
+        summary["ndcg_avg"] = sum(
+            r.ndcg for r in retrieval_metrics if r.ndcg is not None
+        ) / len(retrieval_metrics)
 
     retrieval_sources = sorted(
         {r.retrieval_metric_source for r in results if r.retrieval_metric_source}
     )
     if retrieval_sources:
-        print(f"Retrieval metric source(s): {', '.join(retrieval_sources)}")
+        summary["retrieval_metric_sources"] = ";".join(retrieval_sources)
 
     doc_hit_rows = [r for r in evaluated if r.doc_hit_at_k is not None]
     if doc_hit_rows:
         doc_hit_1_count = sum(1 for r in doc_hit_rows if r.doc_hit_at_1)
         doc_hit_k_count = sum(1 for r in doc_hit_rows if r.doc_hit_at_k)
-        print(
-            f"Doc Hit@1: {doc_hit_1_count / len(doc_hit_rows):.3f} "
-            f"({doc_hit_1_count}/{len(doc_hit_rows)})"
-        )
-        print(
-            f"Doc Hit@{retrieval_k}: {doc_hit_k_count / len(doc_hit_rows):.3f} "
-            f"({doc_hit_k_count}/{len(doc_hit_rows)})"
-        )
+        summary["doc_hit_at_1_rate"] = doc_hit_1_count / len(doc_hit_rows)
+        summary["doc_hit_at_1_count"] = doc_hit_1_count
+        summary["doc_hit_at_1_denom"] = len(doc_hit_rows)
+        summary["doc_hit_at_k_rate"] = doc_hit_k_count / len(doc_hit_rows)
+        summary["doc_hit_at_k_count"] = doc_hit_k_count
+        summary["doc_hit_at_k_denom"] = len(doc_hit_rows)
 
     first_reference_doc_rows = [
         r for r in evaluated if r.reference_doc_match is not None
@@ -1042,11 +1129,11 @@ def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
         first_reference_doc_count = sum(
             1 for r in first_reference_doc_rows if r.reference_doc_match
         )
-        print(
-            f"First Reference Doc Match: "
-            f"{first_reference_doc_count / len(first_reference_doc_rows):.3f} "
-            f"({first_reference_doc_count}/{len(first_reference_doc_rows)})"
+        summary["first_reference_doc_match_rate"] = first_reference_doc_count / len(
+            first_reference_doc_rows
         )
+        summary["first_reference_doc_match_count"] = first_reference_doc_count
+        summary["first_reference_doc_match_denom"] = len(first_reference_doc_rows)
 
     any_reference_doc_rows = [
         r for r in evaluated if r.any_reference_doc_match is not None
@@ -1055,11 +1142,11 @@ def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
         any_reference_doc_count = sum(
             1 for r in any_reference_doc_rows if r.any_reference_doc_match
         )
-        print(
-            f"Any Reference Doc Match: "
-            f"{any_reference_doc_count / len(any_reference_doc_rows):.3f} "
-            f"({any_reference_doc_count}/{len(any_reference_doc_rows)})"
+        summary["any_reference_doc_match_rate"] = any_reference_doc_count / len(
+            any_reference_doc_rows
         )
+        summary["any_reference_doc_match_count"] = any_reference_doc_count
+        summary["any_reference_doc_match_denom"] = len(any_reference_doc_rows)
 
     first_reference_page_rows = [
         r for r in evaluated if r.evidence_page_match is not None
@@ -1068,11 +1155,11 @@ def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
         first_reference_page_count = sum(
             1 for r in first_reference_page_rows if r.evidence_page_match
         )
-        print(
-            f"First Reference Page Hit: "
-            f"{first_reference_page_count / len(first_reference_page_rows):.3f} "
-            f"({first_reference_page_count}/{len(first_reference_page_rows)})"
+        summary["first_reference_page_hit_rate"] = first_reference_page_count / len(
+            first_reference_page_rows
         )
+        summary["first_reference_page_hit_count"] = first_reference_page_count
+        summary["first_reference_page_hit_denom"] = len(first_reference_page_rows)
 
     any_reference_page_rows = [
         r for r in evaluated if r.any_reference_page_match is not None
@@ -1081,18 +1168,141 @@ def print_summary(results: list[EvaluationResult], retrieval_k: int) -> None:
         any_reference_page_count = sum(
             1 for r in any_reference_page_rows if r.any_reference_page_match
         )
-        print(
-            f"Any Reference Page Hit: "
-            f"{any_reference_page_count / len(any_reference_page_rows):.3f} "
-            f"({any_reference_page_count}/{len(any_reference_page_rows)})"
+        summary["any_reference_page_hit_rate"] = any_reference_page_count / len(
+            any_reference_page_rows
         )
+        summary["any_reference_page_hit_count"] = any_reference_page_count
+        summary["any_reference_page_hit_denom"] = len(any_reference_page_rows)
+
+    if unanswerable:
+        correct_refusal_count = sum(1 for r in unanswerable if r.correct_refusal)
+        false_answer_count = sum(1 for r in unanswerable if r.false_answer)
+        summary["correct_refusal_rate"] = correct_refusal_count / len(unanswerable)
+        summary["correct_refusal_count"] = correct_refusal_count
+        summary["correct_refusal_denom"] = len(unanswerable)
+        summary["false_answer_rate"] = false_answer_count / len(unanswerable)
+        summary["false_answer_count"] = false_answer_count
+        summary["false_answer_denom"] = len(unanswerable)
+
+    if answerable:
+        answered_when_expected_count = sum(
+            1 for r in answerable if r.answered_when_expected
+        )
+        answer_missing_count = sum(1 for r in answerable if r.answer_missing)
+        summary["answer_coverage"] = answered_when_expected_count / len(answerable)
+        summary["answer_coverage_count"] = answered_when_expected_count
+        summary["answer_coverage_denom"] = len(answerable)
+        summary["answer_missing_rate"] = answer_missing_count / len(answerable)
+        summary["answer_missing_count"] = answer_missing_count
+        summary["answer_missing_denom"] = len(answerable)
 
     safe_response_rate = overall_accuracy
-    print(f"Safe response rate: {safe_response_rate:.3f}")
+    summary["safe_response_rate"] = safe_response_rate
 
     errors = [r for r in results if r.error]
-    if errors:
-        print(f"\nErrors: {len(errors)} (see output file for details)")
+    summary["error_count"] = len(errors)
+
+    return summary
+
+
+def print_summary(summary: dict[str, object], retrieval_k: int) -> None:
+    print("\nAccuracy summary")
+    print(f"Total evaluated: {summary['total_evaluated']}")
+    print(f"Answerable: {summary['answerable_count']}")
+    print(f"Unanswerable: {summary['unanswerable_count']}")
+    print(f"Answerable accuracy: {summary['answerable_accuracy']:.3f}")
+    print(f"Unanswerable accuracy: {summary['unanswerable_accuracy']:.3f}")
+    print(f"Overall accuracy: {summary['overall_accuracy']:.3f}")
+
+    api_modes = summary.get("api_modes_observed")
+    if api_modes:
+        print(f"API mode(s) observed: {str(api_modes).replace(';', ', ')}")
+
+    if summary.get("exact_match_avg") is not None:
+        print(f"Exact Match (EM): {summary['exact_match_avg']:.3f}")
+    if summary.get("token_f1_avg") is not None:
+        print(f"Token F1 (avg): {summary['token_f1_avg']:.3f}")
+    if summary.get("semantic_similarity_avg") is not None:
+        print(f"Semantic Similarity (avg): {summary['semantic_similarity_avg']:.3f}")
+
+    if summary.get("precision_at_k_avg") is not None:
+        print(f"Precision@k (avg): {summary['precision_at_k_avg']:.3f}")
+        print(f"Recall@k (avg): {summary['recall_at_k_avg']:.3f}")
+        print(f"MRR (avg): {summary['mrr_avg']:.3f}")
+        print(f"nDCG (avg): {summary['ndcg_avg']:.3f}")
+
+    retrieval_sources = summary.get("retrieval_metric_sources")
+    if retrieval_sources:
+        print(
+            f"Retrieval metric source(s): {str(retrieval_sources).replace(';', ', ')}"
+        )
+
+    if summary.get("doc_hit_at_1_rate") is not None:
+        print(
+            f"Doc Hit@1: {summary['doc_hit_at_1_rate']:.3f} "
+            f"({summary['doc_hit_at_1_count']}/{summary['doc_hit_at_1_denom']})"
+        )
+        print(
+            f"Doc Hit@{retrieval_k}: {summary['doc_hit_at_k_rate']:.3f} "
+            f"({summary['doc_hit_at_k_count']}/{summary['doc_hit_at_k_denom']})"
+        )
+
+    if summary.get("first_reference_doc_match_rate") is not None:
+        print(
+            f"First Reference Doc Match: "
+            f"{summary['first_reference_doc_match_rate']:.3f} "
+            f"({summary['first_reference_doc_match_count']}/"
+            f"{summary['first_reference_doc_match_denom']})"
+        )
+
+    if summary.get("any_reference_doc_match_rate") is not None:
+        print(
+            f"Any Reference Doc Match: "
+            f"{summary['any_reference_doc_match_rate']:.3f} "
+            f"({summary['any_reference_doc_match_count']}/"
+            f"{summary['any_reference_doc_match_denom']})"
+        )
+
+    if summary.get("first_reference_page_hit_rate") is not None:
+        print(
+            f"First Reference Page Hit: "
+            f"{summary['first_reference_page_hit_rate']:.3f} "
+            f"({summary['first_reference_page_hit_count']}/"
+            f"{summary['first_reference_page_hit_denom']})"
+        )
+
+    if summary.get("any_reference_page_hit_rate") is not None:
+        print(
+            f"Any Reference Page Hit: "
+            f"{summary['any_reference_page_hit_rate']:.3f} "
+            f"({summary['any_reference_page_hit_count']}/"
+            f"{summary['any_reference_page_hit_denom']})"
+        )
+
+    if summary.get("correct_refusal_rate") is not None:
+        print(
+            f"Correct Refusal Rate: {summary['correct_refusal_rate']:.3f} "
+            f"({summary['correct_refusal_count']}/{summary['correct_refusal_denom']})"
+        )
+        print(
+            f"False Answer Rate: {summary['false_answer_rate']:.3f} "
+            f"({summary['false_answer_count']}/{summary['false_answer_denom']})"
+        )
+
+    if summary.get("answer_coverage") is not None:
+        print(
+            f"Answer Coverage: {summary['answer_coverage']:.3f} "
+            f"({summary['answer_coverage_count']}/{summary['answer_coverage_denom']})"
+        )
+        print(
+            f"Answer Missing Rate: {summary['answer_missing_rate']:.3f} "
+            f"({summary['answer_missing_count']}/{summary['answer_missing_denom']})"
+        )
+
+    print(f"Safe response rate: {summary['safe_response_rate']:.3f}")
+
+    if summary.get("error_count"):
+        print(f"\nErrors: {summary['error_count']} (see output file for details)")
 
 
 def save_issues(issues: list[Issue], output_path: Path) -> None:
@@ -1109,18 +1319,44 @@ def save_results(results: list[EvaluationResult], output_path: Path) -> None:
     df.to_csv(output_path, index=False)
 
 
+def save_summary(summary: dict[str, object], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame([summary]).to_csv(output_path, index=False)
+
+
 def save_results_excel(
-    source_excel: Path, results: list[EvaluationResult], output_path: Path
+    source_excel: Path,
+    qa_sheet_name: str,
+    workbook_sheet_names: list[str],
+    results: list[EvaluationResult],
+    output_path: Path,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    qa_df = pd.read_excel(source_excel, sheet_name="QA_Data")
+    qa_df = pd.read_excel(source_excel, sheet_name=qa_sheet_name)
     qa_df = qa_df.rename(columns=lambda c: str(c).strip())
     results_df = pd.DataFrame([result.__dict__ for result in results])
     merged = qa_df.merge(results_df, on=["query_id", "query_text"], how="left")
 
+    predicted_answers_df = merged[
+        [
+            "query_id",
+            "query_text",
+            "predicted_answer",
+            "predicted_relevant_doc_ids",
+            "predicted_evidence_locations",
+            "predicted_source_text",
+            "reference_url",
+        ]
+    ].copy()
+
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        merged.to_excel(writer, sheet_name="QA_Data", index=False)
-        for sheet in ["Instructions", "Explanation"]:
+        qa_df.to_excel(writer, sheet_name=qa_sheet_name, index=False)
+        predicted_answers_df.to_excel(
+            writer, sheet_name="Predicted_Answers", index=False
+        )
+        for sheet in workbook_sheet_names:
+            if sheet == qa_sheet_name:
+                continue
             try:
                 df_sheet = pd.read_excel(source_excel, sheet_name=sheet, header=None)
                 df_sheet.to_excel(writer, sheet_name=sheet, header=False, index=False)
@@ -1283,6 +1519,15 @@ def parse_args() -> argparse.Namespace:
         help="CSV output for QA data quality issues",
     )
     parser.add_argument(
+        "--summary-output",
+        type=Path,
+        default=None,
+        help=(
+            "CSV output for aggregate summary metrics. "
+            "Defaults to <results-output stem>_summary.csv"
+        ),
+    )
+    parser.add_argument(
         "--retrieval-k",
         type=int,
         default=5,
@@ -1320,6 +1565,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Require Reviewers to contain at least two initials for answerable rows",
     )
+    parser.add_argument(
+        "--sheet-name",
+        type=str,
+        default="QA_Data",
+        help="Preferred worksheet name containing the QA table; auto-detected if absent",
+    )
     return parser.parse_args()
 
 
@@ -1330,7 +1581,11 @@ def main() -> None:
         print(f"Excel file not found: {args.excel}", file=sys.stderr)
         sys.exit(1)
 
-    df = pd.read_excel(args.excel, sheet_name="QA_Data")
+    qa_sheet_name, workbook_sheet_names = detect_qa_sheet_name(
+        args.excel, preferred_sheet=args.sheet_name
+    )
+
+    df = pd.read_excel(args.excel, sheet_name=qa_sheet_name)
     df = df.rename(columns=lambda c: str(c).strip())
 
     missing_columns = REQUIRED_COLUMNS - set(df.columns)
@@ -1380,10 +1635,24 @@ def main() -> None:
 
     save_results(results, args.results_output)
     print(f"Results saved to: {args.results_output}")
+    summary_output = args.summary_output
+    if summary_output is None:
+        summary_output = args.results_output.with_name(
+            f"{args.results_output.stem}_summary.csv"
+        )
+    summary = build_summary(results, retrieval_k=args.retrieval_k)
+    save_summary(summary, summary_output)
+    print(f"Summary saved to: {summary_output}")
     if args.write_answers_excel:
-        save_results_excel(args.excel, results, args.answers_output)
+        save_results_excel(
+            args.excel,
+            qa_sheet_name,
+            workbook_sheet_names,
+            results,
+            args.answers_output,
+        )
         print(f"Excel with answers saved to: {args.answers_output}")
-    print_summary(results, retrieval_k=args.retrieval_k)
+    print_summary(summary, retrieval_k=args.retrieval_k)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,32 @@ from statschat.generative.prompts_local import (
 @staticmethod
 def flatten_meta(d):
     """Utility, raise metadata within nested dicts."""
-    return d | d.pop("metadata")
+    flattened = d | d.pop("metadata")
+    flattened["page_url"] = _normalize_page_url(
+        flattened.get("page_url"),
+        flattened.get("url"),
+        flattened.get("page_number"),
+    )
+    return flattened
+
+
+def _normalize_page_url(
+    page_url: str | None, base_url: str | None, page_number: object | None
+) -> str:
+    """Return a fully qualified page URL when enough metadata is available."""
+    page_url_str = str(page_url or "").strip()
+    base_url_str = str(base_url or "").strip()
+
+    if page_url_str and not page_url_str.startswith("#page="):
+        return page_url_str
+
+    if page_url_str.startswith("#page=") and base_url_str:
+        return f"{base_url_str}{page_url_str}"
+
+    if base_url_str and page_number not in (None, ""):
+        return f"{base_url_str}#page={page_number}"
+
+    return page_url_str
 
 
 @lru_cache(maxsize=1)
@@ -30,7 +55,10 @@ def _get_embeddings(
     embedding_model_name: str = "sentence-transformers/all-mpnet-base-v2",
 ) -> HuggingFaceEmbeddings:
     """Load embedding model once per process."""
-    return HuggingFaceEmbeddings(model_name=embedding_model_name)
+    return HuggingFaceEmbeddings(
+        model_name=embedding_model_name,
+        model_kwargs={"local_files_only": True},
+    )
 
 
 @lru_cache(maxsize=2)
@@ -58,6 +86,7 @@ def _get_local_retrieval_config() -> dict[str, object]:
         "k_docs": 3,
         "similarity_threshold": 2.0,
         "embedding_model_name": "sentence-transformers/all-mpnet-base-v2",
+        "faiss_db_root": "data/db_langchain",
     }
     try:
         from statschat import load_config
@@ -77,11 +106,13 @@ def _get_local_retrieval_config() -> dict[str, object]:
         embedding_model_name = str(
             db.get("embedding_model_name", default["embedding_model_name"])
         )
+        faiss_db_root = str(db.get("faiss_db_root", default["faiss_db_root"]))
 
         return {
             "k_docs": k_docs,
             "similarity_threshold": similarity_threshold,
             "embedding_model_name": embedding_model_name,
+            "faiss_db_root": faiss_db_root,
         }
     except Exception:
         return default
@@ -105,23 +136,21 @@ def similarity_search(
 
     logger = logging.getLogger(__name__)
     logger.info("Retrieving most relevant text chunks")
-    faiss_db_root = "data/db_langchain"
-
-    # Check directories exist in "SETUP" MODE to avoid error
-    BASE_DIR = Path.cwd().joinpath("data")
-    DB_LANGCHAIN_DIR = BASE_DIR.joinpath("db_langchain")
-    DB_LANGCHAIN_LATEST_DIR = BASE_DIR.joinpath("db_langchain_latest")
-
-    if DB_LANGCHAIN_LATEST_DIR.exists():
-        faiss_db_root_latest = "data/db_langchain_latest"
-
-    elif DB_LANGCHAIN_DIR.exists():
-        faiss_db_root_latest = "data/db_langchain"
 
     retrieval_cfg = _get_local_retrieval_config()
     k_docs = int(retrieval_cfg["k_docs"])
     similarity_threshold = float(retrieval_cfg["similarity_threshold"])
     embedding_model_name = str(retrieval_cfg["embedding_model_name"])
+    faiss_db_root = str(retrieval_cfg["faiss_db_root"])
+
+    configured_root = Path(faiss_db_root)
+    latest_root = configured_root.with_name(f"{configured_root.name}_latest")
+    latest_root_abs = (
+        latest_root if latest_root.is_absolute() else Path.cwd().joinpath(latest_root)
+    )
+    faiss_db_root_latest = (
+        str(latest_root) if latest_root_abs.exists() else str(configured_root)
+    )
 
     if latest_filter:
         db_latest = _load_faiss_cached(faiss_db_root_latest, embedding_model_name)

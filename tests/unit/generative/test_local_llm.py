@@ -10,27 +10,53 @@ import statschat.generative.local_llm as local_llm
 
 
 def test_flatten_meta_local_merges_metadata():
-    payload = {"x": 1, "metadata": {"title": "T", "date": "2024-01-01"}}
+    payload = {
+        "x": 1,
+        "metadata": {
+            "title": "T",
+            "date": "2024-01-01",
+            "url": "https://example.com/test.pdf",
+            "page_number": 7,
+            "page_url": "#page=7",
+        },
+    }
     out = local_llm.flatten_meta(payload)
     assert out["x"] == 1
     assert out["title"] == "T"
+    assert out["page_url"] == "https://example.com/test.pdf#page=7"
     assert "metadata" not in out
 
 
 def test_similarity_search_local_filters(monkeypatch):
+    local_llm._get_embeddings.cache_clear()
+    local_llm._load_faiss_cached.cache_clear()
+    local_llm._get_local_retrieval_config.cache_clear()
+
     # fake FAISS result: one under threshold, one above
     def fake_load_local(root, embeddings, allow_dangerous_deserialization=True):
         def sim(query, k):
             doc1 = SimpleNamespace(
                 model_dump=lambda: {
                     "page_content": "d1",
-                    "metadata": {"title": "A", "date": "2024-01-01"},
+                    "metadata": {
+                        "title": "A",
+                        "date": "2024-01-01",
+                        "url": "https://example.com/a.pdf",
+                        "page_number": 3,
+                        "page_url": "#page=3",
+                    },
                 }
             )
             doc2 = SimpleNamespace(
                 model_dump=lambda: {
                     "page_content": "d2",
-                    "metadata": {"title": "B", "date": "2020-01-01"},
+                    "metadata": {
+                        "title": "B",
+                        "date": "2020-01-01",
+                        "url": "https://example.com/b.pdf",
+                        "page_number": 9,
+                        "page_url": "#page=9",
+                    },
                 }
             )
             return [(doc1, 0.4), (doc2, 0.9)]
@@ -40,14 +66,32 @@ def test_similarity_search_local_filters(monkeypatch):
     monkeypatch.setattr(
         "statschat.generative.local_llm.FAISS.load_local", fake_load_local
     )
+    monkeypatch.setattr(
+        "statschat.generative.local_llm.HuggingFaceEmbeddings", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        local_llm,
+        "_get_local_retrieval_config",
+        lambda: {
+            "k_docs": 3,
+            "similarity_threshold": 2.0,
+            "embedding_model_name": "sentence-transformers/all-mpnet-base-v2",
+            "faiss_db_root": "data/db_langchain",
+        },
+    )
 
     results = local_llm.similarity_search("q", latest_filter=False, return_dicts=True)
     # Both matches are below the default similarity threshold in the module (2.0)
     assert len(results) == 2
     assert results[0]["page_content"] == "d1"
+    assert results[0]["page_url"] == "https://example.com/a.pdf#page=3"
 
 
 def test_similarity_search_local_latest_filter_uses_latest_db(tmp_path, monkeypatch):
+    local_llm._get_embeddings.cache_clear()
+    local_llm._load_faiss_cached.cache_clear()
+    local_llm._get_local_retrieval_config.cache_clear()
+
     monkeypatch.setattr("pathlib.Path.cwd", lambda *a, **k: tmp_path)
     (tmp_path / "data" / "db_langchain_update").mkdir(parents=True)
     (tmp_path / "data" / "db_langchain_latest").mkdir(parents=True)
@@ -61,7 +105,13 @@ def test_similarity_search_local_latest_filter_uses_latest_db(tmp_path, monkeypa
             doc = SimpleNamespace(
                 model_dump=lambda: {
                     "page_content": "d_latest",
-                    "metadata": {"title": "A", "date": "2024-01-01"},
+                    "metadata": {
+                        "title": "A",
+                        "date": "2024-01-01",
+                        "url": "https://example.com/latest.pdf",
+                        "page_number": 1,
+                        "page_url": "#page=1",
+                    },
                 }
             )
             return [(doc, 0.4)]
@@ -74,11 +124,22 @@ def test_similarity_search_local_latest_filter_uses_latest_db(tmp_path, monkeypa
     monkeypatch.setattr(
         "statschat.generative.local_llm.FAISS.load_local", fake_load_local
     )
+    monkeypatch.setattr(
+        local_llm,
+        "_get_local_retrieval_config",
+        lambda: {
+            "k_docs": 3,
+            "similarity_threshold": 2.0,
+            "embedding_model_name": "sentence-transformers/all-mpnet-base-v2",
+            "faiss_db_root": "data/db_langchain",
+        },
+    )
 
     results = local_llm.similarity_search("q", latest_filter=True, return_dicts=True)
     assert seen["root"] == "data/db_langchain_latest"
     assert len(results) == 1
     assert results[0]["page_content"] == "d_latest"
+    assert results[0]["page_url"] == "https://example.com/latest.pdf#page=1"
 
 
 def test_generate_response_uses_tokenizer_and_model():

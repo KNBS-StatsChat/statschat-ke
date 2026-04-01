@@ -257,9 +257,10 @@ def test_load_json_to_memory_metadata_transform(tmp_path, mock_embeddings):
         "title": "Doc 1",
         "release_date": "2025-01-15",
         "latest": True,
+        "url": "https://www.knbs.or.ke/test.pdf",
         "page_text": "Some content",
         "page_number": 1,
-        "page_url": "u#page=1",
+        "page_url": "#page=1",
     }
     (split_dir / "doc_1_0.json").write_text(json.dumps(sample))
 
@@ -272,9 +273,15 @@ def test_load_json_to_memory_metadata_transform(tmp_path, mock_embeddings):
 
     assert len(prepper.docs) == 1
     doc = prepper.docs[0]
-    assert doc.page_content == "Some content"
+    assert doc.page_content == (
+        "Title: Doc 1\n"
+        "Release date: 15 January 2025\n"
+        "Page number: 1\n\n"
+        "Some content"
+    )
     assert doc.metadata["source"] == "doc_1"
     assert doc.metadata["date"] == "15 January 2025"
+    assert doc.metadata["page_url"] == "https://www.knbs.or.ke/test.pdf#page=1"
     assert "page_text" not in doc.metadata
 
 

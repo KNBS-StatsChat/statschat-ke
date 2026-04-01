@@ -1,25 +1,25 @@
 [db]
-faiss_db_root = "data/db_langchain"
+faiss_db_root = "data/db_langchain_rebuild_v1"
 embedding_model_name = "sentence-transformers/all-mpnet-base-v2" #all-mpnet-base-v2" #all-MiniLM-L6-v2" #"sentence-transformers/all-mpnet-base-v2"  # "textembedding-gecko@001" "sentence-transformers/paraphrase-MiniLM-L3-v2"
 
 [preprocess]
-mode = "UPDATE" # "SETUP" or "UPDATE"
+mode = "SETUP" # "SETUP" or "UPDATE"
 data_dir = "data/"
 download_dir = "pdf_downloads"
 directory = "json_conversions"
-split_directory = "json_split"
-split_length = 2000
-split_overlap = 200
+split_directory = "json_split_rebuild_v1"
+split_length = 1000
+split_overlap = 150
 latest_only = false
 
 [search]
-generative_model_name = "mistralai/mistral-small-3.1-24b-instruct:free"  # Free OpenRouter default for experimentation; may be rate-limited. Consider "mistralai/mistral-nemo" as a low-cost paid upgrade later.
-k_docs = 2
+generative_model_name = "mistralai/Mistral-7B-Instruct-v0.3"  # Free OpenRouter default for experimentation; may be rate-limited. Consider "mistralai/mistral-nemo" as a low-cost paid upgrade later.
+k_docs = 8
 k_contexts = 5
 similarity_threshold = 2.0     # Threshold score below which a document is returned in a search
 llm_temperature = 0.0
 llm_max_tokens = 1024
-answer_threshold = 0.5 # Threshold score below which a answer is returned in a search
+answer_threshold = 1.1
 document_threshold = 0.9 # Threshold score below which a document is returned in a search
 provider = "openrouter"  # or "openai", "huggingface_inference"
 
