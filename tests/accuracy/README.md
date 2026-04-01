@@ -94,13 +94,35 @@ python tests/accuracy/evaluate_accuracy.py \
 
 ### Evaluator Output
 
-By default:
+Each evaluation run creates a timestamped folder:
 
-- `tests/accuracy/accuracy_results.csv` — per-row results
-- `tests/accuracy/qa_data_issues.csv` — validation issues (if any)
-- `tests/accuracy/StatsChat_QA_With_Answers.xlsx` — if `--write-answers-excel` is used
+```
+tests/accuracy/runs/
+  cloud/
+    2026-03-30_143012/
+      accuracy_results.csv      # per-row metrics (same as before)
+      run_report.md             # human-readable comparison report
+      run_metadata.txt          # run configuration and summary stats
+      qa_data_issues.csv        # validation issues (if any)
+  local/
+    2026-03-30_091500/
+      ...
+```
 
-Important result columns:
+The `runs/` directory is gitignored.
+
+**`run_report.md`** is the main output for reviewing StatsChat's performance. For each question it shows:
+
+- Golden answer vs predicted answer side-by-side
+- Expected documents vs returned documents
+- Key metrics (EM, F1, semantic similarity, evidence match)
+- StatsChat's reasoning and key phrases (cloud mode)
+- Retrieved context chunks used for generation
+- Expected source text from the QA sheet
+
+**`run_metadata.txt`** records the run configuration: API mode, provider, model, QA file, thresholds, and summary accuracy stats.
+
+**`accuracy_results.csv`** contains the full per-row results. Important columns:
 
 | Column | Description |
 |---|---|
@@ -114,11 +136,12 @@ Important result columns:
 | `reference_doc_ids` | Normalised doc IDs from references (semicolon-joined) |
 | `reference_pages` | Page numbers from references (semicolon-joined) |
 | `evidence_page_match` | Whether any reference matched the expected evidence |
+| `reasoning` | LLM reasoning text (cloud mode with debug) |
+| `context_texts` | Retrieved context chunks sent to the LLM |
 | `precision_at_k` | Precision@k from retrieval |
 | `recall_at_k` | Recall@k from retrieval |
 | `mrr` | Mean Reciprocal Rank |
 | `ndcg` | Normalised Discounted Cumulative Gain |
-| `retrieved_doc_ids` | Doc IDs from the retrieval proxy |
 | `error` | Error message if the API call failed |
 
 ---

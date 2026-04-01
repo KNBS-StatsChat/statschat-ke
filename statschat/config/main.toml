@@ -8,8 +8,8 @@ data_dir = "data/"
 download_dir = "pdf_downloads"
 directory = "json_conversions"
 split_directory = "json_split"
-split_length = 2000
-split_overlap = 200
+split_length = 1000
+split_overlap = 150
 latest_only = false
 max_files = 0  # 0 = no cap (process all)
 skip_existing_json = true  # if true, don't reconvert PDFs that already have a JSON

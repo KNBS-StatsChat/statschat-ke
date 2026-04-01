@@ -1,7 +1,7 @@
 # ADR-003: Accuracy Evaluator — Cloud Mode Support and Multi-Reference Capture
 
 **Status:** Accepted
-**Date:** 2026-03-25
+**Date:** 2026-03-30 (updated; originally 2026-03-25)
 
 ## Context
 
@@ -119,12 +119,82 @@ with no path component), which would break retrieval metric comparisons.
 **After:** Falls back to the original (lowered, stripped) input value if URL processing
 produces an empty string.
 
+#### 6. Debug/reasoning capture
+
+**Before:** The evaluator sent `debug=false` to the API and captured only `answer` and
+`references`. All reasoning, context chunks, retrieval scores, and highlighting from the
+LLM were discarded.
+
+**After:** The evaluator sends `debug=true` and captures additional fields:
+
+| Field | Source | Content |
+|-------|--------|---------|
+| `reasoning` | Cloud `debug_response.reasoning` | LLM's step-by-step explanation |
+| `context_texts` | Cloud `references[].page_content` | Text chunks sent to the LLM |
+| `reference_scores` | Cloud `references[].score` | Retrieval similarity scores |
+| `reference_titles` | Cloud `references[].title` | Document titles |
+| `highlighting` | Cloud `debug_response.highlighting1/2/3` | LLM-selected key phrases |
+| `context_from` | Local root-level field | Where context came from |
+| `context_reference` | Local root-level field | Specific reference info |
+| `relevant_publications` | Local root-level field | Top publication titles |
+
+These fields appear in both the CSV output and the run report.
+
+#### 7. Timestamped run folders
+
+**Before:** Outputs were written to fixed paths (`tests/accuracy/accuracy_results.csv`),
+overwriting previous results on each run.
+
+**After:** Each evaluation creates a timestamped directory:
+
+```
+tests/accuracy/runs/{cloud|local}/{YYYY-MM-DD_HHMMSS}/
+  accuracy_results.csv      # per-row metrics
+  run_report.md             # human-readable comparison
+  run_metadata.txt          # run config and summary stats
+  summary_metrics.csv       # single-row aggregate metrics
+  qa_data_issues.csv        # validation issues (if any)
+```
+
+`run_report.md` shows a full summary metrics table at the top, then for each question:
+- Golden answer vs predicted answer side-by-side
+- Expected documents vs returned documents
+- Key metrics (EM, F1, semantic similarity, evidence match)
+- StatsChat's reasoning and key phrases
+- Retrieved context chunks
+- Expected source text from the QA sheet
+
+`run_metadata.txt` records: timestamp, duration, API mode, provider, model,
+QA file, content type, thresholds (`answer_threshold`, `document_threshold`,
+`similarity_threshold`, `f1_threshold`, `semantic_threshold`), `k_docs`,
+`k_contexts`, and summary accuracy stats.
+
+`summary_metrics.csv` is a single-row CSV containing all the aggregate metrics
+(overall/answerable/unanswerable accuracy, EM, F1, semantic similarity,
+Precision@k, Recall@k, MRR, nDCG, safe response rate) for easy programmatic
+comparison across runs.
+
+The `runs/` directory is gitignored.
+
+#### 8. README restructure
+
+**Before:** The README interleaved QA generation and evaluation instructions in a single
+numbered workflow.
+
+**After:** Split into two clearly separated parts:
+- Part 1 (Evaluation) — the primary workflow, shown first
+- Part 2 (QA Generation) — marked as optional, shown after
+
+Local and cloud evaluation commands are shown side-by-side with the same structure
+(only the `--host` URL differs).
+
 ### Files changed
 
 | File | Changes |
 |------|---------|
-| `tests/accuracy/evaluate_accuracy.py` | Multi-reference extraction, EvaluationResult field renames, evidence match across all refs, retrieval guard relaxed, API key validation, normalize_doc_id fix |
-| `tests/accuracy/README.md` | Added cloud evaluation run commands (section 4b), updated output column names, updated retrieval metric description |
+| `tests/accuracy/evaluate_accuracy.py` | Multi-reference extraction, EvaluationResult field renames, evidence match across all refs, retrieval guard relaxed, API key validation, normalize_doc_id fix, debug/reasoning capture, timestamped run folders, run report and metadata generators, summary_metrics.csv output |
+| `tests/accuracy/README.md` | Restructured into evaluation/generation parts, unified local/cloud commands, documented run folder output structure |
+| `tests/accuracy/.gitignore` | Added `runs/` |
 
 ## Rationale
 
@@ -188,14 +258,16 @@ check prevents this.
   `similarity_search()` proxy, not the actual references returned by the API.
   A future enhancement could compare API-returned references directly against
   golden doc IDs.
+- **Cross-run comparison tooling:** The timestamped folders make it easy to compare
+  runs manually. Automated diffing or trend tracking across runs is deferred.
 
 ## Verification
 
 Tested end-to-end against the cloud API (OpenRouter, `mistralai/mistral-small-3.1-24b-instruct:free`):
 
-1. **Validate-only mode:** Ran successfully, found 72 data quality issues in
-   template QA data (expected — template uses placeholder doc IDs).
-2. **Cloud evaluation (3 rows):** All metrics populated, `api_mode: cloud`,
+1. **Validate-only mode:** Ran successfully, found expected data quality issues.
+2. **Cloud evaluation (16 rows):** Full run against `KNBS_Verified_QA_Examples(1).xlsx`.
+   All metrics populated, `api_mode: cloud`,
    `retrieval_metric_source: local_similarity_search_proxy`.
 3. **Multi-reference capture confirmed:** Q001 returned 2 references with
    `reference_doc_ids: 2020-kenya-facts-figures;2025-facts-and-figures` and
@@ -203,3 +275,13 @@ Tested end-to-end against the cloud API (OpenRouter, `mistralai/mistral-small-3.
 4. **API key fail-fast:** Without `OPENROUTER_API_KEY`, evaluator exited with
    code 1 and message: `"Cloud mode requires the OPENROUTER_API_KEY environment
    variable (provider=openrouter). Set it and retry."`
+5. **Run folder output:** All outputs created in
+   `tests/accuracy/runs/cloud/2026-03-30_151449/` including `run_report.md` with
+   full summary metrics table, per-question reasoning, context chunks, and
+   side-by-side answer comparisons.
+6. **Run metadata:** Correctly captured provider (`openrouter`), model
+   (`mistralai/mistral-small-3.1-24b-instruct:free`), duration, config thresholds
+   (`answer_threshold`, `document_threshold`, `k_docs`, `k_contexts`), and summary
+   stats.
+7. **Summary metrics CSV:** `summary_metrics.csv` generated with all aggregate
+   metrics in a single row.

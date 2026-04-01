@@ -9,6 +9,7 @@ import re
 import string
 import sys
 import time
+from datetime import datetime
 from urllib.parse import urlparse
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,6 +85,15 @@ class EvaluationResult:
     retrieval_metric_source: Optional[str]
     retrieved_doc_ids: Optional[str]
     error: Optional[str]
+    # Debug / reasoning fields (populated when API returns debug info)
+    reasoning: Optional[str] = None
+    context_texts: Optional[str] = None
+    reference_scores: Optional[str] = None
+    reference_titles: Optional[str] = None
+    highlighting: Optional[str] = None
+    context_from: Optional[str] = None
+    context_reference: Optional[str] = None
+    relevant_publications: Optional[str] = None
 
 
 @dataclass
@@ -670,7 +680,7 @@ def evaluate(
                 params={
                     "q": query_text,
                     "content_type": content_type,
-                    "debug": "false",
+                    "debug": "true",
                 },
                 timeout=timeout,
             )
@@ -682,6 +692,52 @@ def evaluate(
             reference_urls, reference_doc_ids, reference_pages, reference_count = (
                 extract_reference_details(payload)
             )
+
+            # --- Extract debug / context fields ---
+            debug_response = payload.get("debug_response", {}) or {}
+            reasoning = debug_response.get("reasoning")
+            highlights = []
+            for h_key in ("highlighting1", "highlighting2", "highlighting3"):
+                h_val = debug_response.get(h_key)
+                if h_val:
+                    if isinstance(h_val, list):
+                        highlights.extend(h_val)
+                    else:
+                        highlights.append(str(h_val))
+            highlighting_str = "; ".join(highlights) if highlights else None
+
+            # Cloud: extract page_content and score from references
+            refs = payload.get("references")
+            context_texts_list: list[str] = []
+            ref_scores_list: list[str] = []
+            ref_titles_list: list[str] = []
+            if isinstance(refs, list):
+                for item in refs:
+                    if isinstance(item, dict):
+                        pc = str(item.get("page_content", "")).strip()
+                        if pc:
+                            context_texts_list.append(pc)
+                        sc = item.get("score")
+                        if sc is not None:
+                            ref_scores_list.append(str(round(float(sc), 4)))
+                        ti = str(item.get("title", "")).strip()
+                        if ti:
+                            ref_titles_list.append(ti)
+
+            # Local: capture local-only fields
+            local_context_from = str(payload.get("context_from", "")).strip() or None
+            local_context_ref = (
+                str(payload.get("context_reference", "")).strip() or None
+            )
+            pub_one = str(payload.get("relevant_publication_one", "")).strip()
+            pub_two = str(payload.get("relevant_publication_two", "")).strip()
+            relevant_pubs = "; ".join(p for p in (pub_one, pub_two) if p) or None
+
+            context_texts_str = (
+                "\n---\n".join(context_texts_list) if context_texts_list else None
+            )
+            ref_scores_str = ";".join(ref_scores_list) if ref_scores_list else None
+            ref_titles_str = ";".join(ref_titles_list) if ref_titles_list else None
             if reference_doc_ids and reference_pages:
                 ref_doc_list = reference_doc_ids.split(";")
                 ref_page_list = reference_pages.split(";")
@@ -833,6 +889,14 @@ def evaluate(
                 retrieval_metric_source=retrieval_metric_source,
                 retrieved_doc_ids=retrieved_doc_ids,
                 error=error,
+                reasoning=reasoning,
+                context_texts=context_texts_str,
+                reference_scores=ref_scores_str,
+                reference_titles=ref_titles_str,
+                highlighting=highlighting_str,
+                context_from=local_context_from,
+                context_reference=local_context_ref,
+                relevant_publications=relevant_pubs,
             )
         )
 
@@ -955,6 +1019,359 @@ def save_results_excel(
                 continue
 
 
+def create_run_dir(api_mode: str) -> Path:
+    """Create a timestamped run directory under tests/accuracy/runs/{mode}/."""
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    mode_label = api_mode if api_mode in {"local", "cloud"} else "auto"
+    run_dir = Path("tests/accuracy/runs") / mode_label / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+
+def save_run_metadata(
+    run_dir: Path,
+    args: argparse.Namespace,
+    results: list[EvaluationResult],
+    run_start: datetime,
+    run_end: datetime,
+) -> None:
+    """Write run_metadata.txt summarising the evaluation configuration and results."""
+    evaluated = [r for r in results if r.is_correct is not None]
+    answerable = [r for r in evaluated if r.should_answer is True]
+    unanswerable = [r for r in evaluated if r.should_answer is False]
+    answerable_correct = sum(1 for r in answerable if r.is_correct)
+    unanswerable_correct = sum(1 for r in unanswerable if r.is_correct)
+    overall = (
+        (answerable_correct + unanswerable_correct) / len(evaluated)
+        if evaluated
+        else 0.0
+    )
+
+    api_modes = sorted({r.api_mode for r in results if r.api_mode})
+    errors = sum(1 for r in results if r.error)
+
+    # Try to read model info from config
+    model_info = "unknown"
+    provider_info = "unknown"
+    try:
+        from statschat import load_config
+
+        cfg = load_config(name="main")
+        search_cfg = cfg.get("search", {})
+        provider_info = search_cfg.get("provider", "unknown")
+        model_info = search_cfg.get("generative_model_name", "unknown")
+        k_docs = search_cfg.get("k_docs", "unknown")
+        k_contexts = search_cfg.get("k_contexts", "unknown")
+        answer_threshold = search_cfg.get("answer_threshold", "unknown")
+        document_threshold = search_cfg.get("document_threshold", "unknown")
+    except Exception:
+        k_docs = k_contexts = answer_threshold = document_threshold = "unknown"
+        pass
+
+    lines = [
+        f"Run timestamp:      {run_start.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Duration:           {(run_end - run_start).total_seconds():.1f}s",
+        f"API mode(s):        {', '.join(api_modes) if api_modes else 'n/a'}",
+        f"Provider:           {provider_info}",
+        f"Model:              {model_info}",
+        f"API host:           {args.host}",
+        f"QA file:            {args.excel}",
+        f"Content type:       {args.content_type}",
+        f"Timeout:            {args.timeout}s",
+        f"Max rows:           {args.max_rows or 'all'}",
+        f"Skip rows:          {args.skip_rows}",
+        f"Retrieval k:        {args.retrieval_k}",
+        f"k_docs:             {k_docs}",
+        f"k_contexts:         {k_contexts}",
+        f"Answer threshold:   {answer_threshold}",
+        f"Document threshold: {document_threshold}",
+        f"Similarity thresh:  {args.similarity_threshold}",
+        f"F1 threshold:       {args.f1_threshold}",
+        f"Semantic threshold: {args.semantic_threshold}",
+        "",
+        "--- Summary ---",
+        f"Total evaluated:    {len(evaluated)}",
+        f"Answerable:         {len(answerable)} ({answerable_correct} correct)",
+        f"Unanswerable:       {len(unanswerable)} ({unanswerable_correct} correct)",
+        f"Overall accuracy:   {overall:.3f}",
+        f"Errors:             {errors}",
+    ]
+
+    f1_scores = [r.token_f1 for r in answerable if r.token_f1 is not None]
+    sem_scores = [
+        r.semantic_similarity for r in answerable if r.semantic_similarity is not None
+    ]
+    if f1_scores:
+        lines.append(f"Avg Token F1:       {sum(f1_scores) / len(f1_scores):.3f}")
+    if sem_scores:
+        lines.append(f"Avg Semantic Sim:   {sum(sem_scores) / len(sem_scores):.3f}")
+
+    output_path = run_dir / "run_metadata.txt"
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def save_run_report(
+    run_dir: Path,
+    results: list[EvaluationResult],
+    df: pd.DataFrame,
+) -> None:
+    """Write run_report.md — a human-readable comparison of each QA pair."""
+    lines: list[str] = []
+    lines.append("# Evaluation Run Report\n")
+
+    # Summary metrics table
+    evaluated = [r for r in results if r.is_correct is not None]
+    answerable = [r for r in evaluated if r.should_answer is True]
+    unanswerable = [r for r in evaluated if r.should_answer is False]
+    correct = sum(1 for r in evaluated if r.is_correct)
+    answerable_correct = sum(1 for r in answerable if r.is_correct)
+    unanswerable_correct = sum(1 for r in unanswerable if r.is_correct)
+    errors = sum(1 for r in results if r.error)
+    overall_acc = correct / len(evaluated) if evaluated else 0.0
+    answerable_acc = answerable_correct / len(answerable) if answerable else 0.0
+    unanswerable_acc = unanswerable_correct / len(unanswerable) if unanswerable else 0.0
+
+    em_scores = [r.exact_match for r in answerable if r.exact_match is not None]
+    f1_scores = [r.token_f1 for r in answerable if r.token_f1 is not None]
+    sem_scores = [
+        r.semantic_similarity for r in answerable if r.semantic_similarity is not None
+    ]
+    retrieval = [
+        r
+        for r in evaluated
+        if r.precision_at_k is not None and r.recall_at_k is not None
+    ]
+
+    avg_em = sum(em_scores) / len(em_scores) if em_scores else 0.0
+    avg_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
+    avg_sem = sum(sem_scores) / len(sem_scores) if sem_scores else 0.0
+    avg_prec = (
+        sum(r.precision_at_k for r in retrieval) / len(retrieval) if retrieval else 0.0
+    )
+    avg_recall = (
+        sum(r.recall_at_k for r in retrieval) / len(retrieval) if retrieval else 0.0
+    )
+    avg_mrr = (
+        sum(r.mrr for r in retrieval if r.mrr is not None) / len(retrieval)
+        if retrieval
+        else 0.0
+    )
+    avg_ndcg = (
+        sum(r.ndcg for r in retrieval if r.ndcg is not None) / len(retrieval)
+        if retrieval
+        else 0.0
+    )
+
+    api_modes = sorted({r.api_mode for r in results if r.api_mode})
+    retrieval_sources = sorted(
+        {r.retrieval_metric_source for r in results if r.retrieval_metric_source}
+    )
+
+    lines.append("## Summary\n")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
+    lines.append(f"| Total evaluated | {len(evaluated)} |")
+    lines.append(f"| Answerable | {len(answerable)} |")
+    lines.append(f"| Unanswerable | {len(unanswerable)} |")
+    lines.append(f"| Errors | {errors} |")
+    lines.append(f"| Overall accuracy | {overall_acc:.3f} |")
+    lines.append(f"| Answerable accuracy | {answerable_acc:.3f} |")
+    lines.append(f"| Unanswerable accuracy | {unanswerable_acc:.3f} |")
+    lines.append(f"| Exact Match (EM) | {avg_em:.3f} |")
+    lines.append(f"| Token F1 (avg) | {avg_f1:.3f} |")
+    lines.append(f"| Semantic Similarity (avg) | {avg_sem:.3f} |")
+    lines.append(f"| Precision@k (avg) | {avg_prec:.3f} |")
+    lines.append(f"| Recall@k (avg) | {avg_recall:.3f} |")
+    lines.append(f"| MRR (avg) | {avg_mrr:.3f} |")
+    lines.append(f"| nDCG (avg) | {avg_ndcg:.3f} |")
+    lines.append(f"| Safe response rate | {overall_acc:.3f} |")
+    if api_modes:
+        lines.append(f"| API mode(s) | {', '.join(api_modes)} |")
+    if retrieval_sources:
+        lines.append(f"| Retrieval source(s) | {', '.join(retrieval_sources)} |")
+    lines.append("")
+
+    for r in results:
+        # Lookup source_text and evidence from original QA data
+        row_match = df.loc[df["query_id"].astype(str).str.strip() == r.query_id]
+        source_text = ""
+        evidence_locations = ""
+        relevant_doc_ids_raw = ""
+        if not row_match.empty:
+            source_text = str(row_match.iloc[0].get("source_text", "")).strip()
+            evidence_locations = str(
+                row_match.iloc[0].get("evidence_locations", "")
+            ).strip()
+            relevant_doc_ids_raw = str(
+                row_match.iloc[0].get("relevant_doc_ids", "")
+            ).strip()
+
+        # Status marker
+        if r.error:
+            status = "ERROR"
+        elif r.is_correct is True:
+            status = "CORRECT"
+        elif r.is_correct is False:
+            status = "INCORRECT"
+        else:
+            status = "SKIPPED"
+
+        lines.append("---\n")
+        lines.append(f"## {r.query_id} — {status}\n")
+        lines.append(f"**Question:** {r.query_text}\n")
+
+        # Side-by-side answers
+        lines.append("### Expected vs Actual\n")
+        lines.append("| | Detail |")
+        lines.append("|---|---|")
+        lines.append(f"| **Golden answer** | {r.golden_answer} |")
+        lines.append(f"| **Predicted answer** | {r.predicted_answer or '*(empty)*'} |")
+        lines.append(f"| **Should answer** | {r.should_answer} |")
+        lines.append(f"| **Is refusal** | {r.is_refusal} |")
+        lines.append("")
+
+        # Metrics
+        metrics_parts: list[str] = []
+        if r.exact_match is not None:
+            metrics_parts.append(f"EM={r.exact_match}")
+        if r.token_f1 is not None:
+            metrics_parts.append(f"F1={r.token_f1:.3f}")
+        if r.semantic_similarity is not None:
+            metrics_parts.append(f"Semantic={r.semantic_similarity:.3f}")
+        if r.similarity_score is not None:
+            metrics_parts.append(f"Fuzzy={r.similarity_score:.1f}")
+        if r.evidence_page_match is not None:
+            metrics_parts.append(f"EvidenceMatch={r.evidence_page_match}")
+        if metrics_parts:
+            lines.append(f"**Metrics:** {' | '.join(metrics_parts)}\n")
+
+        # References comparison
+        lines.append("### References\n")
+        lines.append("| | Detail |")
+        lines.append("|---|---|")
+        lines.append(f"| **Expected docs** | {relevant_doc_ids_raw or '*(none)*'} |")
+        lines.append(f"| **Returned doc IDs** | {r.reference_doc_ids or '*(none)*'} |")
+        lines.append(f"| **Expected evidence** | {evidence_locations or '*(none)*'} |")
+        lines.append(f"| **Returned pages** | {r.reference_pages or '*(none)*'} |")
+        if r.reference_titles:
+            lines.append(
+                f"| **Returned titles** | {r.reference_titles.replace(';', '; ')} |"
+            )
+        if r.reference_scores:
+            lines.append(f"| **Retrieval scores** | {r.reference_scores} |")
+        lines.append("")
+
+        # Source text comparison
+        if source_text:
+            lines.append("### Expected Source Text\n")
+            lines.append(
+                f"> {source_text[:500]}{'...' if len(source_text) > 500 else ''}\n"
+            )
+
+        # StatsChat's reasoning / context
+        has_debug = any(
+            [
+                r.reasoning,
+                r.context_texts,
+                r.highlighting,
+                r.context_from,
+                r.context_reference,
+            ]
+        )
+        if has_debug:
+            lines.append("### StatsChat Reasoning\n")
+            if r.reasoning:
+                lines.append(f"**Reasoning:** {r.reasoning}\n")
+            if r.highlighting:
+                lines.append(f"**Key phrases:** {r.highlighting}\n")
+            if r.context_from:
+                lines.append(f"**Context from:** {r.context_from}\n")
+            if r.context_reference:
+                lines.append(f"**Context reference:** {r.context_reference}\n")
+            if r.relevant_publications:
+                lines.append(f"**Relevant publications:** {r.relevant_publications}\n")
+            if r.context_texts:
+                lines.append("<details><summary>Retrieved context chunks</summary>\n")
+                lines.append(f"```\n{r.context_texts[:2000]}\n```\n")
+                lines.append("</details>\n")
+
+        # Error
+        if r.error:
+            lines.append(f"**Error:** `{r.error}`\n")
+
+        lines.append("")
+
+    output_path = run_dir / "run_report.md"
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def save_summary_metrics_csv(
+    run_dir: Path,
+    results: list[EvaluationResult],
+) -> None:
+    """Write summary_metrics.csv — a single-row CSV of aggregate metrics."""
+    evaluated = [r for r in results if r.is_correct is not None]
+    answerable = [r for r in evaluated if r.should_answer is True]
+    unanswerable = [r for r in evaluated if r.should_answer is False]
+    answerable_correct = sum(1 for r in answerable if r.is_correct)
+    unanswerable_correct = sum(1 for r in unanswerable if r.is_correct)
+    overall_correct = answerable_correct + unanswerable_correct
+    errors = sum(1 for r in results if r.error)
+
+    em_scores = [r.exact_match for r in answerable if r.exact_match is not None]
+    f1_scores = [r.token_f1 for r in answerable if r.token_f1 is not None]
+    sem_scores = [
+        r.semantic_similarity for r in answerable if r.semantic_similarity is not None
+    ]
+    retrieval = [
+        r
+        for r in evaluated
+        if r.precision_at_k is not None and r.recall_at_k is not None
+    ]
+
+    def _avg(vals: list) -> float:
+        return sum(vals) / len(vals) if vals else 0.0
+
+    row = {
+        "total_evaluated": len(evaluated),
+        "answerable": len(answerable),
+        "unanswerable": len(unanswerable),
+        "errors": errors,
+        "overall_accuracy": (
+            round(overall_correct / len(evaluated), 4) if evaluated else 0.0
+        ),
+        "answerable_accuracy": (
+            round(answerable_correct / len(answerable), 4) if answerable else 0.0
+        ),
+        "unanswerable_accuracy": (
+            round(unanswerable_correct / len(unanswerable), 4) if unanswerable else 0.0
+        ),
+        "exact_match_avg": round(_avg(em_scores), 4),
+        "token_f1_avg": round(_avg(f1_scores), 4),
+        "semantic_similarity_avg": round(_avg(sem_scores), 4),
+        "precision_at_k_avg": round(_avg([r.precision_at_k for r in retrieval]), 4),
+        "recall_at_k_avg": round(_avg([r.recall_at_k for r in retrieval]), 4),
+        "mrr_avg": round(_avg([r.mrr for r in retrieval if r.mrr is not None]), 4),
+        "ndcg_avg": round(_avg([r.ndcg for r in retrieval if r.ndcg is not None]), 4),
+        "safe_response_rate": (
+            round(overall_correct / len(evaluated), 4) if evaluated else 0.0
+        ),
+        "api_modes": ";".join(sorted({r.api_mode for r in results if r.api_mode})),
+        "retrieval_sources": ";".join(
+            sorted(
+                {
+                    r.retrieval_metric_source
+                    for r in results
+                    if r.retrieval_metric_source
+                }
+            )
+        ),
+    }
+
+    output_path = run_dir / "summary_metrics.csv"
+    pd.DataFrame([row]).to_csv(output_path, index=False)
+
+
 def load_generation_metadata(excel_path: Path) -> dict[str, str]:
     try:
         df = pd.read_excel(excel_path, sheet_name="Generation_Metadata")
@@ -964,10 +1381,10 @@ def load_generation_metadata(excel_path: Path) -> dict[str, str]:
         return {}
     data: dict[str, str] = {}
     for _, row in df.iterrows():
-        field = str(row.get("field", "")).strip()
-        if not field:
+        field_name = str(row.get("field", "")).strip()
+        if not field_name:
             continue
-        data[field] = str(row.get("value", "")).strip()
+        data[field_name] = str(row.get("value", "")).strip()
     return data
 
 
@@ -1215,6 +1632,8 @@ def main() -> None:
     if not args.no_semantic:
         semantic_model = SemanticSimilarityEvaluator(args.semantic_model)
 
+    run_start = datetime.now()
+
     results = evaluate(
         df=df,
         base_url=args.host,
@@ -1235,11 +1654,40 @@ def main() -> None:
         skip_rows=args.skip_rows,
     )
 
-    save_results(results, args.results_output)
-    print(f"Results saved to: {args.results_output}")
+    run_end = datetime.now()
+
+    # Determine effective API mode for the run folder name
+    effective_mode = args.api_mode
+    if effective_mode == "auto":
+        observed = {r.api_mode for r in results if r.api_mode}
+        effective_mode = observed.pop() if len(observed) == 1 else "auto"
+
+    run_dir = create_run_dir(effective_mode)
+
+    # Save all outputs into the run folder
+    results_path = run_dir / "accuracy_results.csv"
+    save_results(results, results_path)
+    print(f"Results saved to: {results_path}")
+
+    if issues:
+        issues_path = run_dir / "qa_data_issues.csv"
+        save_issues(issues, issues_path)
+        print(f"Data quality issues saved to: {issues_path}")
+
     if args.write_answers_excel:
-        save_results_excel(args.excel, results, args.answers_output)
-        print(f"Excel with answers saved to: {args.answers_output}")
+        answers_path = run_dir / "StatsChat_QA_With_Answers.xlsx"
+        save_results_excel(args.excel, results, answers_path)
+        print(f"Excel with answers saved to: {answers_path}")
+
+    save_run_metadata(run_dir, args, results, run_start, run_end)
+    print(f"Run metadata saved to: {run_dir / 'run_metadata.txt'}")
+
+    save_run_report(run_dir, results, df)
+    print(f"Run report saved to: {run_dir / 'run_report.md'}")
+
+    save_summary_metrics_csv(run_dir, results)
+    print(f"Summary metrics saved to: {run_dir / 'summary_metrics.csv'}")
+
     print_summary(results)
 
 
