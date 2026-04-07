@@ -47,6 +47,11 @@ NUMBER_PATTERN = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
 PERCENT_PATTERN = re.compile(
     r"(\d+(?:,\d{3})*(?:\.\d+)?)\s*(%|percent|per cent)", re.IGNORECASE
 )
+SCALED_NUMBER_PATTERN = re.compile(
+    r"(?P<number>\d+(?:,\d{3})*(?:\.\d+)?)"
+    r"(?:\s*(?P<scale>thousand|million|billion|trillion))?",
+    re.IGNORECASE,
+)
 QUOTE_PATTERN = re.compile(r"[\"“”]")
 ARTICLE_PATTERN = re.compile(r"\b(a|an|the)\b", re.IGNORECASE)
 REVIEWER_TOKEN_PATTERN = re.compile(r"^[A-Za-z]{1,4}$")
@@ -55,6 +60,12 @@ PERCENT_KEYWORDS = re.compile(
     r"(percent|percentage|rate|inflation|growth|share|proportion)",
     re.IGNORECASE,
 )
+SCALE_MULTIPLIERS = {
+    "thousand": 1_000.0,
+    "million": 1_000_000.0,
+    "billion": 1_000_000_000.0,
+    "trillion": 1_000_000_000_000.0,
+}
 
 
 @dataclass
@@ -187,6 +198,22 @@ def parse_percent_numbers(text: str) -> list[float]:
     return [float(num.replace(",", "")) for num, _ in PERCENT_PATTERN.findall(text)]
 
 
+def parse_scaled_numbers(text: str) -> list[float]:
+    """
+    Parse numbers with optional scale words such as thousand or million.
+
+    This keeps equivalent forms like "4,285.2 thousand tonnes" and
+    "4,285,206 tons" close enough for numeric comparison.
+    """
+    values: list[float] = []
+    for match in SCALED_NUMBER_PATTERN.finditer(text):
+        number = float(match.group("number").replace(",", ""))
+        scale = str(match.group("scale") or "").lower()
+        multiplier = SCALE_MULTIPLIERS.get(scale, 1.0)
+        values.append(number * multiplier)
+    return values
+
+
 def has_quotes(text: str) -> bool:
     return bool(QUOTE_PATTERN.search(text))
 
@@ -219,18 +246,22 @@ def numeric_match(
     expects_percent = (
         "%" in golden or "percent" in golden.lower() or "per cent" in golden.lower()
     )
+    answer_mentions_percent = (
+        "%" in answer or "percent" in answer.lower() or "per cent" in answer.lower()
+    )
     golden_numbers = (
-        parse_percent_numbers(golden) if expects_percent else parse_numbers(golden)
+        parse_percent_numbers(golden)
+        if expects_percent
+        else parse_scaled_numbers(golden)
     )
     if not golden_numbers:
         golden_numbers = parse_numbers(golden)
     if not golden_numbers:
         return False
 
-    if expects_percent:
-        candidates = parse_percent_numbers(answer)
-    else:
-        candidates = parse_numbers(answer)
+    candidates = parse_scaled_numbers(answer)
+    if answer_mentions_percent:
+        candidates.extend(parse_percent_numbers(answer))
 
     if not candidates:
         return False
@@ -240,23 +271,28 @@ def numeric_match(
             if abs(candidate) <= abs_tol:
                 return True
             return False
+
+        effective_abs_tol = abs_tol
+        if max(abs(expected), abs(candidate)) < 1:
+            effective_abs_tol = min(abs_tol, 0.001)
+
         abs_diff = abs(candidate - expected)
         rel_diff = abs_diff / abs(expected)
-        if abs_diff <= abs_tol or rel_diff <= rel_tol:
+        if abs_diff <= effective_abs_tol or rel_diff <= rel_tol:
             return True
 
-        if expects_percent and expected >= 1:
-            candidate_pct = candidate * 100
-            pct_abs_diff = abs(candidate_pct - expected)
-            pct_rel_diff = pct_abs_diff / abs(expected)
-            if pct_abs_diff <= abs_tol or pct_rel_diff <= rel_tol:
-                return True
-        if expects_percent and expected < 1:
-            candidate_ratio = candidate / 100
-            ratio_abs_diff = abs(candidate_ratio - expected)
-            ratio_rel_diff = ratio_abs_diff / abs(expected)
-            if ratio_abs_diff <= abs_tol or ratio_rel_diff <= rel_tol:
-                return True
+        if expects_percent or answer_mentions_percent:
+            for transformed in (candidate / 100, candidate * 100):
+                transformed_abs_tol = abs_tol
+                if max(abs(expected), abs(transformed)) < 1:
+                    transformed_abs_tol = min(abs_tol, 0.001)
+                transformed_abs_diff = abs(transformed - expected)
+                transformed_rel_diff = transformed_abs_diff / abs(expected)
+                if (
+                    transformed_abs_diff <= transformed_abs_tol
+                    or transformed_rel_diff <= rel_tol
+                ):
+                    return True
 
         return False
 
@@ -977,13 +1013,22 @@ def evaluate(
                     if semantic_similarity is not None
                     else False
                 )
-                is_correct = (
-                    exact_match == 1
-                    or numeric_correct
-                    or similarity_score >= similarity_threshold
-                    or passes_f1
-                    or passes_semantic
-                )
+
+                # When the golden answer is primarily numeric, only trust
+                # exact match or numeric_match — fuzzy text and semantic
+                # similarity can produce false positives for numbers that
+                # look textually similar but are factually wrong.
+                golden_has_numbers = bool(parse_scaled_numbers(golden_answer))
+                if golden_has_numbers:
+                    is_correct = exact_match == 1 or numeric_correct
+                else:
+                    is_correct = (
+                        exact_match == 1
+                        or numeric_correct
+                        or similarity_score >= similarity_threshold
+                        or passes_f1
+                        or passes_semantic
+                    )
             answered_when_expected = model_answered
             answer_missing = not model_answered
         elif should_answer is False:

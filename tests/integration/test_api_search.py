@@ -114,6 +114,25 @@ async def test_search_endpoint_happy_path(client, mock_llm_logic):
 
 
 @pytest.mark.anyio
+async def test_search_endpoint_uses_reference_from_selected_context(
+    client, mock_llm_logic
+):
+    mock_llm_logic["format"].return_value = {
+        "answer": "Inflation is high.",
+        "references": ["doc2"],
+        "most_likely_answer": "Inflation is high.",
+        "where_context_from": "Context2",
+        "context_reference": "Page 2",
+    }
+
+    response = await client.get("/search", params={"q": "What is inflation?"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["references"] == "http://knbs.or.ke/doc2.pdf"
+
+
+@pytest.mark.anyio
 async def test_search_endpoint_missing_query(client):
     """
     Test GET /search without 'q' param.

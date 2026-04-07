@@ -19,13 +19,21 @@ publication title if one is present, when providing responses related to time.
 _extractive_prompt = """
 ==TASK==
 Your task is to extract and write an answer for the question based on the provided
-contexts. Make sure to quote a part of the provided context closely. If the question
-cannot be answered from the information in the context, please do not provide an answer.
+contexts. Make sure to quote a part of the provided context closely. If a specific
+number, figure, statistic, or fact that directly answers the question is present in
+the context, you MUST extract and provide it — do not refuse when the answer is
+clearly there. Only set answer_provided to false if the context genuinely contains
+no relevant information at all.
 If the context is not related to the question, please do not provide an answer.
 Most importantly, even if no answer is provided, find one to three short phrases
 or keywords in each context that are most relevant to the question, and return them
 separately as exact quotes (using the exact verbatim text and punctuation). If a date
 is in the question try and find a publication with a similar date.
+If the question does not mention a specific year, prefer the most recent publication.
+If multiple numbers appear in the contexts, choose the one whose unit and metric
+most directly match what the question asks for (e.g. hectares for area, tonnes for
+production weight, percentages for rates). Do not substitute a different metric or
+unit when the directly matching one is available.
 Explain your reasoning.
 
 Please show where the context is from also and provide exact text passage

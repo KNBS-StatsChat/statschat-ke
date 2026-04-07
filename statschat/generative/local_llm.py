@@ -1,14 +1,17 @@
-"""Module to generates responses using a pre-trained locally run language model."""
+import logging
+import re
+from collections import defaultdict
+from functools import lru_cache
+from pathlib import Path
+import json
 
 import torch
-import logging
 from dotenv import load_dotenv
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
+from sentence_transformers import CrossEncoder
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from pathlib import Path
-import json
-from functools import lru_cache
+
 from statschat.generative.prompts_local import (
     _extractive_prompt,
     _core_prompt,
@@ -18,8 +21,9 @@ from statschat.generative.prompts_local import (
 # pip install 'accelerate>=0.26.0'
 # install sentencepiece
 
+YEAR_PATTERN = re.compile(r"\b(19|20)\d{2}\b")
 
-@staticmethod
+
 def flatten_meta(d):
     """Utility, raise metadata within nested dicts."""
     flattened = d | d.pop("metadata")
@@ -50,6 +54,138 @@ def _normalize_page_url(
     return page_url_str
 
 
+def _extract_years(text: str) -> set[int]:
+    """Extract all four-digit years from free text."""
+    return {int(match.group(0)) for match in YEAR_PATTERN.finditer(str(text or ""))}
+
+
+def _extract_doc_year(doc: dict) -> int | None:
+    """Best-effort publication year extraction from metadata."""
+    date_text = str(doc.get("date", "")).strip()
+    title_text = str(doc.get("title", "")).strip()
+    years = _extract_years(f"{date_text} {title_text}")
+    if not years:
+        return None
+    return max(years)
+
+
+def _doc_group_key(doc: dict) -> str:
+    """Stable document grouping key for chunk diversification."""
+    page_url = str(doc.get("page_url", "")).strip()
+    if page_url:
+        return page_url.split("#", 1)[0].lower()
+    title = str(doc.get("title", "")).strip().lower()
+    date = str(doc.get("date", "")).strip().lower()
+    return f"{title}::{date}"
+
+
+def _dedupe_exact_chunks(results: list[dict]) -> list[dict]:
+    """Remove exact duplicate chunk payloads while preserving order."""
+    deduped: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for result in results:
+        signature = (
+            str(result.get("page_url", "")).strip(),
+            str(result.get("page_content", "")).strip(),
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        deduped.append(result)
+    return deduped
+
+
+def _apply_recency_bias(
+    results: list[dict], query: str, recency_bias_weight: float
+) -> list[dict]:
+    """
+    Add a mild recency preference for ambiguous yearless questions.
+
+    If the query already contains an explicit year, no bias is applied.
+    """
+    if not results:
+        return results
+
+    if _extract_years(query):
+        for result in results:
+            result["selection_score"] = float(result.get("reranker_score", 0.0))
+        return results
+
+    year_values = [year for year in (_extract_doc_year(doc) for doc in results) if year]
+    if not year_values:
+        for result in results:
+            result["selection_score"] = float(result.get("reranker_score", 0.0))
+        return results
+
+    min_year = min(year_values)
+    max_year = max(year_values)
+    year_span = max_year - min_year
+
+    for result in results:
+        base_score = float(result.get("reranker_score", 0.0))
+        doc_year = _extract_doc_year(result)
+        if doc_year is None or year_span == 0:
+            result["selection_score"] = base_score
+            continue
+        normalized_recency = (doc_year - min_year) / year_span
+        result["selection_score"] = base_score + (
+            normalized_recency * recency_bias_weight
+        )
+    return results
+
+
+def select_generation_contexts(
+    results: list[dict],
+    k_contexts: int,
+    *,
+    max_chunks_per_doc: int = 3,
+    per_doc_penalty: float = 0.2,
+) -> list[dict]:
+    """
+    Select generation contexts with mild document diversity.
+
+    This keeps strong evidence pages from the same report available to the LLM
+    while preventing a single document from flooding every context slot.
+    """
+    if k_contexts <= 0 or not results:
+        return []
+
+    remaining = list(results)
+    selected: list[dict] = []
+    counts_by_doc: defaultdict[str, int] = defaultdict(int)
+
+    while remaining and len(selected) < k_contexts:
+        best_index: int | None = None
+        best_score = float("-inf")
+
+        for idx, doc in enumerate(remaining):
+            doc_key = _doc_group_key(doc)
+            if counts_by_doc[doc_key] >= max_chunks_per_doc:
+                continue
+
+            base_score = float(
+                doc.get(
+                    "selection_score",
+                    doc.get("reranker_score", -float(doc.get("score", 0.0))),
+                )
+            )
+            adjusted_score = base_score - (per_doc_penalty * counts_by_doc[doc_key])
+            if adjusted_score > best_score:
+                best_score = adjusted_score
+                best_index = idx
+
+        if best_index is None:
+            break
+
+        chosen = remaining.pop(best_index)
+        counts_by_doc[_doc_group_key(chosen)] += 1
+        selected.append(chosen)
+
+    if not selected:
+        return results[:k_contexts]
+    return selected
+
+
 @lru_cache(maxsize=1)
 def _get_embeddings(
     embedding_model_name: str = "sentence-transformers/all-mpnet-base-v2",
@@ -75,6 +211,14 @@ def _load_faiss_cached(
 
 
 @lru_cache(maxsize=1)
+def _get_reranker(
+    model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+) -> CrossEncoder:
+    """Load cross-encoder reranker once per process."""
+    return CrossEncoder(model_name)
+
+
+@lru_cache(maxsize=1)
 def _get_local_retrieval_config() -> dict[str, object]:
     """
     Read retrieval settings from main config with safe defaults.
@@ -87,6 +231,9 @@ def _get_local_retrieval_config() -> dict[str, object]:
         "similarity_threshold": 2.0,
         "embedding_model_name": "sentence-transformers/all-mpnet-base-v2",
         "faiss_db_root": "data/db_langchain",
+        "reranker_model_name": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "reranker_candidate_k": 24,
+        "recency_bias_weight": 0.5,
     }
     try:
         from statschat import load_config
@@ -108,11 +255,29 @@ def _get_local_retrieval_config() -> dict[str, object]:
         )
         faiss_db_root = str(db.get("faiss_db_root", default["faiss_db_root"]))
 
+        reranker_model_name = str(
+            search.get("reranker_model_name", default["reranker_model_name"])
+        )
+        reranker_candidate_k = int(
+            search.get(
+                "reranker_candidate_k", max(k_docs * 6, default["reranker_candidate_k"])
+            )
+        )
+        if reranker_candidate_k < k_docs:
+            reranker_candidate_k = k_docs
+
+        recency_bias_weight = float(
+            search.get("recency_bias_weight", default["recency_bias_weight"])
+        )
+
         return {
             "k_docs": k_docs,
             "similarity_threshold": similarity_threshold,
             "embedding_model_name": embedding_model_name,
             "faiss_db_root": faiss_db_root,
+            "reranker_model_name": reranker_model_name,
+            "reranker_candidate_k": reranker_candidate_k,
+            "recency_bias_weight": recency_bias_weight,
         }
     except Exception:
         return default
@@ -138,10 +303,12 @@ def similarity_search(
     logger.info("Retrieving most relevant text chunks")
 
     retrieval_cfg = _get_local_retrieval_config()
-    k_docs = int(retrieval_cfg["k_docs"])
     similarity_threshold = float(retrieval_cfg["similarity_threshold"])
     embedding_model_name = str(retrieval_cfg["embedding_model_name"])
     faiss_db_root = str(retrieval_cfg["faiss_db_root"])
+    reranker_model_name = str(retrieval_cfg["reranker_model_name"])
+    reranker_candidate_k = int(retrieval_cfg["reranker_candidate_k"])
+    recency_bias_weight = float(retrieval_cfg["recency_bias_weight"])
 
     configured_root = Path(faiss_db_root)
     latest_root = configured_root.with_name(f"{configured_root.name}_latest")
@@ -154,20 +321,48 @@ def similarity_search(
 
     if latest_filter:
         db_latest = _load_faiss_cached(faiss_db_root_latest, embedding_model_name)
-        top_matches = db_latest.similarity_search_with_score(query=query, k=k_docs)
+        top_matches = db_latest.similarity_search_with_score(
+            query=query, k=reranker_candidate_k
+        )
     else:
         db = _load_faiss_cached(faiss_db_root, embedding_model_name)
-        top_matches = db.similarity_search_with_score(query=query, k=k_docs)
+        top_matches = db.similarity_search_with_score(
+            query=query, k=reranker_candidate_k
+        )
 
     # filter to document matches with similarity scores less than...
     # i.e. closest cosine distances to query
     top_matches = [x for x in top_matches if x[-1] <= similarity_threshold]
 
     if return_dicts:
-        return [
+        results = [
             flatten_meta(doc[0].model_dump()) | {"score": float(doc[1])}
             for doc in top_matches
         ]
+        results = _dedupe_exact_chunks(results)
+
+        if not results:
+            return results
+
+        # Rerank deduplicated results using a cross-encoder.
+        # Cross-encoders score (query, passage) jointly and are much better at
+        # temporal disambiguation than bi-encoder FAISS scores alone.
+        reranker = _get_reranker(reranker_model_name)
+        pairs = [(query, doc["page_content"]) for doc in results]
+        ce_scores = reranker.predict(pairs)
+        for doc, ce_score in zip(results, ce_scores):
+            doc["reranker_score"] = float(ce_score)
+
+        results = _apply_recency_bias(results, query, recency_bias_weight)
+        results = sorted(
+            results,
+            key=lambda doc: float(
+                doc.get("selection_score", doc.get("reranker_score", 0.0))
+            ),
+            reverse=True,
+        )
+        logger.info(f"Reranked {len(results)} results with cross-encoder")
+        return results
     return top_matches
 
 
@@ -202,7 +397,11 @@ def generate_response(
         do_sample=False,
         pad_token_id=tokenizer.eos_token_id,
     )
-    raw_response = tokenizer.decode(output[0], skip_special_tokens=True)
+    # Decode only the generated tokens, not the input prompt.
+    # Without this, _extract_json_block finds '{' in the format instructions
+    # template rather than the model's actual JSON output.
+    generated_ids = output[0][input_ids.shape[1] :]
+    raw_response = tokenizer.decode(generated_ids, skip_special_tokens=True)
     return raw_response
 
 

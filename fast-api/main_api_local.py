@@ -4,6 +4,7 @@ from typing import Union, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 import logging
+import re
 import torch
 from datetime import datetime
 from markupsafe import escape
@@ -12,6 +13,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from statschat import load_config
 from statschat.generative.local_llm import (
     similarity_search,
+    select_generation_contexts,
     generate_response,
     format_response,
 )
@@ -178,12 +180,14 @@ async def search(
         return results
 
     # Select top contexts for generation (configurable via search.k_contexts).
+    selected_matches = select_generation_contexts(relevant_texts, k_contexts=k_contexts)
     selected_contexts = [
         str(match.get("page_content", "")).strip()
-        for match in relevant_texts[:k_contexts]
+        for match in selected_matches
         if str(match.get("page_content", "")).strip()
     ]
     if not selected_contexts:
+        selected_matches = relevant_texts[:1]
         selected_contexts = [str(relevant_texts[0].get("page_content", ""))]
     contexts_block = "\n\n".join(
         f"Context{i}: {text}" for i, text in enumerate(selected_contexts, start=1)
@@ -206,9 +210,23 @@ async def search(
     )
     formatted_response = format_response(raw_response)
 
-    pub_one = relevant_texts[0].get("title", "")
-    pub_two = relevant_texts[1].get("title", "") if len(relevant_texts) > 1 else ""
-    reference_url = relevant_texts[0].get("page_url", "")
+    pub_one = selected_matches[0].get("title", "") if selected_matches else ""
+    pub_two = selected_matches[1].get("title", "") if len(selected_matches) > 1 else ""
+
+    context_from = str(formatted_response.get("where_context_from", "")).strip()
+    context_index_match = re.search(
+        r"context\s*(\d+)", context_from, flags=re.IGNORECASE
+    )
+    if context_index_match and selected_matches:
+        context_index = int(context_index_match.group(1)) - 1
+        if 0 <= context_index < len(selected_matches):
+            reference_url = str(selected_matches[context_index].get("page_url", ""))
+        else:
+            reference_url = str(selected_matches[0].get("page_url", ""))
+    else:
+        reference_url = (
+            str(selected_matches[0].get("page_url", "")) if selected_matches else ""
+        )
 
     # If context is weak, avoid pretending we have a grounded answer.
     if top_score > answer_threshold:
@@ -227,7 +245,7 @@ async def search(
         "content_type": content_type,
         "answer": answer,
         "references": reference_url,
-        "context_from": formatted_response.get("where_context_from", ""),
+        "context_from": context_from,
         "context_reference": formatted_response.get("context_reference", ""),
         "relevant_publication_one": pub_one,
         "relevant_publication_two": pub_two,
