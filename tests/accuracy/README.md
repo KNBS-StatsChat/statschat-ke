@@ -49,6 +49,7 @@ What it does:
 - compares predicted answers against `golden_answer`
 - writes per-row results to CSV
 - writes aggregate summary metrics to a separate summary CSV
+- appends a one-row summary to a cross-run ledger for comparing models and runs over time
 - optionally writes an Excel file with:
   - the original QA sheet unchanged
   - a separate `Predicted_Answers` sheet containing tool outputs only
@@ -187,6 +188,7 @@ By default:
 - `tests/accuracy/accuracy_results_summary.csv`
 - `tests/accuracy/qa_data_issues.csv` when validation issues are found
 - `tests/accuracy/StatsChat_QA_With_Answers.xlsx` if `--write-answers-excel` is used
+- `tests/accuracy/runs/run_history.csv` as an append-only cross-run ledger
 
 Important result columns include:
 
@@ -226,6 +228,26 @@ Important result columns include:
 - `ndcg`
 - `retrieved_doc_ids`
 - `error`
+
+Each timestamped run folder under `tests/accuracy/runs/{local|cloud}/{timestamp}/` also contains:
+
+- `accuracy_results.csv`
+- `run_report.md`
+- `run_metadata.txt`
+- `summary_metrics.csv`
+
+And `tests/accuracy/runs/run_history.csv` keeps one summary row per run, including:
+
+- timestamp
+- run directory
+- requested and observed API mode
+- provider
+- model
+- QA file
+- thresholds
+- top-line accuracy and retrieval metrics
+
+This ledger is useful when comparing multiple cloud models for the same benchmark.
 
 The Excel workbook written by `--write-answers-excel` now contains:
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import re
 import string
 import sys
@@ -16,6 +17,7 @@ from urllib.parse import urlparse
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 from rapidfuzz import fuzz
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import cos_sim
@@ -439,7 +441,12 @@ def extract_reference_details(
         reference_count = len(references)
         for item in references:
             if isinstance(item, dict):
-                candidate = str(item.get("page_url") or item.get("url") or "").strip()
+                page_url = str(item.get("page_url") or "").strip()
+                base_url = str(item.get("url") or "").strip()
+                if page_url.startswith("#page=") and base_url:
+                    candidate = f"{base_url}{page_url}"
+                else:
+                    candidate = str(base_url or page_url).strip()
                 if candidate:
                     reference_urls.append(candidate)
             elif isinstance(item, str) and item.strip():
@@ -1579,6 +1586,42 @@ def create_run_dir(api_mode: str) -> Path:
     return run_dir
 
 
+def load_runtime_search_config() -> dict[str, str]:
+    """Read provider/model/search settings from the active runtime config."""
+    load_dotenv(override=False)
+    runtime_config = {
+        "provider": "unknown",
+        "model": "unknown",
+        "k_docs": "unknown",
+        "k_contexts": "unknown",
+        "answer_threshold": "unknown",
+        "document_threshold": "unknown",
+    }
+    try:
+        from statschat import load_config
+
+        cfg = load_config(name="main")
+        search_cfg = cfg.get("search", {})
+        runtime_config["provider"] = str(search_cfg.get("provider", "unknown"))
+        runtime_config["model"] = str(
+            search_cfg.get("generative_model_name", "unknown")
+        )
+        runtime_config["k_docs"] = str(search_cfg.get("k_docs", "unknown"))
+        runtime_config["k_contexts"] = str(search_cfg.get("k_contexts", "unknown"))
+        runtime_config["answer_threshold"] = str(
+            search_cfg.get("answer_threshold", "unknown")
+        )
+        runtime_config["document_threshold"] = str(
+            search_cfg.get("document_threshold", "unknown")
+        )
+    except Exception:
+        pass
+    env_model_override = os.getenv("STATSCHAT_GENERATIVE_MODEL")
+    if env_model_override:
+        runtime_config["model"] = env_model_override
+    return runtime_config
+
+
 def save_run_metadata(
     run_dir: Path,
     args: argparse.Namespace,
@@ -1587,29 +1630,14 @@ def save_run_metadata(
     run_end: datetime,
 ) -> None:
     """Write run_metadata.txt with configuration and top-line results."""
-    model_info = "unknown"
-    provider_info = "unknown"
-    k_docs = k_contexts = answer_threshold = document_threshold = "unknown"
-    try:
-        from statschat import load_config
-
-        cfg = load_config(name="main")
-        search_cfg = cfg.get("search", {})
-        provider_info = str(search_cfg.get("provider", "unknown"))
-        model_info = str(search_cfg.get("generative_model_name", "unknown"))
-        k_docs = str(search_cfg.get("k_docs", "unknown"))
-        k_contexts = str(search_cfg.get("k_contexts", "unknown"))
-        answer_threshold = str(search_cfg.get("answer_threshold", "unknown"))
-        document_threshold = str(search_cfg.get("document_threshold", "unknown"))
-    except Exception:
-        pass
+    runtime_config = load_runtime_search_config()
 
     lines = [
         f"Run timestamp:      {run_start.strftime('%Y-%m-%d %H:%M:%S')}",
         f"Duration:           {(run_end - run_start).total_seconds():.1f}s",
         f"API mode(s):        {str(summary.get('api_modes_observed', 'n/a')).replace(';', ', ')}",
-        f"Provider:           {provider_info}",
-        f"Model:              {model_info}",
+        f"Provider:           {runtime_config['provider']}",
+        f"Model:              {runtime_config['model']}",
         f"API host:           {args.host}",
         f"QA file:            {args.excel}",
         f"Content type:       {args.content_type}",
@@ -1617,10 +1645,10 @@ def save_run_metadata(
         f"Max rows:           {args.max_rows or 'all'}",
         f"Skip rows:          {args.skip_rows}",
         f"Retrieval k:        {args.retrieval_k}",
-        f"k_docs:             {k_docs}",
-        f"k_contexts:         {k_contexts}",
-        f"Answer threshold:   {answer_threshold}",
-        f"Document threshold: {document_threshold}",
+        f"k_docs:             {runtime_config['k_docs']}",
+        f"k_contexts:         {runtime_config['k_contexts']}",
+        f"Answer threshold:   {runtime_config['answer_threshold']}",
+        f"Document threshold: {runtime_config['document_threshold']}",
         f"Similarity thresh:  {args.similarity_threshold}",
         f"F1 threshold:       {args.f1_threshold}",
         f"Semantic threshold: {args.semantic_threshold}",
@@ -1644,6 +1672,58 @@ def save_run_metadata(
 
     output_path = run_dir / "run_metadata.txt"
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def append_run_history(
+    run_dir: Path,
+    args: argparse.Namespace,
+    summary: dict[str, object],
+    run_start: datetime,
+    run_end: datetime,
+) -> Path:
+    """Append a single-row run summary to the cross-run history CSV."""
+    runtime_config = load_runtime_search_config()
+    history_path = run_dir.parents[1] / "run_history.csv"
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+
+    row: dict[str, object] = {
+        "run_timestamp": run_start.strftime("%Y-%m-%d %H:%M:%S"),
+        "run_started_at": run_start.isoformat(timespec="seconds"),
+        "run_finished_at": run_end.isoformat(timespec="seconds"),
+        "duration_seconds": round((run_end - run_start).total_seconds(), 3),
+        "run_dir": str(run_dir),
+        "api_mode_requested": args.api_mode,
+        "api_modes_observed": summary.get("api_modes_observed", ""),
+        "provider": runtime_config["provider"],
+        "model": runtime_config["model"],
+        "host": args.host,
+        "excel": str(args.excel),
+        "content_type": args.content_type,
+        "timeout": args.timeout,
+        "max_rows": args.max_rows if args.max_rows is not None else "",
+        "skip_rows": args.skip_rows,
+        "retrieval_k": args.retrieval_k,
+        "api_debug_requested": not getattr(args, "no_api_debug", False),
+        "similarity_threshold": args.similarity_threshold,
+        "f1_threshold": args.f1_threshold,
+        "semantic_threshold": args.semantic_threshold,
+        "abs_tol": args.abs_tol,
+        "rel_tol": args.rel_tol,
+        "k_docs": runtime_config["k_docs"],
+        "k_contexts": runtime_config["k_contexts"],
+        "answer_threshold": runtime_config["answer_threshold"],
+        "document_threshold": runtime_config["document_threshold"],
+    }
+    row.update(summary)
+
+    row_df = pd.DataFrame([row])
+    if history_path.exists():
+        existing_df = pd.read_csv(history_path)
+        history_df = pd.concat([existing_df, row_df], ignore_index=True, sort=False)
+    else:
+        history_df = row_df
+    history_df.to_csv(history_path, index=False)
+    return history_path
 
 
 def save_run_report(
@@ -2151,6 +2231,8 @@ def main() -> None:
     print(f"Run report saved to: {run_dir / 'run_report.md'}")
     save_summary_metrics_csv(run_dir, summary)
     print(f"Summary metrics saved to: {run_dir / 'summary_metrics.csv'}")
+    history_path = append_run_history(run_dir, args, summary, run_start, run_end)
+    print(f"Run history updated: {history_path}")
 
     print_summary(summary, retrieval_k=args.retrieval_k)
 

@@ -17,7 +17,7 @@ from statschat.generative.prompts_cloud import (
     STUFF_DOCUMENT_PROMPT,
 )
 from functools import lru_cache
-from statschat.generative.utils import deduplicator, highlighter
+from statschat.generative.utils import highlighter
 from statschat.embedding.latest_flag_helpers import time_decay
 
 
@@ -43,6 +43,8 @@ class Inquirer:
         answer_threshold: float = 0.5,
         document_threshold: float = 0.9,
         provider="openrouter",  # default
+        reranker_model_name: str | None = None,
+        **_unused_search_config,
     ):
         """
         Args:
@@ -70,6 +72,10 @@ class Inquirer:
         self.llm_temperature = llm_temperature
         self.llm_max_tokens = llm_max_tokens
         self.provider = provider
+        # Shared search config may include local-only settings such as a
+        # reranker model name. Accept and ignore them here so the cloud API
+        # can consume the same config block safely.
+        self.reranker_model_name = reranker_model_name
 
         # Load variables from .env
         load_dotenv()
@@ -177,6 +183,29 @@ class Inquirer:
     def flatten_meta(d):
         """Utility, raise metadata within nested dicts."""
         return d | d.pop("metadata")
+
+    @staticmethod
+    def _dedupe_exact_chunks(records: list[dict]) -> list[dict]:
+        """Remove exact duplicate chunks while keeping distinct pages from one report."""
+        seen: set[tuple[str, str]] = set()
+        deduped: list[dict] = []
+        for record in records:
+            signature = (
+                str(record.get("page_url", "")).strip(),
+                str(record.get("page_content", "")).strip(),
+            )
+            if signature in seen:
+                continue
+            seen.add(signature)
+            deduped.append(record)
+        return deduped
+
+    @staticmethod
+    def _latest_filter_enabled(latest_filter: bool | str) -> bool:
+        """Normalize latest-filter flags from API/query inputs."""
+        if isinstance(latest_filter, bool):
+            return latest_filter
+        return str(latest_filter).strip().lower() in {"on", "true", "1", "yes"}
 
     @staticmethod
     def _strip_html(text: str) -> str:
@@ -326,7 +355,7 @@ class Inquirer:
         """
         self.logger.info(f"Search query: {question}")
         docs1 = self.similarity_search(
-            question, latest_filter=latest_filter in ["On", "on", "true", "True", False]
+            question, latest_filter=self._latest_filter_enabled(latest_filter)
         )
 
         if len(docs1) == 0:
@@ -337,7 +366,7 @@ class Inquirer:
                 highlighting3=[],
             )
             return docs1, "", empty_response
-        docs = deduplicator(docs1, keys=["title", "date"])
+        docs = self._dedupe_exact_chunks(docs1)
 
         if latest_weight > 0:
             for doc in docs:
@@ -376,7 +405,9 @@ class Inquirer:
             answer_str = ""
         else:
             # Web/chat clients expect a human-readable plain-text answer.
-            # Prefer the model-provided highlight sentence when available.
+            # Prefer the model's synthesized answer; highlighting phrases are
+            # often fragments intended for UI emphasis rather than the final
+            # answer text.
             highlighted = (
                 validated_response.highlighting1[0]
                 if getattr(validated_response, "highlighting1", None)
@@ -391,7 +422,7 @@ class Inquirer:
                 getattr(validated_response, "most_likely_answer", "") or ""
             ).strip()
 
-            answer_str = highlighted or most_likely
+            answer_str = most_likely or highlighted
 
         if docs[0]["score"] > self.answer_threshold:
             answer_str = (

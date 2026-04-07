@@ -116,6 +116,25 @@ def test_inquirer_init_invalid_provider_raises(monkeypatch):
         Inquirer(provider="invalid")
 
 
+def test_inquirer_accepts_extra_shared_search_config(monkeypatch):
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.HuggingFaceEmbeddings", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.FAISS.load_local", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.ChatOpenAI", lambda *a, **k: object()
+    )
+
+    inquirer = Inquirer(
+        provider="openrouter",
+        reranker_model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
+    )
+
+    assert inquirer.reranker_model_name == "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+
 def test_make_query_uses_similarity_and_formats_answer(monkeypatch):
     inq = Inquirer.__new__(Inquirer)
     inq.logger = MagicMock()
@@ -174,3 +193,136 @@ def test_make_query_uses_similarity_and_formats_answer(monkeypatch):
     assert isinstance(validated, LlmResponse)
     assert "SOME ANSWER" in answer_str
     assert isinstance(docs_out, list)
+
+
+def test_make_query_prefers_most_likely_answer_over_highlight(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+
+    inq.similarity_search = lambda q, latest_filter=True, return_dicts=True: [
+        {
+            "page_content": "one",
+            "date": "2024-01-01",
+            "title": "A",
+            "score": 0.1,
+            "page_url": "u1",
+            "url": "u1",
+        }
+    ]
+
+    inq.query_texts = lambda question, docs: LlmResponse(
+        answer_provided=True,
+        most_likely_answer="Kenya's overall year on year inflation rate was 6.9 per cent in January 2024.",
+        highlighting1=["Consumer Prices and Inflation"],
+        highlighting2=[],
+        highlighting3=[],
+        reasoning=None,
+    )
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    _, answer_str, _ = inq.make_query(
+        "ask", latest_filter="on", highlighting=True, latest_weight=0
+    )
+
+    assert answer_str == (
+        "Kenya's overall year on year inflation rate was 6.9 per cent in January 2024."
+    )
+
+
+def test_make_query_respects_boolean_latest_filter_flag(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+
+    captured: dict[str, object] = {}
+
+    def fake_similarity(q, latest_filter=True, return_dicts=True):
+        captured["latest_filter"] = latest_filter
+        return [
+            {
+                "page_content": "one",
+                "date": "2024-01-01",
+                "title": "A",
+                "score": 0.1,
+                "page_url": "u1",
+                "url": "u1",
+            }
+        ]
+
+    inq.similarity_search = fake_similarity
+    inq.query_texts = lambda question, docs: LlmResponse(
+        answer_provided=True,
+        most_likely_answer="SOME ANSWER",
+        highlighting1=[],
+        highlighting2=[],
+        highlighting3=[],
+        reasoning=None,
+    )
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    inq.make_query("ask", latest_filter=False, highlighting=True, latest_weight=0)
+
+    assert captured["latest_filter"] is False
+
+
+def test_make_query_preserves_distinct_pages_from_same_report(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+
+    inq.similarity_search = lambda q, latest_filter=True, return_dicts=True: [
+        {
+            "page_content": "page one content",
+            "date": "2024-01-01",
+            "title": "Same Report",
+            "score": 0.1,
+            "page_url": "u1#page=1",
+            "url": "u1",
+        },
+        {
+            "page_content": "page two content",
+            "date": "2024-01-01",
+            "title": "Same Report",
+            "score": 0.11,
+            "page_url": "u1#page=2",
+            "url": "u1",
+        },
+    ]
+
+    captured_docs: dict[str, object] = {}
+
+    def fake_query_texts(question, docs):
+        captured_docs["count"] = len(docs)
+        captured_docs["page_urls"] = [doc["page_url"] for doc in docs]
+        return LlmResponse(
+            answer_provided=True,
+            most_likely_answer="SOME ANSWER",
+            highlighting1=[],
+            highlighting2=[],
+            highlighting3=[],
+            reasoning=None,
+        )
+
+    inq.query_texts = fake_query_texts
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    inq.make_query("ask", latest_filter="off", highlighting=True, latest_weight=0)
+
+    assert captured_docs["count"] == 2
+    assert captured_docs["page_urls"] == ["u1#page=1", "u1#page=2"]

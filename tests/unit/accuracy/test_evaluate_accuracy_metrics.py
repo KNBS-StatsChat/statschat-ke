@@ -1,5 +1,7 @@
 """Unit tests for lightweight accuracy-metric helpers."""
 
+from argparse import Namespace
+from datetime import datetime
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -158,6 +160,160 @@ def test_primary_context_text_returns_first_chunk():
     text = "First context chunk.\n---\nSecond context chunk."
 
     assert module.primary_context_text(text) == "First context chunk."
+
+
+def test_append_run_history_appends_rows(tmp_path, monkeypatch):
+    module = _load_evaluate_accuracy()
+
+    monkeypatch.setattr(
+        module,
+        "load_runtime_search_config",
+        lambda: {
+            "provider": "openrouter",
+            "model": "openai/gpt-5.4-mini",
+            "k_docs": "8",
+            "k_contexts": "5",
+            "answer_threshold": "1.1",
+            "document_threshold": "0.9",
+        },
+    )
+
+    args = Namespace(
+        api_mode="cloud",
+        host="http://127.0.0.1:8001",
+        excel=Path("tests/accuracy/sample.xlsx"),
+        content_type="all",
+        timeout=420.0,
+        max_rows=None,
+        skip_rows=0,
+        retrieval_k=8,
+        no_api_debug=False,
+        similarity_threshold=85.0,
+        f1_threshold=0.80,
+        semantic_threshold=0.90,
+        abs_tol=0.1,
+        rel_tol=0.01,
+    )
+    summary = {
+        "api_modes_observed": "cloud",
+        "total_evaluated": 37,
+        "answerable_count": 37,
+        "unanswerable_count": 0,
+        "overall_accuracy": 0.595,
+    }
+
+    first_run_dir = tmp_path / "tests" / "accuracy" / "runs" / "cloud" / "run-1"
+    first_run_dir.mkdir(parents=True)
+    first_start = datetime(2026, 4, 7, 10, 0, 0)
+    first_end = datetime(2026, 4, 7, 10, 5, 0)
+
+    history_path = module.append_run_history(
+        first_run_dir, args, summary, first_start, first_end
+    )
+
+    first_df = pd.read_csv(history_path)
+    assert len(first_df) == 1
+    assert first_df.loc[0, "provider"] == "openrouter"
+    assert first_df.loc[0, "model"] == "openai/gpt-5.4-mini"
+    assert first_df.loc[0, "api_modes_observed"] == "cloud"
+    assert float(first_df.loc[0, "overall_accuracy"]) == 0.595
+
+    second_run_dir = tmp_path / "tests" / "accuracy" / "runs" / "cloud" / "run-2"
+    second_run_dir.mkdir(parents=True)
+    second_start = datetime(2026, 4, 7, 11, 0, 0)
+    second_end = datetime(2026, 4, 7, 11, 2, 30)
+
+    module.append_run_history(second_run_dir, args, summary, second_start, second_end)
+
+    second_df = pd.read_csv(history_path)
+    assert len(second_df) == 2
+    assert second_df.loc[1, "run_dir"].endswith("run-2")
+    assert bool(second_df.loc[1, "api_debug_requested"]) is True
+
+
+def test_load_runtime_search_config_prefers_env_model_override(monkeypatch):
+    module = _load_evaluate_accuracy()
+
+    class DummyStatschat:
+        @staticmethod
+        def load_config(name="main"):
+            return {
+                "search": {
+                    "provider": "openrouter",
+                    "generative_model_name": "mistralai/Mistral-7B-Instruct-v0.3",
+                    "k_docs": 8,
+                    "k_contexts": 5,
+                    "answer_threshold": 1.1,
+                    "document_threshold": 0.9,
+                }
+            }
+
+    monkeypatch.setitem(sys.modules, "statschat", DummyStatschat)
+    monkeypatch.setenv("STATSCHAT_GENERATIVE_MODEL", "openai/gpt-5.4-mini")
+
+    runtime_config = module.load_runtime_search_config()
+
+    assert runtime_config["provider"] == "openrouter"
+    assert runtime_config["model"] == "openai/gpt-5.4-mini"
+
+
+def test_load_runtime_search_config_reads_model_override_from_dotenv(
+    monkeypatch, tmp_path
+):
+    module = _load_evaluate_accuracy()
+
+    class DummyStatschat:
+        @staticmethod
+        def load_config(name="main"):
+            return {
+                "search": {
+                    "provider": "openrouter",
+                    "generative_model_name": "mistralai/Mistral-7B-Instruct-v0.3",
+                    "k_docs": 8,
+                    "k_contexts": 5,
+                    "answer_threshold": 1.1,
+                    "document_threshold": 0.9,
+                }
+            }
+
+    monkeypatch.setitem(sys.modules, "statschat", DummyStatschat)
+    monkeypatch.delenv("STATSCHAT_GENERATIVE_MODEL", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "STATSCHAT_GENERATIVE_MODEL=openai/gpt-5.4-mini\n", encoding="utf-8"
+    )
+
+    runtime_config = module.load_runtime_search_config()
+
+    assert runtime_config["provider"] == "openrouter"
+    assert runtime_config["model"] == "openai/gpt-5.4-mini"
+
+
+def test_extract_reference_details_combines_base_url_and_page_fragment():
+    module = _load_evaluate_accuracy()
+
+    payload = {
+        "references": [
+            {
+                "url": "https://example.com/doc1.pdf",
+                "page_url": "#page=2",
+            }
+        ]
+    }
+
+    (
+        reference_url,
+        reference_doc_id,
+        reference_page,
+        reference_count,
+        reference_urls,
+    ) = module.extract_reference_details(payload)
+
+    assert reference_url == "https://example.com/doc1.pdf#page=2"
+    assert reference_doc_id == "doc1"
+    assert reference_page == 2
+    assert reference_count == 1
+    assert reference_urls == ["https://example.com/doc1.pdf#page=2"]
 
 
 def test_evaluate_cloud_requests_debug_and_populates_context(monkeypatch):
