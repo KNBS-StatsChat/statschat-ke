@@ -78,7 +78,6 @@ def _discover_pdfs(*, page_start: int, page_end: int) -> list[DiscoveredPdf]:
             a["href"]
             for a in soup.find_all("a", href=True)
             if re.search(r"/reports/[^/]+/?$", a["href"])
-            and not a["href"].startswith("https://www.knbs.or.ke/reports/kenya-census")
         ]
         page_report_links = list(dict.fromkeys(page_report_links))
         if not page_report_links:
