@@ -4,6 +4,8 @@ import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+import pandas as pd
+
 
 def _load_evaluate_accuracy():
     repo_root = Path(__file__).resolve().parents[3]
@@ -148,3 +150,106 @@ def test_extract_debug_details_handles_local_payload():
         details["relevant_publications"] == "KDHS 2022 Summary; KDHS 2014 Full Report"
     )
     assert details["context_texts"] is None
+
+
+def test_primary_context_text_returns_first_chunk():
+    module = _load_evaluate_accuracy()
+
+    text = "First context chunk.\n---\nSecond context chunk."
+
+    assert module.primary_context_text(text) == "First context chunk."
+
+
+def test_evaluate_cloud_requests_debug_and_populates_context(monkeypatch):
+    module = _load_evaluate_accuracy()
+
+    df = pd.DataFrame(
+        [
+            {
+                "query_id": "Q001",
+                "query_text": "What is the inflation rate in February 2025?",
+                "golden_answer": "0.035",
+                "relevant_doc_ids": "doc1.pdf",
+                "evidence_locations": "doc1.pdf p.2",
+                "source_text": "Inflation was 3.5 per cent in February 2025.",
+                "should_answer": True,
+                "Reviewers": "AB;CD",
+            }
+        ]
+    )
+
+    captured: dict[str, object] = {}
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "question": "What is the inflation rate in February 2025?",
+                "content_type": "all",
+                "answer": "3.5 per cent",
+                "references": [
+                    {
+                        "page_url": "https://example.com/doc1.pdf#page=2",
+                        "page_content": "Inflation was 3.5 per cent in February 2025.",
+                        "score": 0.123456,
+                        "title": "CPI February 2025",
+                    },
+                    {
+                        "page_url": "https://example.com/doc2.pdf#page=1",
+                        "page_content": "A secondary chunk.",
+                        "score": 0.987654,
+                        "title": "CPI March 2025",
+                    },
+                ],
+                "debug_response": {
+                    "reasoning": "Picked the February 2025 bulletin.",
+                    "highlighting1": ["3.5 per cent"],
+                },
+            }
+
+    def fake_get(url, params, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        captured["timeout"] = timeout
+        return DummyResponse()
+
+    monkeypatch.setattr(module.requests, "get", fake_get)
+
+    results = module.evaluate(
+        df=df,
+        base_url="http://example.test",
+        content_type="all",
+        api_mode="cloud",
+        timeout=12.0,
+        max_rows=None,
+        sleep_seconds=0.0,
+        refusal_phrases=module.DEFAULT_REFUSAL_PHRASES,
+        similarity_threshold=85.0,
+        abs_tol=0.1,
+        rel_tol=0.01,
+        retrieval_k=5,
+        compute_retrieval=False,
+        semantic_model=None,
+        f1_threshold=0.80,
+        semantic_threshold=0.90,
+        skip_rows=0,
+        request_api_debug=True,
+    )
+
+    assert captured["params"]["debug"] == "true"
+    assert len(results) == 1
+    result = results[0]
+    assert result.api_mode == "cloud"
+    assert result.reasoning == "Picked the February 2025 bulletin."
+    assert result.context_texts is not None
+    assert "Inflation was 3.5 per cent" in result.context_texts
+    assert (
+        result.predicted_source_text == "Inflation was 3.5 per cent in February 2025."
+    )
+    assert result.reference_doc_ids_all == "doc1;doc2"
+    assert result.reference_pages_all == "2;1"
+    assert result.any_reference_doc_match is True
+    assert result.any_reference_page_match is True
+    assert result.is_correct is True

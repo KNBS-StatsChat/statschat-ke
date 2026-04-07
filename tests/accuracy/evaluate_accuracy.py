@@ -538,6 +538,14 @@ def extract_debug_details(payload: dict) -> dict[str, Optional[str]]:
     }
 
 
+def primary_context_text(context_texts: Optional[str]) -> Optional[str]:
+    """Return the first retrieved context chunk for concise reporting."""
+    if not context_texts:
+        return None
+    first_chunk = str(context_texts).split("\n---\n", 1)[0].strip()
+    return first_chunk or None
+
+
 def compute_retrieval_metrics(
     relevant_doc_ids: list[str],
     retrieved_doc_ids: list[str],
@@ -793,6 +801,7 @@ def evaluate(
     f1_threshold: float,
     semantic_threshold: float,
     skip_rows: int,
+    request_api_debug: bool,
 ) -> list[EvaluationResult]:
     results: list[EvaluationResult] = []
 
@@ -912,7 +921,7 @@ def evaluate(
                 params={
                     "q": query_text,
                     "content_type": content_type,
-                    "debug": "false",
+                    "debug": "true" if request_api_debug else "false",
                 },
                 timeout=timeout,
             )
@@ -938,6 +947,10 @@ def evaluate(
             context_from = debug_details["context_from"]
             context_reference = debug_details["context_reference"]
             relevant_publications = debug_details["relevant_publications"]
+            if not predicted_source_text:
+                predicted_source_text = context_reference or primary_context_text(
+                    context_texts
+                )
             all_reference_doc_ids: list[str] = []
             all_reference_pages: list[int] = []
             reference_pairs: list[tuple[str, int]] = []
@@ -1514,11 +1527,21 @@ def save_results_excel(
         [
             "query_id",
             "query_text",
+            "api_mode",
             "predicted_answer",
             "predicted_relevant_doc_ids",
             "predicted_evidence_locations",
             "predicted_source_text",
             "reference_url",
+            "reference_doc_id",
+            "reference_doc_ids_all",
+            "reference_page",
+            "reference_pages_all",
+            "reference_titles",
+            "context_from",
+            "context_reference",
+            "relevant_publications",
+            "reasoning",
         ]
     ].copy()
 
@@ -2009,6 +2032,15 @@ def parse_args() -> argparse.Namespace:
         help="Require Reviewers to contain at least two initials for answerable rows",
     )
     parser.add_argument(
+        "--no-api-debug",
+        action="store_true",
+        help=(
+            "Do not request debug payloads from the API. "
+            "By default the evaluator requests debug details so cloud runs can "
+            "capture reasoning and retrieved context."
+        ),
+    )
+    parser.add_argument(
         "--sheet-name",
         type=str,
         default="QA_Data",
@@ -2075,6 +2107,7 @@ def main() -> None:
         f1_threshold=args.f1_threshold,
         semantic_threshold=args.semantic_threshold,
         skip_rows=args.skip_rows,
+        request_api_debug=not args.no_api_debug,
     )
     run_end = datetime.now()
 

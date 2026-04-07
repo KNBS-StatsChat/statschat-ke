@@ -57,7 +57,9 @@ Important behavior:
 
 - it can run validation only, without calling the API
 - it checks generation/evaluation condition alignment if the sheet contains `Generation_Metadata`
-- retrieval metrics are computed only for local mode and use `statschat.generative.local_llm.similarity_search(...)` as a proxy for ranked retrieval
+- it can evaluate either the local or cloud API
+- retrieval metrics are computed with `statschat.generative.local_llm.similarity_search(...)` as a local FAISS proxy for both local and cloud API runs
+- by default it requests API debug payloads so cloud runs can capture reasoning and retrieved context; use `--no-api-debug` to disable that
 
 ## Recommended Workflow
 
@@ -108,17 +110,38 @@ python tests/accuracy/evaluate_accuracy.py \
 uvicorn fast-api.main_api_local:app --host 127.0.0.1 --port 8000
 ```
 
-### 4. Evaluate Against The API
+### 4. Start The Cloud API
 
 ```bash
+uvicorn fast-api.main_api_cloud:app --host 127.0.0.1 --port 8001
+```
+
+The cloud API itself needs the configured provider key in its environment, for example:
+
+- `OPENROUTER_API_KEY`
+- `OPENAI_API_KEY`
+- `HF_TOKEN`
+
+### 5. Evaluate Against The API
+
+```bash
+# Local API
 python tests/accuracy/evaluate_accuracy.py \
   --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
   --host http://127.0.0.1:8000 \
   --content-type all \
   --timeout 420
+
+# Cloud API
+python tests/accuracy/evaluate_accuracy.py \
+  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
+  --host http://127.0.0.1:8001 \
+  --api-mode cloud \
+  --content-type all \
+  --timeout 420
 ```
 
-### 5. Smoke Test A Small Subset
+### 6. Smoke Test A Small Subset
 
 ```bash
 python tests/accuracy/evaluate_accuracy.py \
@@ -186,6 +209,11 @@ Important result columns include:
 - `reference_doc_ids_all`
 - `reference_page`
 - `reference_pages_all`
+- `reference_titles`
+- `context_from`
+- `context_reference`
+- `relevant_publications`
+- `reasoning`
 - `reference_doc_match`
 - `any_reference_doc_match`
 - `evidence_page_match`

@@ -127,7 +127,24 @@ def _load_main_api_cloud():
                 def __init__(self):
                     self.raw = "debug"
 
-            return ["doc1", "doc2"], "Answer", DummyResponse()
+            return (
+                [
+                    {
+                        "page_url": "https://example.com/doc1.pdf#page=2",
+                        "page_content": "Population context",
+                        "title": "Doc 1",
+                        "score": 0.12,
+                    },
+                    {
+                        "page_url": "https://example.com/doc2.pdf#page=3",
+                        "page_content": "Second context",
+                        "title": "Doc 2",
+                        "score": 0.34,
+                    },
+                ],
+                "Answer",
+                DummyResponse(),
+            )
 
     sys.modules.pop("statschat.generative.cloud_llm", None)
     cloud_llm_stub = ModuleType("statschat.generative.cloud_llm")
@@ -262,7 +279,9 @@ async def test_cloud_search_returns_schema(monkeypatch):
     payload = response.json()
     assert payload["question"] == "Population"
     assert payload["answer"] == "Answer"
-    assert payload["references"] == ["doc1", "doc2"]
+    assert isinstance(payload["references"], list)
+    assert payload["references"][0]["page_url"] == "https://example.com/doc1.pdf#page=2"
+    assert payload["references"][0]["title"] == "Doc 1"
     assert payload["content_type"] == "latest"
     assert "debug_response" in payload
 
