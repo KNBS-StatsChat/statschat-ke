@@ -44,6 +44,20 @@ Full rationale and details: [ADR-003](docs/decisions/003-accuracy-evaluator-clou
 ### Bug fix
 - `normalize_doc_id()` no longer returns an empty string for malformed URLs — falls back to the original input
 
+### Census 2019 PDF exclusion removed
+- The PDF scraper had a hard-coded filter excluding all report pages under `/reports/kenya-census*`, preventing download of 2019 and 2009 census PDFs
+- This caused two QA questions (Q030, Q053) to reference documents that didn't exist in `pdf_downloads/`
+- Removed the exclusion filter from `pdf_downloader.py` and `confirm_missing_downloads.py`
+- Updated the unit test from `test_report_link_filter_excludes_census` to `test_report_link_filter_includes_census`
+- Back-filled 89 census PDFs (51 from 2019, 38 from 2009) via `scripts/download_census_2019.py`
+- `url_dict.json` updated from 1088 to 1176 entries
+- Full investigation: [docs/investigations/2026-04-01-census-2019-pdfs-excluded-from-scraper.md](docs/investigations/2026-04-01-census-2019-pdfs-excluded-from-scraper.md)
+
+### QA spreadsheet filename corrections
+- Stripped date-path prefixes (e.g. `2025/01/`, `2023/08/`) from `relevant_doc_ids` and `evidence_locations` columns in both `KNBS_Verified_QA_Examples_updated.xlsx` and `_v2.xlsx`
+- Corrected two filenames to match actual files on disk (`*Basic-Report.pdf` → `*Basic-Report1.pdf`, `*Survey-Report.pdf` → `*Survey-Report_1.pdf`)
+- Deleted example rows Q001/Q002 (made-up data no longer needed) from both files
+
 ## How to test
 
 ```bash
@@ -78,3 +92,10 @@ python tests/accuracy/evaluate_accuracy.py \
 | `docs/future-development/phase-4-evaluation.md` | Future evaluation improvements (cross-run comparison, CI, retrieval from API refs) |
 | `docs/future-development/phase-3-generation-local.md` | Future local generation improvements (timeout, debug, GPU acceleration) |
 | `docs/decisions/README.md` | ADR index |
+| `statschat/pdf_processing/pdf_downloader.py` | Removed census exclusion filter |
+| `statschat/pdf_processing/confirm_missing_downloads.py` | Removed census exclusion filter |
+| `tests/unit/pdf_processing/test_pdf_downloader.py` | Test updated: census inclusion instead of exclusion |
+| `scripts/download_census_2019.py` | One-off back-fill script for census PDFs |
+| `docs/investigations/2026-04-01-census-2019-pdfs-excluded-from-scraper.md` | Investigation write-up |
+| `tests/accuracy/KNBS_Verified_QA_Examples_updated.xlsx` | Filename fixes, Q001/Q002 removed |
+| `tests/accuracy/KNBS_Verified_QA_Examples_updated_v2.xlsx` | Filename fixes, Q001/Q002 removed |
