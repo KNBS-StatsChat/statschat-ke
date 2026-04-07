@@ -230,11 +230,11 @@ def test_pdf_download_incomplete_file(tmp_path, monkeypatch):
     assert "sample.pdf" in url_dict, "Corrupted PDF should be in url_dict.json"
 
 
-def test_report_link_filter_excludes_census(tmp_path, monkeypatch):
+def test_report_link_filter_includes_census(tmp_path, monkeypatch):
     """
-    Test that census report links are excluded from processing.
+    Test that census report links are included in processing.
     """
-    logger.info("Running census exclusion test...")
+    logger.info("Running census inclusion test...")
     mock_config = {
         "preprocess": {"mode": "SETUP"},
         "app": {"page_start": 1, "page_end": 1},
@@ -248,6 +248,7 @@ def test_report_link_filter_excludes_census(tmp_path, monkeypatch):
         '<a href="https://www.knbs.or.ke/reports/report-1/">Report 1</a>'
         '<a href="https://www.knbs.or.ke/not-a-report/">Other</a>'
     )
+    census_report = '<a href="https://www.knbs.or.ke/files/census.pdf">Census PDF</a>'
     report = '<a href="https://www.knbs.or.ke/files/sample.pdf">Download PDF</a>'
     pdf_bytes = b"%PDF-1.4 sample"
 
@@ -256,10 +257,13 @@ def test_report_link_filter_excludes_census(tmp_path, monkeypatch):
         if url.endswith("/all-reports/page/1/"):
             resp.status_code = 200
             resp.content = listing.encode()
+        elif url.endswith("/reports/kenya-census-2019/"):
+            resp.status_code = 200
+            resp.content = census_report.encode()
         elif url.endswith("/reports/report-1/"):
             resp.status_code = 200
             resp.content = report.encode()
-        elif url.endswith("/files/sample.pdf"):
+        elif url.endswith(".pdf"):
             resp.status_code = 200
             resp.content = pdf_bytes
         else:
@@ -279,13 +283,12 @@ def test_report_link_filter_excludes_census(tmp_path, monkeypatch):
     dl.main()
 
     called = [str(c.args[0]) for c in mock_get.call_args_list]
-    assert not any("/reports/kenya-census" in u for u in called)
+    assert any("/reports/kenya-census" in u for u in called)
     assert any(u.endswith("/reports/report-1/") for u in called)
 
     data_dir = tmp_path / "data" / "pdf_downloads"
     pdfs = list(data_dir.glob("*.pdf"))
-    assert len(pdfs) == 1
-    assert pdfs[0].read_bytes() == pdf_bytes
+    assert len(pdfs) == 2
 
 
 def test_update_mode_skips_malformed_original_url_dict_entries(tmp_path, monkeypatch):

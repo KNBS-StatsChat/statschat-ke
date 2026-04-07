@@ -101,7 +101,6 @@ def main():
             a["href"]
             for a in soup.find_all("a", href=True)
             if re.search(r"/reports/[^/]+/?$", a["href"])
-            and not a["href"].startswith("https://www.knbs.or.ke/reports/kenya-census")
         ]
 
         report_links = list(dict.fromkeys(report_links))
