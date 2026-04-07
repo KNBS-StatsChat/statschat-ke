@@ -8,10 +8,11 @@ import re
 import string
 import sys
 import time
-from urllib.parse import urlparse
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
+from urllib.parse import urlparse
 
 import pandas as pd
 import requests
@@ -109,6 +110,14 @@ class EvaluationResult:
     retrieval_metric_source: Optional[str]
     retrieved_doc_ids: Optional[str]
     error: Optional[str]
+    reasoning: Optional[str] = None
+    context_texts: Optional[str] = None
+    reference_scores: Optional[str] = None
+    reference_titles: Optional[str] = None
+    highlighting: Optional[str] = None
+    context_from: Optional[str] = None
+    context_reference: Optional[str] = None
+    relevant_publications: Optional[str] = None
 
 
 @dataclass
@@ -455,6 +464,80 @@ def extract_reference_details(
     )
 
 
+def extract_debug_details(payload: dict) -> dict[str, Optional[str]]:
+    """Extract optional debug and context fields from local/cloud API payloads."""
+    debug_response = payload.get("debug_response", {}) or {}
+
+    reasoning_value = str(debug_response.get("reasoning", "")).strip()
+    reasoning = reasoning_value or None
+
+    highlights: list[str] = []
+    for key in ("highlighting1", "highlighting2", "highlighting3"):
+        value = debug_response.get(key)
+        if isinstance(value, list):
+            highlights.extend(str(item).strip() for item in value if str(item).strip())
+        elif value is not None:
+            text = str(value).strip()
+            if text:
+                highlights.append(text)
+    highlighting = "; ".join(highlights) if highlights else None
+
+    context_texts_list: list[str] = []
+    reference_scores_list: list[str] = []
+    reference_titles_list: list[str] = []
+    references = payload.get("references")
+    if isinstance(references, list):
+        for item in references:
+            if not isinstance(item, dict):
+                continue
+            page_content = str(item.get("page_content", "")).strip()
+            if page_content:
+                context_texts_list.append(page_content)
+
+            score = item.get("score")
+            if score is not None:
+                try:
+                    reference_scores_list.append(str(round(float(score), 4)))
+                except (TypeError, ValueError):
+                    pass
+
+            title = str(item.get("title", "")).strip()
+            if title:
+                reference_titles_list.append(title)
+
+    context_texts = "\n---\n".join(context_texts_list) if context_texts_list else None
+    reference_scores = (
+        ";".join(reference_scores_list) if reference_scores_list else None
+    )
+    reference_titles = (
+        ";".join(unique_preserve_order(reference_titles_list))
+        if reference_titles_list
+        else None
+    )
+
+    context_from = str(payload.get("context_from", "")).strip() or None
+    context_reference = str(payload.get("context_reference", "")).strip() or None
+
+    publication_candidates = [
+        str(payload.get("relevant_publication_one", "")).strip(),
+        str(payload.get("relevant_publication_two", "")).strip(),
+    ]
+    relevant_publications = (
+        "; ".join(pub for pub in publication_candidates if pub) or None
+    )
+
+    return {
+        "reasoning": reasoning,
+        "context_texts": context_texts,
+        "reference_scores": reference_scores,
+        "reference_titles": reference_titles,
+        "highlighting": highlighting,
+        "context_from": context_from,
+        "context_reference": context_reference,
+        "relevant_publications": relevant_publications,
+    }
+
+
 def compute_retrieval_metrics(
     relevant_doc_ids: list[str],
     retrieved_doc_ids: list[str],
@@ -760,6 +843,14 @@ def evaluate(
         false_answer: Optional[bool] = None
         answered_when_expected: Optional[bool] = None
         answer_missing: Optional[bool] = None
+        reasoning: Optional[str] = None
+        context_texts: Optional[str] = None
+        reference_scores: Optional[str] = None
+        reference_titles: Optional[str] = None
+        highlighting: Optional[str] = None
+        context_from: Optional[str] = None
+        context_reference: Optional[str] = None
+        relevant_publications: Optional[str] = None
 
         if not query_text:
             results.append(
@@ -803,6 +894,14 @@ def evaluate(
                     retrieval_metric_source=None,
                     retrieved_doc_ids=None,
                     error="missing query_text",
+                    reasoning=None,
+                    context_texts=None,
+                    reference_scores=None,
+                    reference_titles=None,
+                    highlighting=None,
+                    context_from=None,
+                    context_reference=None,
+                    relevant_publications=None,
                 )
             )
             continue
@@ -830,6 +929,15 @@ def evaluate(
                 reference_count,
                 reference_urls,
             ) = extract_reference_details(payload)
+            debug_details = extract_debug_details(payload)
+            reasoning = debug_details["reasoning"]
+            context_texts = debug_details["context_texts"]
+            reference_scores = debug_details["reference_scores"]
+            reference_titles = debug_details["reference_titles"]
+            highlighting = debug_details["highlighting"]
+            context_from = debug_details["context_from"]
+            context_reference = debug_details["context_reference"]
+            relevant_publications = debug_details["relevant_publications"]
             all_reference_doc_ids: list[str] = []
             all_reference_pages: list[int] = []
             reference_pairs: list[tuple[str, int]] = []
@@ -931,6 +1039,14 @@ def evaluate(
                     retrieval_metric_source=retrieval_metric_source,
                     retrieved_doc_ids=retrieved_doc_ids,
                     error=str(exc),
+                    reasoning=reasoning,
+                    context_texts=context_texts,
+                    reference_scores=reference_scores,
+                    reference_titles=reference_titles,
+                    highlighting=highlighting,
+                    context_from=context_from,
+                    context_reference=context_reference,
+                    relevant_publications=relevant_publications,
                 )
             )
             continue
@@ -943,7 +1059,11 @@ def evaluate(
         else:
             error = None
 
-        if compute_retrieval and relevant_doc_ids and api_mode_used == "local":
+        if (
+            compute_retrieval
+            and relevant_doc_ids
+            and api_mode_used in {"local", "cloud"}
+        ):
             retrieval_metric_source = "local_similarity_search_proxy"
             try:
                 top_matches = similarity_search(
@@ -1077,6 +1197,14 @@ def evaluate(
                 retrieval_metric_source=retrieval_metric_source,
                 retrieved_doc_ids=retrieved_doc_ids,
                 error=error,
+                reasoning=reasoning,
+                context_texts=context_texts,
+                reference_scores=reference_scores,
+                reference_titles=reference_titles,
+                highlighting=highlighting,
+                context_from=context_from,
+                context_reference=context_reference,
+                relevant_publications=relevant_publications,
             )
         )
 
@@ -1409,6 +1537,276 @@ def save_results_excel(
                 continue
 
 
+def determine_effective_api_mode(
+    requested_api_mode: str, results: list[EvaluationResult]
+) -> str:
+    """Choose a stable label for run-artifact directories."""
+    if requested_api_mode != "auto":
+        return requested_api_mode
+    observed = {result.api_mode for result in results if result.api_mode}
+    return observed.pop() if len(observed) == 1 else "auto"
+
+
+def create_run_dir(api_mode: str) -> Path:
+    """Create a timestamped run directory under tests/accuracy/runs/{mode}/."""
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    mode_label = api_mode if api_mode in {"local", "cloud"} else "auto"
+    run_dir = Path("tests/accuracy/runs") / mode_label / timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
+
+
+def save_run_metadata(
+    run_dir: Path,
+    args: argparse.Namespace,
+    summary: dict[str, object],
+    run_start: datetime,
+    run_end: datetime,
+) -> None:
+    """Write run_metadata.txt with configuration and top-line results."""
+    model_info = "unknown"
+    provider_info = "unknown"
+    k_docs = k_contexts = answer_threshold = document_threshold = "unknown"
+    try:
+        from statschat import load_config
+
+        cfg = load_config(name="main")
+        search_cfg = cfg.get("search", {})
+        provider_info = str(search_cfg.get("provider", "unknown"))
+        model_info = str(search_cfg.get("generative_model_name", "unknown"))
+        k_docs = str(search_cfg.get("k_docs", "unknown"))
+        k_contexts = str(search_cfg.get("k_contexts", "unknown"))
+        answer_threshold = str(search_cfg.get("answer_threshold", "unknown"))
+        document_threshold = str(search_cfg.get("document_threshold", "unknown"))
+    except Exception:
+        pass
+
+    lines = [
+        f"Run timestamp:      {run_start.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Duration:           {(run_end - run_start).total_seconds():.1f}s",
+        f"API mode(s):        {str(summary.get('api_modes_observed', 'n/a')).replace(';', ', ')}",
+        f"Provider:           {provider_info}",
+        f"Model:              {model_info}",
+        f"API host:           {args.host}",
+        f"QA file:            {args.excel}",
+        f"Content type:       {args.content_type}",
+        f"Timeout:            {args.timeout}s",
+        f"Max rows:           {args.max_rows or 'all'}",
+        f"Skip rows:          {args.skip_rows}",
+        f"Retrieval k:        {args.retrieval_k}",
+        f"k_docs:             {k_docs}",
+        f"k_contexts:         {k_contexts}",
+        f"Answer threshold:   {answer_threshold}",
+        f"Document threshold: {document_threshold}",
+        f"Similarity thresh:  {args.similarity_threshold}",
+        f"F1 threshold:       {args.f1_threshold}",
+        f"Semantic threshold: {args.semantic_threshold}",
+        "",
+        "--- Summary ---",
+        f"Total evaluated:    {summary.get('total_evaluated', 0)}",
+        f"Answerable:         {summary.get('answerable_count', 0)}",
+        f"Unanswerable:       {summary.get('unanswerable_count', 0)}",
+        f"Overall accuracy:   {float(summary.get('overall_accuracy', 0.0)):.3f}",
+        f"Answerable accuracy:{float(summary.get('answerable_accuracy', 0.0)):.3f}",
+        f"Unanswerable acc.:  {float(summary.get('unanswerable_accuracy', 0.0)):.3f}",
+        f"Errors:             {summary.get('error_count', 0)}",
+    ]
+
+    if summary.get("token_f1_avg") is not None:
+        lines.append(f"Avg Token F1:       {float(summary['token_f1_avg']):.3f}")
+    if summary.get("semantic_similarity_avg") is not None:
+        lines.append(
+            "Avg Semantic Sim:   " f"{float(summary['semantic_similarity_avg']):.3f}"
+        )
+
+    output_path = run_dir / "run_metadata.txt"
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def save_run_report(
+    run_dir: Path,
+    results: list[EvaluationResult],
+    qa_df: pd.DataFrame,
+    summary: dict[str, object],
+    retrieval_k: int,
+) -> None:
+    """Write run_report.md with aggregate metrics and row-level comparisons."""
+    lines: list[str] = ["# Evaluation Run Report\n"]
+
+    lines.append("## Summary\n")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
+    lines.append(f"| Total evaluated | {summary.get('total_evaluated', 0)} |")
+    lines.append(f"| Answerable | {summary.get('answerable_count', 0)} |")
+    lines.append(f"| Unanswerable | {summary.get('unanswerable_count', 0)} |")
+    lines.append(
+        f"| Overall accuracy | {float(summary.get('overall_accuracy', 0.0)):.3f} |"
+    )
+    lines.append(
+        f"| Answerable accuracy | {float(summary.get('answerable_accuracy', 0.0)):.3f} |"
+    )
+    lines.append(
+        f"| Unanswerable accuracy | {float(summary.get('unanswerable_accuracy', 0.0)):.3f} |"
+    )
+    if summary.get("exact_match_avg") is not None:
+        lines.append(f"| Exact Match (EM) | {float(summary['exact_match_avg']):.3f} |")
+    if summary.get("token_f1_avg") is not None:
+        lines.append(f"| Token F1 (avg) | {float(summary['token_f1_avg']):.3f} |")
+    if summary.get("semantic_similarity_avg") is not None:
+        lines.append(
+            "| Semantic Similarity (avg) | "
+            f"{float(summary['semantic_similarity_avg']):.3f} |"
+        )
+    if summary.get("precision_at_k_avg") is not None:
+        lines.append(
+            f"| Precision@{retrieval_k} (avg) | {float(summary['precision_at_k_avg']):.3f} |"
+        )
+        lines.append(
+            f"| Recall@{retrieval_k} (avg) | {float(summary['recall_at_k_avg']):.3f} |"
+        )
+        lines.append(f"| MRR (avg) | {float(summary['mrr_avg']):.3f} |")
+        lines.append(f"| nDCG (avg) | {float(summary['ndcg_avg']):.3f} |")
+    api_modes = summary.get("api_modes_observed")
+    if api_modes:
+        lines.append(f"| API mode(s) | {str(api_modes).replace(';', ', ')} |")
+    retrieval_sources = summary.get("retrieval_metric_sources")
+    if retrieval_sources:
+        lines.append(
+            f"| Retrieval source(s) | {str(retrieval_sources).replace(';', ', ')} |"
+        )
+    lines.append("")
+
+    for result in results:
+        row_match = qa_df.loc[
+            qa_df["query_id"].astype(str).str.strip() == result.query_id
+        ]
+        source_text = ""
+        evidence_locations = ""
+        relevant_doc_ids_raw = ""
+        if not row_match.empty:
+            source_text = str(row_match.iloc[0].get("source_text", "")).strip()
+            evidence_locations = str(
+                row_match.iloc[0].get("evidence_locations", "")
+            ).strip()
+            relevant_doc_ids_raw = str(
+                row_match.iloc[0].get("relevant_doc_ids", "")
+            ).strip()
+
+        if result.error:
+            status = "ERROR"
+        elif result.is_correct is True:
+            status = "CORRECT"
+        elif result.is_correct is False:
+            status = "INCORRECT"
+        else:
+            status = "SKIPPED"
+
+        returned_doc_ids = result.reference_doc_ids_all or result.reference_doc_id
+        returned_pages = result.reference_pages_all
+        if not returned_pages and result.reference_page is not None:
+            returned_pages = str(result.reference_page)
+
+        lines.append("---\n")
+        lines.append(f"## {result.query_id} — {status}\n")
+        lines.append(f"**Question:** {result.query_text}\n")
+
+        lines.append("### Expected vs Actual\n")
+        lines.append("| | Detail |")
+        lines.append("|---|---|")
+        lines.append(f"| **Golden answer** | {result.golden_answer} |")
+        lines.append(
+            f"| **Predicted answer** | {result.predicted_answer or '*(empty)*'} |"
+        )
+        lines.append(f"| **Should answer** | {result.should_answer} |")
+        lines.append(f"| **Is refusal** | {result.is_refusal} |")
+        lines.append("")
+
+        metrics_parts: list[str] = []
+        if result.exact_match is not None:
+            metrics_parts.append(f"EM={result.exact_match}")
+        if result.token_f1 is not None:
+            metrics_parts.append(f"F1={result.token_f1:.3f}")
+        if result.semantic_similarity is not None:
+            metrics_parts.append(f"Semantic={result.semantic_similarity:.3f}")
+        if result.similarity_score is not None:
+            metrics_parts.append(f"Fuzzy={result.similarity_score:.1f}")
+        if result.evidence_page_match is not None:
+            metrics_parts.append(f"EvidenceMatch={result.evidence_page_match}")
+        if metrics_parts:
+            lines.append(f"**Metrics:** {' | '.join(metrics_parts)}\n")
+
+        lines.append("### References\n")
+        lines.append("| | Detail |")
+        lines.append("|---|---|")
+        lines.append(f"| **Expected docs** | {relevant_doc_ids_raw or '*(none)*'} |")
+        lines.append(f"| **Returned doc IDs** | {returned_doc_ids or '*(none)*'} |")
+        lines.append(f"| **Expected evidence** | {evidence_locations or '*(none)*'} |")
+        lines.append(f"| **Returned pages** | {returned_pages or '*(none)*'} |")
+        if result.reference_titles:
+            lines.append(
+                f"| **Returned titles** | {result.reference_titles.replace(';', '; ')} |"
+            )
+        if result.reference_scores:
+            lines.append(f"| **Retrieval scores** | {result.reference_scores} |")
+        lines.append("")
+
+        if source_text:
+            lines.append("### Expected Source Text\n")
+            lines.append(
+                f"> {source_text[:500]}{'...' if len(source_text) > 500 else ''}\n"
+            )
+
+        has_debug = any(
+            [
+                result.reasoning,
+                result.context_texts,
+                result.highlighting,
+                result.context_from,
+                result.context_reference,
+                result.relevant_publications,
+                result.predicted_source_text,
+            ]
+        )
+        if has_debug:
+            lines.append("### StatsChat Context\n")
+            if result.reasoning:
+                lines.append(f"**Reasoning:** {result.reasoning}\n")
+            if result.highlighting:
+                lines.append(f"**Key phrases:** {result.highlighting}\n")
+            if result.context_from:
+                lines.append(f"**Context from:** {result.context_from}\n")
+            if result.context_reference:
+                lines.append(f"**Context reference:** {result.context_reference}\n")
+            if result.relevant_publications:
+                lines.append(
+                    f"**Relevant publications:** {result.relevant_publications}\n"
+                )
+            if result.predicted_source_text:
+                lines.append("**Predicted source text:**\n")
+                lines.append(
+                    f"> {result.predicted_source_text[:500]}"
+                    f"{'...' if len(result.predicted_source_text) > 500 else ''}\n"
+                )
+            if result.context_texts:
+                lines.append("<details><summary>Retrieved context chunks</summary>\n")
+                lines.append(f"```\n{result.context_texts[:2000]}\n```\n")
+                lines.append("</details>\n")
+
+        if result.error:
+            lines.append(f"**Error:** `{result.error}`\n")
+
+        lines.append("")
+
+    output_path = run_dir / "run_report.md"
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def save_summary_metrics_csv(run_dir: Path, summary: dict[str, object]) -> None:
+    """Write a machine-readable summary_metrics.csv for cross-run comparison."""
+    output_path = run_dir / "summary_metrics.csv"
+    pd.DataFrame([summary]).to_csv(output_path, index=False)
+
+
 def load_generation_metadata(excel_path: Path) -> dict[str, str]:
     try:
         df = pd.read_excel(excel_path, sheet_name="Generation_Metadata")
@@ -1658,6 +2056,7 @@ def main() -> None:
     if not args.no_semantic:
         semantic_model = SemanticSimilarityEvaluator(args.semantic_model)
 
+    run_start = datetime.now()
     results = evaluate(
         df=df,
         base_url=args.host,
@@ -1677,6 +2076,7 @@ def main() -> None:
         semantic_threshold=args.semantic_threshold,
         skip_rows=args.skip_rows,
     )
+    run_end = datetime.now()
 
     save_results(results, args.results_output)
     print(f"Results saved to: {args.results_output}")
@@ -1697,6 +2097,28 @@ def main() -> None:
             args.answers_output,
         )
         print(f"Excel with answers saved to: {args.answers_output}")
+
+    run_dir = create_run_dir(determine_effective_api_mode(args.api_mode, results))
+    run_results_output = run_dir / "accuracy_results.csv"
+    save_results(results, run_results_output)
+    print(f"Run results saved to: {run_results_output}")
+    if issues:
+        run_issues_output = run_dir / "qa_data_issues.csv"
+        save_issues(issues, run_issues_output)
+        print(f"Run data quality issues saved to: {run_issues_output}")
+    save_run_metadata(run_dir, args, summary, run_start, run_end)
+    print(f"Run metadata saved to: {run_dir / 'run_metadata.txt'}")
+    save_run_report(
+        run_dir,
+        results,
+        df,
+        summary,
+        retrieval_k=args.retrieval_k,
+    )
+    print(f"Run report saved to: {run_dir / 'run_report.md'}")
+    save_summary_metrics_csv(run_dir, summary)
+    print(f"Summary metrics saved to: {run_dir / 'summary_metrics.csv'}")
+
     print_summary(summary, retrieval_k=args.retrieval_k)
 
 

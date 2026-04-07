@@ -91,3 +91,60 @@ def test_golden_with_numbers_uses_strict_numeric_check():
     nums = module.parse_scaled_numbers("31.7 thousand tonnes")
     assert len(nums) == 1
     assert abs(nums[0] - 31700.0) < 1.0
+
+
+def test_extract_debug_details_handles_cloud_payload():
+    module = _load_evaluate_accuracy()
+
+    payload = {
+        "references": [
+            {
+                "page_url": "https://example.com/doc1.pdf#page=2",
+                "page_content": "Inflation was 3.5 per cent in February 2025.",
+                "score": 0.123456,
+                "title": "CPI February 2025",
+            },
+            {
+                "page_url": "https://example.com/doc2.pdf#page=1",
+                "page_content": "A second supporting context.",
+                "score": 0.987654,
+                "title": "CPI March 2025",
+            },
+        ],
+        "debug_response": {
+            "reasoning": "Picked the directly matching February 2025 bulletin.",
+            "highlighting1": ["3.5 per cent"],
+            "highlighting2": "February 2025",
+        },
+    }
+
+    details = module.extract_debug_details(payload)
+
+    assert (
+        details["reasoning"] == "Picked the directly matching February 2025 bulletin."
+    )
+    assert details["highlighting"] == "3.5 per cent; February 2025"
+    assert "Inflation was 3.5 per cent" in str(details["context_texts"])
+    assert details["reference_scores"] == "0.1235;0.9877"
+    assert details["reference_titles"] == "CPI February 2025;CPI March 2025"
+
+
+def test_extract_debug_details_handles_local_payload():
+    module = _load_evaluate_accuracy()
+
+    payload = {
+        "references": "https://example.com/doc1.pdf#page=4",
+        "context_from": "Context1",
+        "context_reference": "Page number: 4",
+        "relevant_publication_one": "KDHS 2022 Summary",
+        "relevant_publication_two": "KDHS 2014 Full Report",
+    }
+
+    details = module.extract_debug_details(payload)
+
+    assert details["context_from"] == "Context1"
+    assert details["context_reference"] == "Page number: 4"
+    assert (
+        details["relevant_publications"] == "KDHS 2022 Summary; KDHS 2014 Full Report"
+    )
+    assert details["context_texts"] is None
