@@ -63,6 +63,7 @@ pip-delete-this-directory.txt
 tests/accuracy/StatsChat_QA_Set_A_Baseline.xlsx
 tests/accuracy/StatsChat_QA_Set_B_Recent.xlsx
 tests/accuracy/StatsChat_QA_Set_C_Hard.xlsx
+tests/accuracy/*With_Answers*.xlsx
 
 htmlcov/
 .tox/
