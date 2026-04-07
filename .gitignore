@@ -60,6 +60,9 @@ pip-delete-this-directory.txt
 # Unit test / coverage reports
 # Project-specific
 *.csv
+tests/accuracy/StatsChat_QA_Set_A_Baseline.xlsx
+tests/accuracy/StatsChat_QA_Set_B_Recent.xlsx
+tests/accuracy/StatsChat_QA_Set_C_Hard.xlsx
 
 htmlcov/
 .tox/
