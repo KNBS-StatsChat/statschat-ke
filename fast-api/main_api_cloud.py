@@ -6,6 +6,7 @@ from typing import Union, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 import logging
+import os
 from datetime import datetime
 from markupsafe import escape
 
@@ -33,11 +34,22 @@ CONFIG = load_config(name="main")
 # %%
 
 # initiate Statschat AI and start the app
-provider = CONFIG["search"].get("provider", "openrouter")
+SEARCH_CONFIG = dict(CONFIG.get("search", {}))
+SEARCH_CONFIG["generative_model_name"] = str(
+    SEARCH_CONFIG.get("generative_model_name_cloud")
+    or SEARCH_CONFIG.get("generative_model_name")
+    or "mistralai/mistral-small-3.1-24b-instruct:free"
+)
+# Keep cloud runtime model selection anchored to main.toml.
+# The shared Inquirer still reads STATSCHAT_GENERATIVE_MODEL from the
+# environment, so we mirror the configured cloud model here to avoid any
+# stale shell/.env override taking precedence over project config.
+os.environ["STATSCHAT_GENERATIVE_MODEL"] = SEARCH_CONFIG["generative_model_name"]
+provider = SEARCH_CONFIG.get("provider", "openrouter")
 
 inquirer = Inquirer(
     **CONFIG["db"],
-    **CONFIG["search"],
+    **SEARCH_CONFIG,
     logger=logger,
 )
 

@@ -20,7 +20,9 @@ This guide explains the configuration options for StatsChat. The configuration f
 
 ## `[search]`
 
-- **generative_model_name**: Name of the generative model used for answering queries.
+- **generative_model_name**: Legacy fallback model id if a mode-specific model is not set.
+- **generative_model_name_local**: Model id used by the local API/runtime.
+- **generative_model_name_cloud**: Model id used by the cloud API/runtime.
 - **k_docs**: Number of top documents to retrieve per search.
 - **k_contexts**: Number of context passages to use.
 - **similarity_threshold**: Minimum similarity score for a document to be considered relevant.

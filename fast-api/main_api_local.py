@@ -25,6 +25,7 @@ from statschat.generative.prompts_local import (
 
 # Config file to load
 CONFIG = load_config(name="main")
+SEARCH_CONFIG = CONFIG.get("search", {})
 
 # define session_id that will be used for log file and feedback
 SESSION_NAME = f"statschat_api_{format(datetime.now(), '%Y_%m_%d_%H:%M')}"
@@ -59,8 +60,12 @@ app = FastAPI(
 )
 
 
-# Model configuration (loaded once at startup)
-MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.3"  # Change this if needed
+# Model configuration (loaded once at startup from shared config)
+MODEL_ID = str(
+    SEARCH_CONFIG.get("generative_model_name_local")
+    or SEARCH_CONFIG.get("generative_model_name")
+    or "mistralai/Mistral-7B-Instruct-v0.3"
+)
 MODEL: Optional[AutoModelForCausalLM] = None
 TOKENIZER: Optional[AutoTokenizer] = None
 

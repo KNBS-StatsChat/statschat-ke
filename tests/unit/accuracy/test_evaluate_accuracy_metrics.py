@@ -168,7 +168,7 @@ def test_append_run_history_appends_rows(tmp_path, monkeypatch):
     monkeypatch.setattr(
         module,
         "load_runtime_search_config",
-        lambda: {
+        lambda _api_mode=None: {
             "provider": "openrouter",
             "model": "openai/gpt-5.4-mini",
             "k_docs": "8",
@@ -231,7 +231,7 @@ def test_append_run_history_appends_rows(tmp_path, monkeypatch):
     assert bool(second_df.loc[1, "api_debug_requested"]) is True
 
 
-def test_load_runtime_search_config_prefers_env_model_override(monkeypatch):
+def test_load_runtime_search_config_reads_cloud_model_from_main_config(monkeypatch):
     module = _load_evaluate_accuracy()
 
     class DummyStatschat:
@@ -241,6 +241,8 @@ def test_load_runtime_search_config_prefers_env_model_override(monkeypatch):
                 "search": {
                     "provider": "openrouter",
                     "generative_model_name": "mistralai/Mistral-7B-Instruct-v0.3",
+                    "generative_model_name_local": "mistralai/Mistral-7B-Instruct-v0.3",
+                    "generative_model_name_cloud": "openai/gpt-5.4-mini",
                     "k_docs": 8,
                     "k_contexts": 5,
                     "answer_threshold": 1.1,
@@ -249,17 +251,14 @@ def test_load_runtime_search_config_prefers_env_model_override(monkeypatch):
             }
 
     monkeypatch.setitem(sys.modules, "statschat", DummyStatschat)
-    monkeypatch.setenv("STATSCHAT_GENERATIVE_MODEL", "openai/gpt-5.4-mini")
 
-    runtime_config = module.load_runtime_search_config()
+    runtime_config = module.load_runtime_search_config("cloud")
 
     assert runtime_config["provider"] == "openrouter"
     assert runtime_config["model"] == "openai/gpt-5.4-mini"
 
 
-def test_load_runtime_search_config_reads_model_override_from_dotenv(
-    monkeypatch, tmp_path
-):
+def test_load_runtime_search_config_reads_local_model_from_main_config(monkeypatch):
     module = _load_evaluate_accuracy()
 
     class DummyStatschat:
@@ -269,6 +268,8 @@ def test_load_runtime_search_config_reads_model_override_from_dotenv(
                 "search": {
                     "provider": "openrouter",
                     "generative_model_name": "mistralai/Mistral-7B-Instruct-v0.3",
+                    "generative_model_name_local": "mistralai/Mistral-7B-Instruct-v0.3",
+                    "generative_model_name_cloud": "openai/gpt-5.4-mini",
                     "k_docs": 8,
                     "k_contexts": 5,
                     "answer_threshold": 1.1,
@@ -277,16 +278,11 @@ def test_load_runtime_search_config_reads_model_override_from_dotenv(
             }
 
     monkeypatch.setitem(sys.modules, "statschat", DummyStatschat)
-    monkeypatch.delenv("STATSCHAT_GENERATIVE_MODEL", raising=False)
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".env").write_text(
-        "STATSCHAT_GENERATIVE_MODEL=openai/gpt-5.4-mini\n", encoding="utf-8"
-    )
 
-    runtime_config = module.load_runtime_search_config()
+    runtime_config = module.load_runtime_search_config("local")
 
     assert runtime_config["provider"] == "openrouter"
-    assert runtime_config["model"] == "openai/gpt-5.4-mini"
+    assert runtime_config["model"] == "mistralai/Mistral-7B-Instruct-v0.3"
 
 
 def test_extract_reference_details_combines_base_url_and_page_fragment():

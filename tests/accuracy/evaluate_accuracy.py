@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import re
 import string
 import sys
@@ -1586,7 +1585,7 @@ def create_run_dir(api_mode: str) -> Path:
     return run_dir
 
 
-def load_runtime_search_config() -> dict[str, str]:
+def load_runtime_search_config(api_mode: str | None = None) -> dict[str, str]:
     """Read provider/model/search settings from the active runtime config."""
     load_dotenv(override=False)
     runtime_config = {
@@ -1603,9 +1602,15 @@ def load_runtime_search_config() -> dict[str, str]:
         cfg = load_config(name="main")
         search_cfg = cfg.get("search", {})
         runtime_config["provider"] = str(search_cfg.get("provider", "unknown"))
-        runtime_config["model"] = str(
-            search_cfg.get("generative_model_name", "unknown")
-        )
+        default_model = str(search_cfg.get("generative_model_name", "unknown"))
+        local_model = str(search_cfg.get("generative_model_name_local", default_model))
+        cloud_model = str(search_cfg.get("generative_model_name_cloud", default_model))
+        if api_mode == "local":
+            runtime_config["model"] = local_model
+        elif api_mode == "cloud":
+            runtime_config["model"] = cloud_model
+        else:
+            runtime_config["model"] = default_model
         runtime_config["k_docs"] = str(search_cfg.get("k_docs", "unknown"))
         runtime_config["k_contexts"] = str(search_cfg.get("k_contexts", "unknown"))
         runtime_config["answer_threshold"] = str(
@@ -1616,9 +1621,6 @@ def load_runtime_search_config() -> dict[str, str]:
         )
     except Exception:
         pass
-    env_model_override = os.getenv("STATSCHAT_GENERATIVE_MODEL")
-    if env_model_override:
-        runtime_config["model"] = env_model_override
     return runtime_config
 
 
@@ -1630,7 +1632,7 @@ def save_run_metadata(
     run_end: datetime,
 ) -> None:
     """Write run_metadata.txt with configuration and top-line results."""
-    runtime_config = load_runtime_search_config()
+    runtime_config = load_runtime_search_config(args.api_mode)
 
     lines = [
         f"Run timestamp:      {run_start.strftime('%Y-%m-%d %H:%M:%S')}",
@@ -1682,7 +1684,7 @@ def append_run_history(
     run_end: datetime,
 ) -> Path:
     """Append a single-row run summary to the cross-run history CSV."""
-    runtime_config = load_runtime_search_config()
+    runtime_config = load_runtime_search_config(args.api_mode)
     history_path = run_dir.parents[1] / "run_history.csv"
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
