@@ -13,12 +13,15 @@ from statschat.generative.cloud_llm import (
     Inquirer,
     _apply_recency_bias,
     _build_reranker_passage,
+    _doc_report_families,
     _doc_matches_query_temporal,
     _doc_temporal_tokens,
     _extract_months,
     _extract_quarters,
     _extract_years,
+    _select_lagged_year_subset,
     has_temporal_constraint,
+    infer_query_report_families,
     parse_temporal_tokens,
 )
 from statschat.generative.response_model import LlmResponse
@@ -593,6 +596,75 @@ def test_doc_matches_query_temporal_accepts_range_year_titles():
     assert _doc_matches_query_temporal(query, doc) is True
 
 
+def test_infer_query_report_families_from_metric_hints():
+    assert "economic_survey" in infer_query_report_families(
+        "By what percentage did petroleum product imports increase in 2024?"
+    )
+    assert "national_agriculture_production_report" in infer_query_report_families(
+        "How much maize was produced in 2023?"
+    )
+    assert "gross_county_product" in infer_query_report_families(
+        "What was Nairobi City’s five-year average share of national GVA (2019–2023)?"
+    )
+    assert "kenya_demographic_and_health_survey" in infer_query_report_families(
+        "What percentage of children in Kenya have a birth certificate?"
+    )
+
+
+def test_doc_report_families_reads_title_and_url_metadata():
+    economic_doc = {
+        "title": "2025 Economic Survey",
+        "url": "https://example/2025-Economic-Survey.pdf",
+    }
+    agriculture_doc = {
+        "title": "National Agriculture Production Report 2024",
+        "url": "https://example/National-Agriculture-Production-Report-2024.pdf",
+    }
+
+    assert _doc_report_families(economic_doc) == {"economic_survey"}
+    assert _doc_report_families(agriculture_doc) == {
+        "national_agriculture_production_report"
+    }
+    assert _doc_report_families(
+        {"title": "Kenya Demographic and Health Survey 2030"}
+    ) == {"kenya_demographic_and_health_survey"}
+    assert (
+        _doc_report_families(
+            {
+                "title": "2015 2016 Kenya Integrated Household Budget Survey Basic Report",
+                "url": "https://example/2015-2016-Kenya-Integrated-Household-Budget-Survey-Basic-Report.pdf",
+            }
+        )
+        == set()
+    )
+
+
+def test_select_lagged_year_subset_prefers_year_plus_one():
+    docs = [
+        {
+            "title": "2024 Economic Survey",
+            "date": "01 May 2024",
+            "url": "https://example/2024-Economic-Survey.pdf",
+        },
+        {
+            "title": "2025 Economic Survey",
+            "date": "01 May 2025",
+            "url": "https://example/2025-Economic-Survey.pdf",
+        },
+    ]
+
+    subset, label = _select_lagged_year_subset(
+        docs,
+        parse_temporal_tokens(
+            "By what percentage did petroleum product imports increase in 2024?"
+        ),
+    )
+
+    assert subset is not None
+    assert [doc["title"] for doc in subset] == ["2025 Economic Survey"]
+    assert label == "year+1 [2025]"
+
+
 def test_make_query_temporal_pre_filter_drops_neighbouring_years(monkeypatch):
     inq = Inquirer.__new__(Inquirer)
     inq.logger = MagicMock()
@@ -671,6 +743,82 @@ def test_make_query_temporal_pre_filter_drops_neighbouring_years(monkeypatch):
     assert captured_titles["titles"] == [
         "Kenya quarterly gross domestic product third quarter 2023"
     ]
+
+
+def test_make_query_family_pre_filter_prefers_lagged_annual_report(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+    inq.k_docs = 3
+    inq.k_contexts = 3
+    inq.reranker_model_name = None
+    inq.recency_bias_weight = 0.5
+    inq.temporal_candidate_k = 96
+    inq.reranker_candidate_k = 48
+
+    captured_candidate_k: dict[str, object] = {}
+
+    def fake_similarity(q, latest_filter=True, return_dicts=True, candidate_k=None):
+        captured_candidate_k["value"] = candidate_k
+        return [
+            {
+                "page_content": "2024 outcomes in the 2024 Economic Survey",
+                "date": "01 May 2024",
+                "title": "2024 Economic Survey",
+                "score": 0.10,
+                "page_url": "u2024#page=283",
+                "url": "https://example/2024-Economic-Survey.pdf",
+            },
+            {
+                "page_content": "2024 outcomes in the 2025 Economic Survey",
+                "date": "01 May 2025",
+                "title": "2025 Economic Survey",
+                "score": 0.20,
+                "page_url": "u2025#page=331",
+                "url": "https://example/2025-Economic-Survey.pdf",
+            },
+            {
+                "page_content": "2024 quarterly trade bulletin",
+                "date": "01 June 2024",
+                "title": "Quarterly Trade Bulletin 2024",
+                "score": 0.30,
+                "page_url": "uother#page=12",
+                "url": "https://example/Quarterly-Trade-Bulletin-2024.pdf",
+            },
+        ]
+
+    inq.similarity_search = fake_similarity
+
+    captured_titles: dict[str, object] = {}
+
+    def fake_query_texts(question, docs):
+        captured_titles["titles"] = [d["title"] for d in docs]
+        return LlmResponse(
+            answer_provided=True,
+            most_likely_answer="20.9 per cent",
+            highlighting1=[],
+            highlighting2=[],
+            highlighting3=[],
+            reasoning=None,
+        )
+
+    inq.query_texts = fake_query_texts
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    inq.make_query(
+        "By what percentage did petroleum product imports increase in 2024?",
+        latest_filter=False,
+        highlighting=True,
+        latest_weight=0,
+    )
+
+    assert captured_candidate_k["value"] == 96
+    assert captured_titles["titles"] == ["2025 Economic Survey"]
 
 
 def test_make_query_temporal_pre_filter_falls_back_to_full_pool(monkeypatch):

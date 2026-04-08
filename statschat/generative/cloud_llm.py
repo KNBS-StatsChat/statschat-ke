@@ -83,6 +83,60 @@ ORDINAL_TO_QUARTER = {
     "four": 4,
 }
 
+REPORT_FAMILY_DOC_PATTERNS = {
+    "economic_survey": (re.compile(r"\beconomic survey\b", re.IGNORECASE),),
+    "national_agriculture_production_report": (
+        re.compile(r"\bnational agriculture production report\b", re.IGNORECASE),
+    ),
+    "gross_county_product": (re.compile(r"\bgross county product\b", re.IGNORECASE),),
+    "kenya_demographic_and_health_survey": (
+        re.compile(r"\b(?:kenya demographic and health survey|kdhs)\b", re.IGNORECASE),
+    ),
+    "kenya_housing_survey_basic_report": (
+        re.compile(r"\bkenya housing survey\b", re.IGNORECASE),
+        re.compile(r"\bbasic report\b", re.IGNORECASE),
+    ),
+}
+
+REPORT_FAMILY_QUERY_PATTERNS = {
+    "economic_survey": (
+        re.compile(r"\beconomic survey\b", re.IGNORECASE),
+        re.compile(r"\bpetroleum product imports?\b", re.IGNORECASE),
+        re.compile(r"\binternational visitor arrivals?\b", re.IGNORECASE),
+        re.compile(r"\brecorded employment\b", re.IGNORECASE),
+        re.compile(r"\bpopulation census\b.*\bdisabil", re.IGNORECASE),
+        re.compile(r"\bdisabil.*\bpopulation census\b", re.IGNORECASE),
+    ),
+    "national_agriculture_production_report": (
+        re.compile(r"\bnational agriculture production report\b", re.IGNORECASE),
+        re.compile(r"\bagriculture production report\b", re.IGNORECASE),
+        re.compile(r"\bagricultural sector\b.*\bgdp\b", re.IGNORECASE),
+        re.compile(r"\bfood crops\b", re.IGNORECASE),
+        re.compile(r"\bmaize\b", re.IGNORECASE),
+        re.compile(r"\bsugar\b", re.IGNORECASE),
+        re.compile(r"\baquaculture\b", re.IGNORECASE),
+    ),
+    "gross_county_product": (
+        re.compile(r"\bgross county product\b", re.IGNORECASE),
+        re.compile(r"\bgross value added\b", re.IGNORECASE),
+        re.compile(r"\bgva\b", re.IGNORECASE),
+    ),
+    "kenya_demographic_and_health_survey": (
+        re.compile(r"\bkenya demographic and health survey\b", re.IGNORECASE),
+        re.compile(r"\bkdhs\b", re.IGNORECASE),
+        re.compile(r"\bbirth certificate\b", re.IGNORECASE),
+        re.compile(r"\bfamily planning\b", re.IGNORECASE),
+        re.compile(r"\badolescent women\b", re.IGNORECASE),
+        re.compile(r"\bhousehold size\b", re.IGNORECASE),
+    ),
+    "kenya_housing_survey_basic_report": (
+        re.compile(r"\bhousing survey\b", re.IGNORECASE),
+        re.compile(r"\bdwelling unit\b", re.IGNORECASE),
+        re.compile(r"\bmobile phone\b.*\bownership status\b", re.IGNORECASE),
+        re.compile(r"\bmobile phone\b.*\bregardless of ownership\b", re.IGNORECASE),
+    ),
+}
+
 
 def _extract_years(text: str) -> set[int]:
     """Extract four-digit years from free text, expanding range years.
@@ -159,6 +213,70 @@ def has_temporal_constraint(text: str) -> bool:
     """True if the text carries any year, month, or quarter token."""
     tokens = parse_temporal_tokens(text)
     return bool(tokens["years"] or tokens["months"] or tokens["quarters"])
+
+
+def _matches_all_patterns(text: str, patterns: tuple[re.Pattern[str], ...]) -> bool:
+    """Return True if every regex pattern matches the text."""
+    return all(pattern.search(text) for pattern in patterns)
+
+
+def infer_query_report_families(text: str) -> set[str]:
+    """Infer likely report families from explicit names or metric cues."""
+    text = str(text or "")
+    return {
+        family
+        for family, patterns in REPORT_FAMILY_QUERY_PATTERNS.items()
+        if any(pattern.search(text) for pattern in patterns)
+    }
+
+
+def _doc_report_families(doc: dict) -> set[str]:
+    """Infer report families from document title and URL metadata."""
+    parts = [
+        str(doc.get("title", "")),
+        str(doc.get("url", "")),
+        str(doc.get("page_url", "")),
+    ]
+    text = " ".join(parts)
+    return {
+        family
+        for family, patterns in REPORT_FAMILY_DOC_PATTERNS.items()
+        if _matches_all_patterns(text, patterns)
+    }
+
+
+def _select_lagged_year_subset(
+    docs: list[dict], query_tokens: dict
+) -> tuple[list[dict] | None, str | None]:
+    """
+    Prefer lagged publication years for year-only annual-summary queries.
+
+    Many annual reports are published in the year after the data year they
+    summarise, e.g. 2025 Economic Survey for 2024 outcomes.
+    """
+    if (
+        not docs
+        or not query_tokens["years"]
+        or query_tokens["months"]
+        or query_tokens["quarters"]
+    ):
+        return None, None
+
+    max_query_year = max(query_tokens["years"])
+    preference_order = [
+        ({max_query_year + 1}, "year+1"),
+        ({max_query_year + 2}, "year+2"),
+        (set(query_tokens["years"]), "query year"),
+    ]
+
+    for preferred_years, label in preference_order:
+        subset = [
+            doc for doc in docs if _doc_temporal_tokens(doc)["years"] & preferred_years
+        ]
+        if subset:
+            return subset, f"{label} {sorted(preferred_years)}"
+
+    return None, None
 
 
 def _doc_temporal_tokens(doc: dict) -> dict:
@@ -724,19 +842,20 @@ class Inquirer:
         """
         self.logger.info(f"Search query: {question}")
 
-        # Detect explicit temporal constraints in the query. When present, we
-        # widen the candidate pool and prefer to rerank only the subset of
-        # docs whose metadata actually matches that period — this is the
-        # cleanest way to stop dense retrieval from being seduced by larger
-        # neighbouring-year reports.
         query_temporal = parse_temporal_tokens(question)
+        query_families = infer_query_report_families(question)
         is_temporal_query = bool(
             query_temporal["years"]
             or query_temporal["months"]
             or query_temporal["quarters"]
         )
+        is_precise_temporal_query = bool(
+            query_temporal["months"] or query_temporal["quarters"]
+        )
         candidate_k = (
-            getattr(self, "temporal_candidate_k", None) if is_temporal_query else None
+            getattr(self, "temporal_candidate_k", None)
+            if (is_temporal_query or query_families)
+            else None
         )
 
         docs1 = self.similarity_search(
@@ -755,7 +874,26 @@ class Inquirer:
             return docs1, "", empty_response
         docs = self._dedupe_exact_chunks(docs1)
 
-        if is_temporal_query:
+        if query_families:
+            family_subset = [
+                doc for doc in docs if _doc_report_families(doc) & query_families
+            ]
+            if family_subset:
+                self.logger.info(
+                    "Report-family pre-filter: reranking %s of %s candidates for %s",
+                    len(family_subset),
+                    len(docs),
+                    sorted(query_families),
+                )
+                docs = family_subset
+            else:
+                self.logger.info(
+                    "Report-family pre-filter: no candidates matched %s; "
+                    "falling back to current pool",
+                    sorted(query_families),
+                )
+
+        if is_precise_temporal_query:
             temporal_subset = [
                 doc
                 for doc in docs
@@ -773,8 +911,22 @@ class Inquirer:
             else:
                 self.logger.info(
                     f"Temporal pre-filter: no candidates matched {query_temporal}; "
-                    "falling back to full pool"
+                    "falling back to current pool"
                 )
+        elif query_families and query_temporal["years"]:
+            lagged_subset, lagged_label = _select_lagged_year_subset(
+                docs, query_temporal
+            )
+            if lagged_subset:
+                self.logger.info(
+                    "Annual-report year preference: reranking %s of %s candidates "
+                    "using %s within %s",
+                    len(lagged_subset),
+                    len(docs),
+                    lagged_label,
+                    sorted(query_families),
+                )
+                docs = lagged_subset
 
         docs = self._rerank_results(question, docs, latest_weight=latest_weight)
         docs = docs[: getattr(self, "k_docs", len(docs))]
