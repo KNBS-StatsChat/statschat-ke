@@ -21,6 +21,14 @@ LATEST_DATA_DIR = Path.cwd().joinpath("data/latest_pdf_downloads")
 JSON_DIR = Path.cwd().joinpath("data/json_conversions")
 LATEST_JSON_DIR = Path.cwd().joinpath("data/latest_json_conversions")
 
+PDFPLUMBER_PREFERRED_FILENAME_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bkenya housing survey\b", re.IGNORECASE),
+    re.compile(
+        r"\bkenya demographic and health survey kdhs 2022 summary report\b",
+        re.IGNORECASE,
+    ),
+)
+
 
 def load_config(config_path: Path) -> dict:
     """
@@ -333,6 +341,45 @@ def normalize_page_text(raw_text: str) -> str:
     return "\n".join(normalized_lines).strip()
 
 
+def _normalize_pdf_identifier(pdf_file_path: Path) -> str:
+    """Return a normalized filename identifier for family-level matching."""
+
+    return re.sub(r"[^a-z0-9]+", " ", pdf_file_path.stem.lower()).strip()
+
+
+def should_prefer_pdfplumber(pdf_file_path: Path) -> bool:
+    """Return True for PDF families where pdfplumber extracts better text.
+
+    This is intentionally narrow and driven by the investigation in
+    docs/investigations/2026-04-08-pdf-extraction-vs-page-recall-on-cloud-failures.md.
+    """
+
+    if os.environ.get("STATSCHAT_PDFPLUMBER_PREFERRED_FAMILIES", "1") != "1":
+        return False
+
+    normalized_identifier = _normalize_pdf_identifier(pdf_file_path)
+    return any(
+        pattern.search(normalized_identifier)
+        for pattern in PDFPLUMBER_PREFERRED_FILENAME_PATTERNS
+    )
+
+
+def _extract_pdfplumber_page_text(
+    pdf_file_path: Path,
+    page_num: int,
+    plumber_doc,
+) -> tuple[str, object]:
+    """Extract normalized text for a page using pdfplumber."""
+
+    import pdfplumber
+
+    if plumber_doc is None:
+        plumber_doc = pdfplumber.open(pdf_file_path)
+
+    page = plumber_doc.pages[page_num - 1]
+    return normalize_page_text(page.extract_text() or ""), plumber_doc
+
+
 def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
     """
     Extracts text content from each page of a PDF file using PyMuPDF.
@@ -348,6 +395,7 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
     pages_text: list[dict] = []
     extraction_errors: list[dict] = []
     plumber_doc = None
+    prefer_pdfplumber = should_prefer_pdfplumber(pdf_file_path)
 
     try:
         import fitz  # PyMuPDF
@@ -370,12 +418,15 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
         for page_num in range(1, len(doc) + 1):
             page_link = f"{pdf_url}#page={page_num}"
             text = ""
+            fitz_text = ""
+            fitz_error = None
             try:
                 page = doc[page_num - 1]  # PyMuPDF uses 0-based indexing
                 extracted = page.get_text()
                 if extracted:
-                    text = normalize_page_text(extracted)
+                    fitz_text = normalize_page_text(extracted)
             except Exception as exc:
+                fitz_error = exc
                 # MuPDF shading/colorspace errors tend to surface here.
                 print(
                     "WARNING: Text extraction failed for "
@@ -390,36 +441,70 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
                     }
                 )
 
-                # Best-effort fallback to pdfplumber (pdfminer) for this page.
-                # Enabled by default; can be disabled with STATSCHAT_PDFPLUMBER_FALLBACK=0.
-                if os.environ.get("STATSCHAT_PDFPLUMBER_FALLBACK", "1") == "1":
-                    try:
-                        import pdfplumber
+            text = fitz_text
 
-                        if plumber_doc is None:
-                            plumber_doc = pdfplumber.open(pdf_file_path)
-                        ptext = plumber_doc.pages[page_num - 1].extract_text() or ""
-                        text = normalize_page_text(ptext)
-                    except ImportError as import_exc:
-                        extraction_errors.append(
-                            {
-                                "pdf": str(pdf_file_path),
-                                "page": page_num,
-                                "error": str(import_exc),
-                                "error_type": type(import_exc).__name__,
-                                "fallback": "pdfplumber",
-                            }
-                        )
-                    except Exception as fallback_exc:
-                        extraction_errors.append(
-                            {
-                                "pdf": str(pdf_file_path),
-                                "page": page_num,
-                                "error": str(fallback_exc),
-                                "error_type": type(fallback_exc).__name__,
-                                "fallback": "pdfplumber",
-                            }
-                        )
+            # For specific table-heavy families, prefer pdfplumber when it has
+            # usable text. Otherwise keep fitz as the default extractor and only
+            # use pdfplumber as the existing exception fallback.
+            if (
+                prefer_pdfplumber
+                and os.environ.get("STATSCHAT_PDFPLUMBER_FALLBACK", "1") == "1"
+            ):
+                try:
+                    plumber_text, plumber_doc = _extract_pdfplumber_page_text(
+                        pdf_file_path, page_num, plumber_doc
+                    )
+                    if plumber_text:
+                        text = plumber_text
+                except ImportError as import_exc:
+                    extraction_errors.append(
+                        {
+                            "pdf": str(pdf_file_path),
+                            "page": page_num,
+                            "error": str(import_exc),
+                            "error_type": type(import_exc).__name__,
+                            "fallback": "pdfplumber_preferred",
+                        }
+                    )
+                except Exception as fallback_exc:
+                    extraction_errors.append(
+                        {
+                            "pdf": str(pdf_file_path),
+                            "page": page_num,
+                            "error": str(fallback_exc),
+                            "error_type": type(fallback_exc).__name__,
+                            "fallback": "pdfplumber_preferred",
+                        }
+                    )
+            elif (
+                fitz_error
+                and os.environ.get("STATSCHAT_PDFPLUMBER_FALLBACK", "1") == "1"
+            ):
+                # Best-effort fallback to pdfplumber (pdfminer) for this page.
+                try:
+                    text, plumber_doc = _extract_pdfplumber_page_text(
+                        pdf_file_path, page_num, plumber_doc
+                    )
+                except ImportError as import_exc:
+                    extraction_errors.append(
+                        {
+                            "pdf": str(pdf_file_path),
+                            "page": page_num,
+                            "error": str(import_exc),
+                            "error_type": type(import_exc).__name__,
+                            "fallback": "pdfplumber",
+                        }
+                    )
+                except Exception as fallback_exc:
+                    extraction_errors.append(
+                        {
+                            "pdf": str(pdf_file_path),
+                            "page": page_num,
+                            "error": str(fallback_exc),
+                            "error_type": type(fallback_exc).__name__,
+                            "fallback": "pdfplumber",
+                        }
+                    )
 
             pages_text.append(
                 {

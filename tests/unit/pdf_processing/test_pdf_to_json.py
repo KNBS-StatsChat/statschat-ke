@@ -11,6 +11,7 @@ import json
 import sys
 import types
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -204,6 +205,172 @@ def test_extract_pdf_text_with_mocked_fitz(tmp_path, monkeypatch):
     assert pages[0]["page_number"] == 1
     assert pages[0]["page_text"] == "Line1\nLine2"
     assert pages[1]["page_text"] == "OnlyOneLine"
+
+
+def test_should_prefer_pdfplumber_only_for_targeted_families():
+    assert pdf_to_json.should_prefer_pdfplumber(
+        Path("2023-24-Kenya-Housing-Survey-Basic-Report1.pdf")
+    )
+    assert pdf_to_json.should_prefer_pdfplumber(
+        Path("Kenya-Demographic-and-Health-Survey-KDHS-2022-Summary-Report.pdf")
+    )
+    assert not pdf_to_json.should_prefer_pdfplumber(
+        Path("2024-FinAccess-Household-Survey-Report.pdf")
+    )
+
+
+def test_extract_pdf_text_prefers_pdfplumber_for_targeted_family(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "2023-24-Kenya-Housing-Survey-Basic-Report1.pdf"
+    pdf_path.write_text("")
+
+    class FakePage:
+        def __init__(self, text):
+            self._text = text
+
+        def get_text(self):
+            return self._text
+
+    class FakeDoc:
+        def __init__(self, pages):
+            self._pages = pages
+
+        def __len__(self):
+            return len(self._pages)
+
+        def __getitem__(self, idx):
+            return self._pages[idx]
+
+        def close(self):
+            pass
+
+    def fake_fitz_open(_path):
+        return FakeDoc([FakePage("fitz text")])
+
+    class FakePlumberPage:
+        def extract_text(self):
+            return "pdfplumber text"
+
+    class FakePlumberDoc:
+        pages = [FakePlumberPage()]
+
+        def close(self):
+            pass
+
+    fitz_stub = types.ModuleType("fitz")
+    fitz_stub.open = staticmethod(fake_fitz_open)
+    monkeypatch.setitem(sys.modules, "fitz", fitz_stub)
+
+    pdfplumber_stub = types.ModuleType("pdfplumber")
+    pdfplumber_stub.open = staticmethod(lambda _path: FakePlumberDoc())
+    monkeypatch.setitem(sys.modules, "pdfplumber", pdfplumber_stub)
+
+    pages = pdf_to_json.extract_pdf_text(pdf_path, "https://example.com/doc.pdf")
+
+    assert pages[0]["page_text"] == "pdfplumber text"
+
+
+def test_extract_pdf_text_keeps_fitz_for_non_targeted_family(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "2024-FinAccess-Household-Survey-Report.pdf"
+    pdf_path.write_text("")
+
+    class FakePage:
+        def __init__(self, text):
+            self._text = text
+
+        def get_text(self):
+            return self._text
+
+    class FakeDoc:
+        def __init__(self, pages):
+            self._pages = pages
+
+        def __len__(self):
+            return len(self._pages)
+
+        def __getitem__(self, idx):
+            return self._pages[idx]
+
+        def close(self):
+            pass
+
+    def fake_fitz_open(_path):
+        return FakeDoc([FakePage("fitz text")])
+
+    class FakePlumberPage:
+        def extract_text(self):
+            return "pdfplumber text"
+
+    class FakePlumberDoc:
+        pages = [FakePlumberPage()]
+
+        def close(self):
+            pass
+
+    fitz_stub = types.ModuleType("fitz")
+    fitz_stub.open = staticmethod(fake_fitz_open)
+    monkeypatch.setitem(sys.modules, "fitz", fitz_stub)
+
+    pdfplumber_stub = types.ModuleType("pdfplumber")
+    pdfplumber_stub.open = staticmethod(lambda _path: FakePlumberDoc())
+    monkeypatch.setitem(sys.modules, "pdfplumber", pdfplumber_stub)
+
+    pages = pdf_to_json.extract_pdf_text(pdf_path, "https://example.com/doc.pdf")
+
+    assert pages[0]["page_text"] == "fitz text"
+
+
+def test_extract_pdf_text_falls_back_to_fitz_when_preferred_pdfplumber_is_empty(
+    tmp_path, monkeypatch
+):
+    pdf_path = (
+        tmp_path / "Kenya-Demographic-and-Health-Survey-KDHS-2022-Summary-Report.pdf"
+    )
+    pdf_path.write_text("")
+
+    class FakePage:
+        def __init__(self, text):
+            self._text = text
+
+        def get_text(self):
+            return self._text
+
+    class FakeDoc:
+        def __init__(self, pages):
+            self._pages = pages
+
+        def __len__(self):
+            return len(self._pages)
+
+        def __getitem__(self, idx):
+            return self._pages[idx]
+
+        def close(self):
+            pass
+
+    def fake_fitz_open(_path):
+        return FakeDoc([FakePage("fitz text")])
+
+    class FakePlumberPage:
+        def extract_text(self):
+            return ""
+
+    class FakePlumberDoc:
+        pages = [FakePlumberPage()]
+
+        def close(self):
+            pass
+
+    fitz_stub = types.ModuleType("fitz")
+    fitz_stub.open = staticmethod(fake_fitz_open)
+    monkeypatch.setitem(sys.modules, "fitz", fitz_stub)
+
+    pdfplumber_stub = types.ModuleType("pdfplumber")
+    pdfplumber_stub.open = staticmethod(lambda _path: FakePlumberDoc())
+    monkeypatch.setitem(sys.modules, "pdfplumber", pdfplumber_stub)
+
+    pages = pdf_to_json.extract_pdf_text(pdf_path, "https://example.com/doc.pdf")
+
+    assert pages[0]["page_text"] == "fitz text"
 
 
 def test_get_name_and_meta_and_extract_pdf_metadata(monkeypatch, tmp_path):
