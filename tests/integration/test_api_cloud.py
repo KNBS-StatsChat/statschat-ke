@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 
-def _load_app_with_dummy_inquirer(make_query_impl):
+def _load_app_with_dummy_inquirer(make_query_impl, temporal_constraint_impl=None):
     """
     Dynamically load main_api_cloud with a patched cloud_llm.Inquirer that
     uses the provided make_query implementation. Avoids FAISS/LLM downloads.
@@ -29,7 +29,13 @@ def _load_app_with_dummy_inquirer(make_query_impl):
         ):
             return make_query_impl(question, latest_filter, latest_weight, highlighting)
 
-    fake_cloud_llm = types.SimpleNamespace(Inquirer=DummyInquirer)
+    fake_cloud_llm = types.SimpleNamespace(
+        Inquirer=DummyInquirer,
+        # main_api_cloud now imports has_temporal_constraint to safeguard
+        # historical queries; tests can override the stub via the
+        # temporal_constraint_impl argument.
+        has_temporal_constraint=temporal_constraint_impl or (lambda question: False),
+    )
     sys.modules["statschat.generative.cloud_llm"] = fake_cloud_llm
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,8 +50,10 @@ def _load_app_with_dummy_inquirer(make_query_impl):
 
 @pytest.fixture
 def client_factory():
-    def _factory(make_query_impl):
-        app, ns = _load_app_with_dummy_inquirer(make_query_impl)
+    def _factory(make_query_impl, temporal_constraint_impl=None):
+        app, ns = _load_app_with_dummy_inquirer(
+            make_query_impl, temporal_constraint_impl=temporal_constraint_impl
+        )
         transport = httpx.ASGITransport(app=app)
         return httpx.AsyncClient(transport=transport, base_url="http://testserver")
 
@@ -71,6 +79,68 @@ async def test_search_invalid_content_type_falls_back(client_factory):
     data = resp.json()
     assert data["content_type"] == "latest"
     assert data["answer"] == "Answer"
+
+
+@pytest.mark.anyio
+async def test_temporal_query_overrides_latest_filter(client_factory):
+    """A query with explicit year/month/quarter must force latest_filter=False
+    even when the client requests content_type=latest, so historical reports
+    in the full FAISS store remain searchable."""
+
+    captured: dict[str, object] = {}
+
+    def make_query_impl(question, latest_filter, latest_weight, highlighting):
+        captured["latest_filter"] = latest_filter
+        captured["question"] = question
+        return (
+            [{"page_url": "http://example.com/doc", "title": "Doc", "score": 0.1}],
+            "Answer",
+            types.SimpleNamespace(__dict__={"raw": True}),
+        )
+
+    # Stub has_temporal_constraint to behave like the real one for this case.
+    async with client_factory(
+        make_query_impl,
+        temporal_constraint_impl=lambda question: "2023" in question,
+    ) as client:
+        resp = await client.get(
+            "/search",
+            params={
+                "q": "What was Kenya's GDP growth rate in Quarter 3 of 2023?",
+                "content_type": "latest",
+            },
+        )
+
+    assert resp.status_code == 200
+    # Override fired: even though content_type=latest, make_query saw False
+    assert captured["latest_filter"] is False
+
+
+@pytest.mark.anyio
+async def test_non_temporal_query_preserves_latest_filter(client_factory):
+    """A year-less query in content_type=latest must keep latest_filter=True."""
+
+    captured: dict[str, object] = {}
+
+    def make_query_impl(question, latest_filter, latest_weight, highlighting):
+        captured["latest_filter"] = latest_filter
+        return (
+            [{"page_url": "http://example.com/doc", "title": "Doc", "score": 0.1}],
+            "Answer",
+            types.SimpleNamespace(__dict__={"raw": True}),
+        )
+
+    async with client_factory(
+        make_query_impl,
+        temporal_constraint_impl=lambda question: False,
+    ) as client:
+        resp = await client.get(
+            "/search",
+            params={"q": "What is the population of Kenya?", "content_type": "latest"},
+        )
+
+    assert resp.status_code == 200
+    assert captured["latest_filter"] is True
 
 
 @pytest.mark.anyio

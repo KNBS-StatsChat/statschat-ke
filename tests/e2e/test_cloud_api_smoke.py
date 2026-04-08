@@ -52,6 +52,7 @@ def _load_main_api_cloud(monkeypatch):
     sys.modules.pop("statschat.generative.cloud_llm", None)
     cloud_llm_stub = ModuleType("statschat.generative.cloud_llm")
     cloud_llm_stub.Inquirer = DummyInquirer
+    cloud_llm_stub.has_temporal_constraint = lambda question: False
     sys.modules["statschat.generative.cloud_llm"] = cloud_llm_stub
 
     import statschat

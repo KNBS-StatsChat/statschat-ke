@@ -1,6 +1,8 @@
 import logging
 import os
 import re
+from collections import defaultdict
+from functools import lru_cache
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -11,14 +13,319 @@ from langchain.docstore.document import Document
 from langchain.chains.qa_with_sources import load_qa_with_sources_chain
 from langchain.output_parsers import PydanticOutputParser
 from openai import NotFoundError, RateLimitError
+from sentence_transformers import CrossEncoder
 from statschat.generative.response_model import LlmResponse
 from statschat.generative.prompts_cloud import (
     EXTRACTIVE_PROMPT_PYDANTIC,
     STUFF_DOCUMENT_PROMPT,
 )
-from functools import lru_cache
 from statschat.generative.utils import highlighter
-from statschat.embedding.latest_flag_helpers import time_decay
+
+YEAR_PATTERN = re.compile(r"(?<!\d)(19|20)\d{2}(?!\d)")
+
+# Range years: "2023-24", "2023/24", "2023-2024", "2023/2024", "FY2023/24"
+# Use digit-only lookbehind/lookahead so glued prefixes like "FY" still match.
+RANGE_YEAR_PATTERN = re.compile(r"(?<!\d)(19|20)(\d{2})[\-/](\d{2}|\d{4})(?!\d)")
+
+MONTH_NAME_TO_NUM = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "sept": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+MONTH_NAME_PATTERN = re.compile(
+    r"\b(january|february|march|april|may|june|july|august|september|"
+    r"october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b",
+    re.IGNORECASE,
+)
+
+# Quarter detection: "Q3", "Q 3", "third quarter", "quarter three", "3rd quarter"
+QUARTER_DIGIT_PATTERN = re.compile(r"\bq\s*([1-4])\b", re.IGNORECASE)
+QUARTER_ORDINAL_PATTERN = re.compile(
+    r"\b(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter\b", re.IGNORECASE
+)
+QUARTER_NUMBER_PATTERN = re.compile(
+    r"\bquarter\s+(?:([1-4])|(one|two|three|four|first|second|third|fourth))\b",
+    re.IGNORECASE,
+)
+ORDINAL_TO_QUARTER = {
+    "first": 1,
+    "1st": 1,
+    "one": 1,
+    "second": 2,
+    "2nd": 2,
+    "two": 2,
+    "third": 3,
+    "3rd": 3,
+    "three": 3,
+    "fourth": 4,
+    "4th": 4,
+    "four": 4,
+}
+
+
+def _extract_years(text: str) -> set[int]:
+    """Extract four-digit years from free text, expanding range years.
+
+    Ranges like ``2023-24`` and ``2023/2024`` count as both endpoints, so titles
+    such as ``2023-24 Kenya Housing Survey`` match queries that mention either
+    2023 or 2024.
+    """
+    text = str(text or "")
+    years: set[int] = set()
+    consumed: list[tuple[int, int]] = []
+
+    for match in RANGE_YEAR_PATTERN.finditer(text):
+        century = match.group(1)
+        start_yy = match.group(2)
+        end_token = match.group(3)
+        start_year = int(century + start_yy)
+        if len(end_token) == 2:
+            end_year = int(century + end_token)
+            if end_year < start_year:
+                # Handle century rollover, e.g. 1999-00 → 2000
+                end_year += 100
+        else:
+            end_year = int(end_token)
+        # Only treat as a true range if endpoints are sane and adjacent-ish
+        if 0 <= end_year - start_year <= 10:
+            years.add(start_year)
+            years.add(end_year)
+            consumed.append(match.span())
+
+    for match in YEAR_PATTERN.finditer(text):
+        start, _ = match.span()
+        if any(cs <= start < ce for cs, ce in consumed):
+            continue
+        years.add(int(match.group(0)))
+
+    return years
+
+
+def _extract_months(text: str) -> set[int]:
+    """Extract month numbers (1–12) from free text."""
+    return {
+        MONTH_NAME_TO_NUM[match.group(0).lower()]
+        for match in MONTH_NAME_PATTERN.finditer(str(text or ""))
+    }
+
+
+def _extract_quarters(text: str) -> set[int]:
+    """Extract quarter numbers (1–4) from free text."""
+    text = str(text or "")
+    quarters: set[int] = set()
+    for match in QUARTER_DIGIT_PATTERN.finditer(text):
+        quarters.add(int(match.group(1)))
+    for match in QUARTER_ORDINAL_PATTERN.finditer(text):
+        quarters.add(ORDINAL_TO_QUARTER[match.group(1).lower()])
+    for match in QUARTER_NUMBER_PATTERN.finditer(text):
+        if match.group(1):
+            quarters.add(int(match.group(1)))
+        else:
+            quarters.add(ORDINAL_TO_QUARTER[match.group(2).lower()])
+    return quarters
+
+
+def parse_temporal_tokens(text: str) -> dict:
+    """Parse all temporal constraints from query or document text."""
+    return {
+        "years": _extract_years(text),
+        "months": _extract_months(text),
+        "quarters": _extract_quarters(text),
+    }
+
+
+def has_temporal_constraint(text: str) -> bool:
+    """True if the text carries any year, month, or quarter token."""
+    tokens = parse_temporal_tokens(text)
+    return bool(tokens["years"] or tokens["months"] or tokens["quarters"])
+
+
+def _doc_temporal_tokens(doc: dict) -> dict:
+    """Extract temporal tokens from a doc's title, date, and URL metadata."""
+    parts = [
+        str(doc.get("title", "")),
+        str(doc.get("date", "")),
+        str(doc.get("url", "")),
+        str(doc.get("page_url", "")),
+    ]
+    return parse_temporal_tokens(" ".join(parts))
+
+
+def _doc_matches_query_temporal(query_tokens: dict, doc_tokens: dict) -> bool:
+    """Return True if a doc satisfies every non-empty temporal dimension of the query.
+
+    A query dimension only constrains the match if the query actually mentioned
+    it. A doc need not have a month if the query is year-only, etc.
+    """
+    if query_tokens["years"] and not (query_tokens["years"] & doc_tokens["years"]):
+        return False
+    if query_tokens["quarters"] and not (
+        query_tokens["quarters"] & doc_tokens["quarters"]
+    ):
+        return False
+    if query_tokens["months"] and not (query_tokens["months"] & doc_tokens["months"]):
+        return False
+    return True
+
+
+def _extract_doc_year(doc: dict) -> int | None:
+    """Best-effort publication year extraction from metadata."""
+    date_text = str(doc.get("date", "")).strip()
+    title_text = str(doc.get("title", "")).strip()
+    years = _extract_years(f"{date_text} {title_text}")
+    if not years:
+        return None
+    return max(years)
+
+
+def _doc_group_key(doc: dict) -> str:
+    """Stable grouping key for mild document diversification."""
+    page_url = str(doc.get("page_url", "")).strip()
+    if page_url:
+        return page_url.split("#", 1)[0].lower()
+    title = str(doc.get("title", "")).strip().lower()
+    date = str(doc.get("date", "")).strip().lower()
+    return f"{title}::{date}"
+
+
+def _build_reranker_passage(doc: dict) -> str:
+    """Build a structured passage for the cross-encoder reranker."""
+    title = str(doc.get("title", "")).strip()
+    date = str(doc.get("date", "")).strip()
+    page_number = str(doc.get("page_number", "")).strip()
+    page_content = str(doc.get("page_content", "")).strip()
+
+    parts = []
+    if title:
+        parts.append(f"Title: {title}")
+    if date:
+        parts.append(f"Date: {date}")
+    if page_number:
+        parts.append(f"Page: {page_number}")
+    if page_content:
+        parts.append(page_content)
+
+    return "\n".join(parts)
+
+
+def _apply_recency_bias(
+    results: list[dict], query: str, recency_bias_weight: float
+) -> list[dict]:
+    """
+    Add a mild recency preference for ambiguous yearless questions.
+
+    If the query already contains an explicit year, no bias is applied.
+    """
+    if not results:
+        return results
+
+    if recency_bias_weight <= 0 or _extract_years(query):
+        for result in results:
+            result["selection_score"] = float(result.get("reranker_score", 0.0))
+        return results
+
+    year_values = [year for year in (_extract_doc_year(doc) for doc in results) if year]
+    if not year_values:
+        for result in results:
+            result["selection_score"] = float(result.get("reranker_score", 0.0))
+        return results
+
+    min_year = min(year_values)
+    max_year = max(year_values)
+    year_span = max_year - min_year
+
+    for result in results:
+        base_score = float(result.get("reranker_score", 0.0))
+        doc_year = _extract_doc_year(result)
+        if doc_year is None or year_span == 0:
+            result["selection_score"] = base_score
+            continue
+        normalized_recency = (doc_year - min_year) / year_span
+        result["selection_score"] = base_score + (
+            normalized_recency * recency_bias_weight
+        )
+    return results
+
+
+def select_generation_contexts(
+    results: list[dict],
+    k_contexts: int,
+    *,
+    max_chunks_per_doc: int = 3,
+    per_doc_penalty: float = 0.2,
+) -> list[dict]:
+    """
+    Select generation contexts with mild document diversity.
+
+    This keeps strong evidence pages from the same report available to the LLM
+    while preventing a single document from flooding every context slot.
+    """
+    if k_contexts <= 0 or not results:
+        return []
+
+    remaining = list(results)
+    selected: list[dict] = []
+    counts_by_doc: defaultdict[str, int] = defaultdict(int)
+
+    while remaining and len(selected) < k_contexts:
+        best_index: int | None = None
+        best_score = float("-inf")
+
+        for idx, doc in enumerate(remaining):
+            doc_key = _doc_group_key(doc)
+            if counts_by_doc[doc_key] >= max_chunks_per_doc:
+                continue
+
+            base_score = float(
+                doc.get(
+                    "selection_score",
+                    doc.get("reranker_score", -float(doc.get("score", 0.0))),
+                )
+            )
+            adjusted_score = base_score - (per_doc_penalty * counts_by_doc[doc_key])
+            if adjusted_score > best_score:
+                best_score = adjusted_score
+                best_index = idx
+
+        if best_index is None:
+            break
+
+        chosen = remaining.pop(best_index)
+        counts_by_doc[_doc_group_key(chosen)] += 1
+        selected.append(chosen)
+
+    if not selected:
+        return results[:k_contexts]
+    return selected
+
+
+@lru_cache(maxsize=1)
+def _get_reranker(
+    model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+) -> CrossEncoder:
+    """Load the cross-encoder reranker once per process."""
+    return CrossEncoder(model_name)
 
 
 class Inquirer:
@@ -44,6 +351,11 @@ class Inquirer:
         document_threshold: float = 0.9,
         provider="openrouter",  # default
         reranker_model_name: str | None = None,
+        reranker_candidate_k: int | None = None,
+        temporal_candidate_k: int | None = None,
+        recency_bias_weight: float = 0.5,
+        max_chunks_per_doc: int = 3,
+        per_doc_penalty: float = 0.2,
         **_unused_search_config,
     ):
         """
@@ -72,10 +384,24 @@ class Inquirer:
         self.llm_temperature = llm_temperature
         self.llm_max_tokens = llm_max_tokens
         self.provider = provider
-        # Shared search config may include local-only settings such as a
-        # reranker model name. Accept and ignore them here so the cloud API
-        # can consume the same config block safely.
+        # Keep the cloud path compatible with the shared search config used by
+        # the local path, and align ranking behaviour where practical.
         self.reranker_model_name = reranker_model_name
+        self.reranker_candidate_k = max(
+            int(reranker_candidate_k or max(k_docs * 6, 24)),
+            int(k_docs),
+        )
+        # Temporal queries need a much larger candidate pool because dense
+        # retrieval can be flooded by larger neighbouring-year reports before
+        # a single matching chunk surfaces. Used only when the query carries
+        # an explicit year / quarter / month token.
+        self.temporal_candidate_k = max(
+            int(temporal_candidate_k or max(k_docs * 12, 96)),
+            int(self.reranker_candidate_k),
+        )
+        self.recency_bias_weight = float(recency_bias_weight)
+        self.max_chunks_per_doc = max(int(max_chunks_per_doc), 1)
+        self.per_doc_penalty = float(per_doc_penalty)
 
         # Load variables from .env
         load_dotenv()
@@ -213,7 +539,11 @@ class Inquirer:
         return re.sub(r"<[^>]+>", "", text)
 
     def similarity_search(
-        self, query: str, latest_filter: bool = True, return_dicts: bool = True
+        self,
+        query: str,
+        latest_filter: bool = True,
+        return_dicts: bool = True,
+        candidate_k: int | None = None,
     ) -> list[dict]:
         """
         Returns k document chunks with the highest relevance to the
@@ -228,13 +558,15 @@ class Inquirer:
             List[dict]: List of top k article chunks by relevance
         """
         self.logger.info("Retrieving most relevant text chunks")
+        if candidate_k is None:
+            candidate_k = getattr(self, "reranker_candidate_k", self.k_docs)
         if latest_filter:
             top_matches = self.db_latest.similarity_search_with_score(
-                query=query, k=self.k_docs
+                query=query, k=candidate_k
             )
         else:
             top_matches = self.db.similarity_search_with_score(
-                query=query, k=self.k_docs
+                query=query, k=candidate_k
             )
 
         # filter to document matches with similarity scores less than...
@@ -247,6 +579,37 @@ class Inquirer:
                 for doc in top_matches
             ]
         return top_matches
+
+    def _rerank_results(
+        self, query: str, docs: list[dict], latest_weight: float = 0.0
+    ) -> list[dict]:
+        """Rerank FAISS candidates with a cross-encoder and year-aware recency bias."""
+        if not docs:
+            return docs
+
+        reranker_model_name = getattr(self, "reranker_model_name", None)
+        if reranker_model_name:
+            reranker = _get_reranker(reranker_model_name)
+            pairs = [(query, _build_reranker_passage(doc)) for doc in docs]
+            ce_scores = reranker.predict(pairs)
+            for doc, ce_score in zip(docs, ce_scores):
+                doc["reranker_score"] = float(ce_score)
+        else:
+            for doc in docs:
+                doc["reranker_score"] = -float(doc.get("score", 0.0))
+
+        effective_bias = getattr(self, "recency_bias_weight", 0.5) * max(
+            float(latest_weight), 0.0
+        )
+        docs = _apply_recency_bias(docs, query, effective_bias)
+        docs.sort(
+            key=lambda doc: float(
+                doc.get("selection_score", doc.get("reranker_score", 0.0))
+            ),
+            reverse=True,
+        )
+        self.logger.info(f"Reranked {len(docs)} results with cross-encoder")
+        return docs
 
     def query_texts(self, query: str, docs: list[dict]) -> LlmResponse:
         """
@@ -270,6 +633,13 @@ class Inquirer:
                 highlighting3=[],
             )
 
+        selected_docs = select_generation_contexts(
+            docs,
+            self.k_contexts,
+            max_chunks_per_doc=getattr(self, "max_chunks_per_doc", 3),
+            per_doc_penalty=getattr(self, "per_doc_penalty", 0.2),
+        )
+
         # reshape Document object structure
         top_matches = [
             Document(
@@ -280,8 +650,7 @@ class Inquirer:
                     "title": text["title"],
                 },
             )
-            for i, text in enumerate(docs[: self.k_contexts])
-            if text["score"] <= 1.5 * docs[0]["score"]
+            for i, text in enumerate(selected_docs)
         ]
         self.logger.info(f"Passing top {len(top_matches)} results for QA")
 
@@ -354,8 +723,26 @@ class Inquirer:
             LlmResponse: Generated response to query (pydantic model)
         """
         self.logger.info(f"Search query: {question}")
+
+        # Detect explicit temporal constraints in the query. When present, we
+        # widen the candidate pool and prefer to rerank only the subset of
+        # docs whose metadata actually matches that period — this is the
+        # cleanest way to stop dense retrieval from being seduced by larger
+        # neighbouring-year reports.
+        query_temporal = parse_temporal_tokens(question)
+        is_temporal_query = bool(
+            query_temporal["years"]
+            or query_temporal["months"]
+            or query_temporal["quarters"]
+        )
+        candidate_k = (
+            getattr(self, "temporal_candidate_k", None) if is_temporal_query else None
+        )
+
         docs1 = self.similarity_search(
-            question, latest_filter=self._latest_filter_enabled(latest_filter)
+            question,
+            latest_filter=self._latest_filter_enabled(latest_filter),
+            candidate_k=candidate_k,
         )
 
         if len(docs1) == 0:
@@ -368,28 +755,44 @@ class Inquirer:
             return docs1, "", empty_response
         docs = self._dedupe_exact_chunks(docs1)
 
-        if latest_weight > 0:
-            for doc in docs:
-                # Multiply by decay term to penalise older documents.
-                # Original score is L2 distance; lower is better.
-                # Older docs get a larger decay (>1), inflating their
-                # distance so they rank lower (less relevant).
-                # https://python.langchain.com/docs/integrations/vectorstores/faiss
-                doc["score"] = doc["score"] * time_decay(
-                    doc["date"], latest=latest_weight
+        if is_temporal_query:
+            temporal_subset = [
+                doc
+                for doc in docs
+                if _doc_matches_query_temporal(
+                    query_temporal, _doc_temporal_tokens(doc)
                 )
-            docs.sort(key=lambda doc: doc["score"])
-            self.logger.info(
-                "Weighted and reordered docs to latest with "
-                + f"decay = {latest_weight}"
-            )
+            ]
+            if temporal_subset:
+                self.logger.info(
+                    f"Temporal pre-filter: reranking {len(temporal_subset)} of "
+                    f"{len(docs)} candidates that match query temporal tokens "
+                    f"{query_temporal}"
+                )
+                docs = temporal_subset
+            else:
+                self.logger.info(
+                    f"Temporal pre-filter: no candidates matched {query_temporal}; "
+                    "falling back to full pool"
+                )
+
+        docs = self._rerank_results(question, docs, latest_weight=latest_weight)
+        docs = docs[: getattr(self, "k_docs", len(docs))]
 
         for doc in docs:
             doc["score"] = round(doc["score"], 2)
+            if "reranker_score" in doc:
+                doc["reranker_score"] = round(float(doc["reranker_score"]), 4)
+            if "selection_score" in doc:
+                doc["selection_score"] = round(float(doc["selection_score"]), 4)
+
+        best_distance = (
+            min(float(doc["score"]) for doc in docs) if docs else float("inf")
+        )
 
         self.logger.info(
             f"Received {len(docs)} references"
-            + f" with top distance {docs[0]['score'] if docs else 'Inf'}"
+            + f" with top distance {best_distance if docs else 'Inf'}"
         )
 
         validated_response = self.query_texts(question, docs)
@@ -424,7 +827,7 @@ class Inquirer:
 
             answer_str = most_likely or highlighted
 
-        if docs[0]["score"] > self.answer_threshold:
+        if best_distance > self.answer_threshold:
             answer_str = (
                 "No suitable answer found."
                 + "However relevant information may be found in a PDF."
@@ -434,7 +837,7 @@ class Inquirer:
         else:
             answer_str = answer_str
 
-        if docs[0]["score"] > self.document_threshold:
+        if best_distance > self.document_threshold:
             document_string = "No suitable PDFs found. Please refer to context"
 
             context_string = "No context available. Please refer to response"

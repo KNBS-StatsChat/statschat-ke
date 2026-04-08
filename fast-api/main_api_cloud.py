@@ -10,7 +10,7 @@ from datetime import datetime
 from markupsafe import escape
 
 from statschat import load_config
-from statschat.generative.cloud_llm import Inquirer
+from statschat.generative.cloud_llm import Inquirer, has_temporal_constraint
 from statschat.embedding.latest_flag_helpers import get_latest_flag
 
 # %%
@@ -105,9 +105,22 @@ async def search(
         content_type = "latest"
     latest_weight = get_latest_flag({"q": question}, CONFIG["app"]["latest_max"])
 
+    # Safeguard: when the question carries an explicit year/month/quarter,
+    # force a search across the full corpus regardless of the requested
+    # content_type. The latest-only FAISS store excludes historical reports
+    # and would silently drop the ground-truth document for date-specific
+    # queries.
+    effective_latest_filter = content_type == "latest"
+    if effective_latest_filter and has_temporal_constraint(question):
+        logger.info(
+            "Detected explicit temporal tokens in query; overriding "
+            "latest_filter to False so historical reports remain searchable."
+        )
+        effective_latest_filter = False
+
     docs, answer, response = inquirer.make_query(
         question,
-        latest_filter=content_type == "latest",
+        latest_filter=effective_latest_filter,
         latest_weight=latest_weight,
     )
     results = {

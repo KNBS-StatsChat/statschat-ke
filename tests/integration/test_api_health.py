@@ -149,6 +149,7 @@ def _load_main_api_cloud():
     sys.modules.pop("statschat.generative.cloud_llm", None)
     cloud_llm_stub = ModuleType("statschat.generative.cloud_llm")
     cloud_llm_stub.Inquirer = DummyInquirer
+    cloud_llm_stub.has_temporal_constraint = lambda question: False
     sys.modules["statschat.generative.cloud_llm"] = cloud_llm_stub
 
     spec = importlib.util.spec_from_file_location(module_name, api_path)

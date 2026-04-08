@@ -25,6 +25,16 @@ Most importantly, even if no answer is provided, find one to three short phrases
 or keywords in each context that are most relevant to the question, and return them
 separately as exact quotes (using the exact verbatim text and punctuation). If a date
 is in the question try and find a publication with a similar date.
+If the question does not mention a specific year, prefer the most recent publication.
+If multiple numbers appear in the contexts, choose the one whose unit and metric
+most directly match what the question asks for (e.g. hectares for area, tonnes for
+production weight, percentages for rates). Do not substitute a different metric or
+unit when the directly matching one is available.
+Do not extract a number that appears only inside a comparison phrase such as
+"compared to X% in the corresponding quarter of the previous year" or
+"up from Y% in 2023". Use only headline figures that directly state the value
+for the period the question asks about, and prefer evidence taken from a
+report whose title contains that period.
 Explain your reasoning.
 
 Please show where the context is from also and provide exact text passage
