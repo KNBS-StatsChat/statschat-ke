@@ -312,6 +312,33 @@ def test_extract_reference_details_combines_base_url_and_page_fragment():
     assert reference_urls == ["https://example.com/doc1.pdf#page=2"]
 
 
+def test_extract_reference_details_prefers_full_page_url_over_base_url():
+    module = _load_evaluate_accuracy()
+
+    payload = {
+        "references": [
+            {
+                "url": "https://example.com/doc1.pdf",
+                "page_url": "https://example.com/doc1.pdf#page=7",
+            }
+        ]
+    }
+
+    (
+        reference_url,
+        reference_doc_id,
+        reference_page,
+        reference_count,
+        reference_urls,
+    ) = module.extract_reference_details(payload)
+
+    assert reference_url == "https://example.com/doc1.pdf#page=7"
+    assert reference_doc_id == "doc1"
+    assert reference_page == 7
+    assert reference_count == 1
+    assert reference_urls == ["https://example.com/doc1.pdf#page=7"]
+
+
 def test_evaluate_cloud_requests_debug_and_populates_context(monkeypatch):
     module = _load_evaluate_accuracy()
 

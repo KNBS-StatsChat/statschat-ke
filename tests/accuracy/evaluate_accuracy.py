@@ -444,8 +444,10 @@ def extract_reference_details(
                 base_url = str(item.get("url") or "").strip()
                 if page_url.startswith("#page=") and base_url:
                     candidate = f"{base_url}{page_url}"
+                elif page_url:
+                    candidate = page_url
                 else:
-                    candidate = str(base_url or page_url).strip()
+                    candidate = base_url
                 if candidate:
                     reference_urls.append(candidate)
             elif isinstance(item, str) and item.strip():
