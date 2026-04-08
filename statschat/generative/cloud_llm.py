@@ -317,11 +317,59 @@ def _extract_doc_year(doc: dict) -> int | None:
     return max(years)
 
 
+def _normalize_page_url(
+    page_url: str | None, base_url: str | None, page_number: object | None
+) -> str:
+    """Return a fully qualified page URL when enough metadata is available."""
+    page_url_str = str(page_url or "").strip()
+    base_url_str = str(base_url or "").strip()
+
+    if page_url_str and not page_url_str.startswith("#page="):
+        return page_url_str
+
+    if page_url_str.startswith("#page=") and base_url_str:
+        return f"{base_url_str}{page_url_str}"
+
+    if base_url_str and page_number not in (None, ""):
+        return f"{base_url_str}#page={page_number}"
+
+    return page_url_str
+
+
+def _extract_page_number(doc: dict) -> int | None:
+    """Best-effort page-number extraction from metadata or page URL."""
+    raw_page_number = doc.get("page_number")
+    if raw_page_number not in (None, ""):
+        try:
+            return int(str(raw_page_number).strip())
+        except (TypeError, ValueError):
+            pass
+
+    page_url = _normalize_page_url(
+        doc.get("page_url"), doc.get("url"), doc.get("page_number")
+    )
+    match = re.search(r"#page=(\d+)\b", page_url)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _base_document_url(doc: dict) -> str:
+    """Return the normalized document-level URL without any page fragment."""
+    url = str(doc.get("url", "")).strip()
+    if url:
+        return url
+    page_url = _normalize_page_url(
+        doc.get("page_url"), doc.get("url"), doc.get("page_number")
+    )
+    return page_url.split("#", 1)[0].strip()
+
+
 def _doc_group_key(doc: dict) -> str:
     """Stable grouping key for mild document diversification."""
-    page_url = str(doc.get("page_url", "")).strip()
-    if page_url:
-        return page_url.split("#", 1)[0].lower()
+    base_url = _base_document_url(doc)
+    if base_url:
+        return base_url.lower()
     title = str(doc.get("title", "")).strip().lower()
     date = str(doc.get("date", "")).strip().lower()
     return f"{title}::{date}"
@@ -474,6 +522,9 @@ class Inquirer:
         recency_bias_weight: float = 0.5,
         max_chunks_per_doc: int = 3,
         per_doc_penalty: float = 0.2,
+        page_expansion_doc_limit: int = 3,
+        page_expansion_seed_pages_per_doc: int = 2,
+        page_expansion_window: int = 1,
         **_unused_search_config,
     ):
         """
@@ -520,6 +571,11 @@ class Inquirer:
         self.recency_bias_weight = float(recency_bias_weight)
         self.max_chunks_per_doc = max(int(max_chunks_per_doc), 1)
         self.per_doc_penalty = float(per_doc_penalty)
+        self.page_expansion_doc_limit = max(int(page_expansion_doc_limit), 0)
+        self.page_expansion_seed_pages_per_doc = max(
+            int(page_expansion_seed_pages_per_doc), 0
+        )
+        self.page_expansion_window = max(int(page_expansion_window), 0)
 
         # Load variables from .env
         load_dotenv()
@@ -626,7 +682,24 @@ class Inquirer:
     @staticmethod
     def flatten_meta(d):
         """Utility, raise metadata within nested dicts."""
-        return d | d.pop("metadata")
+        flattened = d | d.pop("metadata")
+        flattened["page_url"] = _normalize_page_url(
+            flattened.get("page_url"),
+            flattened.get("url"),
+            flattened.get("page_number"),
+        )
+        return flattened
+
+    @staticmethod
+    def _stored_document_to_record(doc) -> dict:
+        """Convert a stored LangChain document into the dict shape used downstream."""
+        if hasattr(doc, "model_dump"):
+            payload = doc.model_dump()
+        elif hasattr(doc, "dict"):
+            payload = doc.dict()
+        else:
+            raise TypeError(f"Unsupported stored document type: {type(doc)!r}")
+        return Inquirer.flatten_meta(payload)
 
     @staticmethod
     def _dedupe_exact_chunks(records: list[dict]) -> list[dict]:
@@ -655,6 +728,163 @@ class Inquirer:
     def _strip_html(text: str) -> str:
         """Remove simple HTML markup from text for safe display."""
         return re.sub(r"<[^>]+>", "", text)
+
+    def _get_docstore_page_index(
+        self, latest_filter_enabled: bool
+    ) -> dict[str, dict[int, list[str]]]:
+        """
+        Lazily index FAISS docstore entries by document URL and page number.
+
+        This supports a lightweight page-aware second pass without changing the
+        global retriever: once a report family is retrieved, we can cheaply pull
+        neighboring pages from the same source document.
+        """
+        cache = getattr(self, "_docstore_page_index_cache", {})
+        cache_key = "latest" if latest_filter_enabled else "all"
+        if cache_key in cache:
+            return cache[cache_key]
+
+        db = self.db_latest if latest_filter_enabled else self.db
+        docstore_dict = getattr(getattr(db, "docstore", None), "_dict", None)
+        if not isinstance(docstore_dict, dict):
+            cache[cache_key] = {}
+            self._docstore_page_index_cache = cache
+            return {}
+
+        index: defaultdict[str, defaultdict[int, list[str]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        for doc_id, stored_doc in docstore_dict.items():
+            metadata = getattr(stored_doc, "metadata", None)
+            if metadata:
+                record = {
+                    "url": metadata.get("url"),
+                    "page_url": metadata.get("page_url"),
+                    "page_number": metadata.get("page_number"),
+                }
+            else:
+                try:
+                    record = self._stored_document_to_record(stored_doc)
+                except TypeError:
+                    continue
+            base_url = _base_document_url(record).lower()
+            page_number = _extract_page_number(record)
+            if not base_url or page_number is None:
+                continue
+            index[base_url][page_number].append(doc_id)
+
+        cache[cache_key] = {
+            base_url: dict(page_map) for base_url, page_map in index.items()
+        }
+        self._docstore_page_index_cache = cache
+        return cache[cache_key]
+
+    def _expand_doc_local_candidates(
+        self, docs: list[dict], latest_filter_enabled: bool
+    ) -> list[dict]:
+        """
+        Pull neighboring pages from the top matched documents before final truncation.
+
+        This is intentionally document-local: it preserves the current family/year
+        routing, then improves page recall inside the already matched report family.
+        """
+        if not docs:
+            return docs
+
+        doc_limit = max(int(getattr(self, "page_expansion_doc_limit", 3)), 0)
+        seed_pages_per_doc = max(
+            int(getattr(self, "page_expansion_seed_pages_per_doc", 2)), 0
+        )
+        page_window = max(int(getattr(self, "page_expansion_window", 1)), 0)
+
+        if doc_limit == 0 or seed_pages_per_doc == 0:
+            return docs
+
+        db = (
+            getattr(self, "db_latest", None)
+            if latest_filter_enabled
+            else getattr(self, "db", None)
+        )
+        docstore_dict = getattr(getattr(db, "docstore", None), "_dict", None)
+        if not isinstance(docstore_dict, dict):
+            return docs
+
+        page_index = self._get_docstore_page_index(latest_filter_enabled)
+        if not page_index:
+            return docs
+
+        seed_pages_by_doc: dict[str, list[int]] = {}
+        for doc in docs:
+            base_url = _base_document_url(doc).lower()
+            page_number = _extract_page_number(doc)
+            if not base_url or page_number is None:
+                continue
+
+            if base_url not in seed_pages_by_doc:
+                if len(seed_pages_by_doc) >= doc_limit:
+                    continue
+                seed_pages_by_doc[base_url] = []
+
+            if page_number not in seed_pages_by_doc[base_url]:
+                seed_pages_by_doc[base_url].append(page_number)
+
+        if not seed_pages_by_doc:
+            return docs
+
+        base_scores_by_doc: dict[str, float] = {}
+        for doc in docs:
+            base_url = _base_document_url(doc).lower()
+            if not base_url:
+                continue
+            doc_score = float(doc.get("score", float("inf")))
+            current_best = base_scores_by_doc.get(base_url, float("inf"))
+            base_scores_by_doc[base_url] = min(current_best, doc_score)
+
+        expanded_docs = list(docs)
+        seen = {
+            (
+                str(doc.get("page_url", "")).strip(),
+                str(doc.get("page_content", "")).strip(),
+            )
+            for doc in docs
+        }
+        added = 0
+
+        for base_url, seed_pages in seed_pages_by_doc.items():
+            candidate_pages: set[int] = set()
+            for page_number in seed_pages[:seed_pages_per_doc]:
+                for candidate_page in range(
+                    max(1, page_number - page_window), page_number + page_window + 1
+                ):
+                    candidate_pages.add(candidate_page)
+
+            for candidate_page in sorted(candidate_pages):
+                for doc_id in page_index.get(base_url, {}).get(candidate_page, []):
+                    stored_doc = docstore_dict.get(doc_id)
+                    if stored_doc is None:
+                        continue
+                    record = self._stored_document_to_record(stored_doc)
+                    signature = (
+                        str(record.get("page_url", "")).strip(),
+                        str(record.get("page_content", "")).strip(),
+                    )
+                    if signature in seen:
+                        continue
+                    record["score"] = float(
+                        base_scores_by_doc.get(base_url, float("inf"))
+                    )
+                    seen.add(signature)
+                    expanded_docs.append(record)
+                    added += 1
+
+        if added:
+            self.logger.info(
+                "Doc-local page expansion: added %s neighboring chunks across %s docs",
+                added,
+                len(seed_pages_by_doc),
+            )
+
+        return expanded_docs
 
     def similarity_search(
         self,
@@ -841,6 +1071,7 @@ class Inquirer:
             LlmResponse: Generated response to query (pydantic model)
         """
         self.logger.info(f"Search query: {question}")
+        latest_filter_enabled = self._latest_filter_enabled(latest_filter)
 
         query_temporal = parse_temporal_tokens(question)
         query_families = infer_query_report_families(question)
@@ -860,7 +1091,7 @@ class Inquirer:
 
         docs1 = self.similarity_search(
             question,
-            latest_filter=self._latest_filter_enabled(latest_filter),
+            latest_filter=latest_filter_enabled,
             candidate_k=candidate_k,
         )
 
@@ -929,6 +1160,13 @@ class Inquirer:
                 docs = lagged_subset
 
         docs = self._rerank_results(question, docs, latest_weight=latest_weight)
+        expanded_docs = self._expand_doc_local_candidates(docs, latest_filter_enabled)
+        if len(expanded_docs) > len(docs):
+            docs = self._rerank_results(
+                question, expanded_docs, latest_weight=latest_weight
+            )
+        else:
+            docs = expanded_docs
         docs = docs[: getattr(self, "k_docs", len(docs))]
 
         for doc in docs:

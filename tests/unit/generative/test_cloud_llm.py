@@ -37,6 +37,23 @@ def test_flatten_meta_merges_and_removes_metadata():
     assert "metadata" not in out
 
 
+def test_flatten_meta_normalizes_fragment_page_url():
+    payload = {
+        "page_content": "content",
+        "metadata": {
+            "title": "T",
+            "date": "2024-01-01",
+            "url": "https://example.com/test.pdf",
+            "page_number": 7,
+            "page_url": "#page=7",
+        },
+    }
+
+    out = Inquirer.flatten_meta(payload)
+
+    assert out["page_url"] == "https://example.com/test.pdf#page=7"
+
+
 def test_similarity_search_filters_and_flattens():
     # Create a bare instance without running __init__ (avoid heavy deps)
     inq = Inquirer.__new__(Inquirer)
@@ -496,6 +513,69 @@ def test_query_texts_uses_diversified_context_selection(monkeypatch):
     assert captured["titles"] == ["Report A", "Report B"]
 
 
+def test_query_texts_diversifies_fragment_page_urls_using_base_url(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.k_contexts = 2
+    inq.max_chunks_per_doc = 1
+    inq.per_doc_penalty = 0.2
+    inq.extractive_prompt = "p"
+    inq.stuff_document_prompt = "d"
+    inq.llm = None
+    inq.verbose = False
+    inq.logger = MagicMock()
+
+    docs = [
+        {
+            "page_content": "report A page 1",
+            "date": "01 January 2024",
+            "title": "Report A",
+            "url": "https://example.com/a.pdf",
+            "score": 0.1,
+            "selection_score": 0.95,
+            "page_url": "#page=1",
+        },
+        {
+            "page_content": "report A page 2",
+            "date": "01 January 2024",
+            "title": "Report A",
+            "url": "https://example.com/a.pdf",
+            "score": 0.11,
+            "selection_score": 0.94,
+            "page_url": "#page=2",
+        },
+        {
+            "page_content": "report B page 1",
+            "date": "01 January 2023",
+            "title": "Report B",
+            "url": "https://example.com/b.pdf",
+            "score": 0.12,
+            "selection_score": 0.93,
+            "page_url": "#page=1",
+        },
+    ]
+
+    captured: dict[str, object] = {}
+    fake_response_text = '{"answer_provided": true, "most_likely_answer": "ANS", "highlighting1": [], "highlighting2": [], "highlighting3": [], "reasoning": "r"}'
+
+    def fake_invoke(payload, return_only_outputs=True):
+        captured["titles"] = [
+            doc.metadata["title"] for doc in payload["input_documents"]
+        ]
+        return {"output_text": fake_response_text}
+
+    fake_chain = SimpleNamespace(invoke=fake_invoke)
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.load_qa_with_sources_chain",
+        lambda *a, **k: fake_chain,
+    )
+
+    parsed = inq.query_texts("why", docs)
+
+    assert isinstance(parsed, LlmResponse)
+    assert captured["titles"] == ["Report A", "Report B"]
+
+
 def test_apply_recency_bias_skips_explicit_year_queries():
     docs = [
         {"title": "Older", "date": "01 January 2021", "reranker_score": 0.5},
@@ -819,6 +899,366 @@ def test_make_query_family_pre_filter_prefers_lagged_annual_report(monkeypatch):
 
     assert captured_candidate_k["value"] == 96
     assert captured_titles["titles"] == ["2025 Economic Survey"]
+
+
+def test_make_query_doc_local_page_expansion_promotes_neighbor_page(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+    inq.k_docs = 2
+    inq.k_contexts = 2
+    inq.reranker_model_name = "dummy-reranker"
+    inq.recency_bias_weight = 0.0
+    inq.reranker_candidate_k = 24
+    inq.temporal_candidate_k = 24
+    inq.page_expansion_doc_limit = 2
+    inq.page_expansion_seed_pages_per_doc = 2
+    inq.page_expansion_window = 1
+
+    base_url = "https://example.com/housing.pdf"
+
+    def fake_similarity(q, latest_filter=True, return_dicts=True, candidate_k=None):
+        return [
+            {
+                "page_content": "housing chart overview",
+                "date": "01 September 2024",
+                "title": "2023-24 Kenya Housing Survey Basic Report",
+                "score": 0.10,
+                "page_number": 73,
+                "page_url": f"{base_url}#page=73",
+                "url": base_url,
+            },
+            {
+                "page_content": "housing chart summary",
+                "date": "01 September 2024",
+                "title": "2023-24 Kenya Housing Survey Basic Report",
+                "score": 0.12,
+                "page_number": 75,
+                "page_url": f"{base_url}#page=75",
+                "url": base_url,
+            },
+            {
+                "page_content": "other report content",
+                "date": "01 January 2024",
+                "title": "Other Report",
+                "score": 0.20,
+                "page_number": 1,
+                "page_url": "https://example.com/other.pdf#page=1",
+                "url": "https://example.com/other.pdf",
+            },
+        ]
+
+    inq.similarity_search = fake_similarity
+
+    captured: dict[str, object] = {}
+
+    def fake_query_texts(question, docs):
+        captured["page_urls"] = [doc["page_url"] for doc in docs]
+        return LlmResponse(
+            answer_provided=True,
+            most_likely_answer="Bungalow",
+            highlighting1=[],
+            highlighting2=[],
+            highlighting3=[],
+            reasoning=None,
+        )
+
+    inq.query_texts = fake_query_texts
+    inq.db = SimpleNamespace(
+        docstore=SimpleNamespace(
+            _dict={
+                "p73": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "housing chart overview",
+                        "metadata": {
+                            "date": "01 September 2024",
+                            "title": "2023-24 Kenya Housing Survey Basic Report",
+                            "page_number": 73,
+                            "page_url": "#page=73",
+                            "url": base_url,
+                        },
+                    }
+                ),
+                "p74": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "exact dwelling unit answer evidence",
+                        "metadata": {
+                            "date": "01 September 2024",
+                            "title": "2023-24 Kenya Housing Survey Basic Report",
+                            "page_number": 74,
+                            "page_url": "#page=74",
+                            "url": base_url,
+                        },
+                    }
+                ),
+                "p75": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "housing chart summary",
+                        "metadata": {
+                            "date": "01 September 2024",
+                            "title": "2023-24 Kenya Housing Survey Basic Report",
+                            "page_number": 75,
+                            "page_url": "#page=75",
+                            "url": base_url,
+                        },
+                    }
+                ),
+            }
+        )
+    )
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm._get_reranker",
+        lambda model_name: SimpleNamespace(
+            predict=lambda pairs: [
+                (
+                    0.75
+                    if "exact dwelling unit answer evidence" in passage
+                    else (
+                        0.65
+                        if "housing chart overview" in passage
+                        else 0.60 if "housing chart summary" in passage else 0.10
+                    )
+                )
+                for _, passage in pairs
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    docs_out, _, _ = inq.make_query(
+        "What evidence is most relevant in the 2024 report?",
+        latest_filter=False,
+        highlighting=True,
+        latest_weight=0,
+    )
+
+    assert any(page_url.endswith("#page=74") for page_url in captured["page_urls"])
+    assert any(doc["page_url"].endswith("#page=74") for doc in docs_out)
+
+
+def test_make_query_doc_local_page_expansion_preserves_top_k_membership(
+    monkeypatch,
+):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+    inq.k_docs = 2
+    inq.k_contexts = 2
+    inq.reranker_model_name = "dummy-reranker"
+    inq.recency_bias_weight = 0.0
+    inq.reranker_candidate_k = 24
+    inq.temporal_candidate_k = 24
+    inq.page_expansion_doc_limit = 2
+    inq.page_expansion_seed_pages_per_doc = 2
+    inq.page_expansion_window = 1
+
+    base_url = "https://example.com/housing.pdf"
+    other_url = "https://example.com/other.pdf"
+
+    def fake_similarity(q, latest_filter=True, return_dicts=True, candidate_k=None):
+        return [
+            {
+                "page_content": "housing chart overview",
+                "date": "01 September 2024",
+                "title": "2023-24 Kenya Housing Survey Basic Report",
+                "score": 0.10,
+                "page_number": 73,
+                "page_url": f"{base_url}#page=73",
+                "url": base_url,
+            },
+            {
+                "page_content": "other report gold evidence",
+                "date": "01 January 2024",
+                "title": "Other Report",
+                "score": 0.11,
+                "page_number": 1,
+                "page_url": f"{other_url}#page=1",
+                "url": other_url,
+            },
+            {
+                "page_content": "housing chart summary",
+                "date": "01 September 2024",
+                "title": "2023-24 Kenya Housing Survey Basic Report",
+                "score": 0.20,
+                "page_number": 75,
+                "page_url": f"{base_url}#page=75",
+                "url": base_url,
+            },
+        ]
+
+    inq.similarity_search = fake_similarity
+
+    captured: dict[str, object] = {}
+
+    def fake_query_texts(question, docs):
+        captured["page_urls"] = [doc["page_url"] for doc in docs]
+        return LlmResponse(
+            answer_provided=True,
+            most_likely_answer="Some answer",
+            highlighting1=[],
+            highlighting2=[],
+            highlighting3=[],
+            reasoning=None,
+        )
+
+    inq.query_texts = fake_query_texts
+    inq.db = SimpleNamespace(
+        docstore=SimpleNamespace(
+            _dict={
+                "p73": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "housing chart overview",
+                        "metadata": {
+                            "date": "01 September 2024",
+                            "title": "2023-24 Kenya Housing Survey Basic Report",
+                            "page_number": 73,
+                            "page_url": "#page=73",
+                            "url": base_url,
+                        },
+                    }
+                ),
+                "p74": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "neighbor page but weaker evidence",
+                        "metadata": {
+                            "date": "01 September 2024",
+                            "title": "2023-24 Kenya Housing Survey Basic Report",
+                            "page_number": 74,
+                            "page_url": "#page=74",
+                            "url": base_url,
+                        },
+                    }
+                ),
+                "p75": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "housing chart summary",
+                        "metadata": {
+                            "date": "01 September 2024",
+                            "title": "2023-24 Kenya Housing Survey Basic Report",
+                            "page_number": 75,
+                            "page_url": "#page=75",
+                            "url": base_url,
+                        },
+                    }
+                ),
+            }
+        )
+    )
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm._get_reranker",
+        lambda model_name: SimpleNamespace(
+            predict=lambda pairs: [
+                (
+                    0.90
+                    if "housing chart overview" in passage
+                    else (
+                        0.80
+                        if "other report gold evidence" in passage
+                        else 0.60 if "housing chart summary" in passage else 0.50
+                    )
+                )
+                for _, passage in pairs
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    docs_out, _, _ = inq.make_query(
+        "What evidence is most relevant in the 2024 report?",
+        latest_filter=False,
+        highlighting=True,
+        latest_weight=0,
+    )
+
+    returned_urls = {doc["url"] for doc in docs_out}
+    assert other_url in returned_urls
+    assert base_url in returned_urls
+    assert any(page_url.endswith("#page=1") for page_url in captured["page_urls"])
+
+
+def test_make_query_doc_local_page_expansion_noops_with_empty_page_index(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+    inq.k_docs = 2
+    inq.k_contexts = 2
+    inq.reranker_model_name = "dummy-reranker"
+    inq.recency_bias_weight = 0.0
+    inq.reranker_candidate_k = 24
+    inq.temporal_candidate_k = 24
+    inq.page_expansion_doc_limit = 2
+    inq.page_expansion_seed_pages_per_doc = 2
+    inq.page_expansion_window = 1
+
+    def fake_similarity(q, latest_filter=True, return_dicts=True, candidate_k=None):
+        return [
+            {
+                "page_content": "best evidence",
+                "date": "01 January 2024",
+                "title": "Best Report",
+                "score": 0.10,
+                "page_number": 1,
+                "page_url": "https://example.com/best.pdf#page=1",
+                "url": "https://example.com/best.pdf",
+            },
+            {
+                "page_content": "second evidence",
+                "date": "01 January 2024",
+                "title": "Second Report",
+                "score": 0.11,
+                "page_number": 1,
+                "page_url": "https://example.com/second.pdf#page=1",
+                "url": "https://example.com/second.pdf",
+            },
+        ]
+
+    inq.similarity_search = fake_similarity
+
+    captured: dict[str, object] = {}
+
+    def fake_query_texts(question, docs):
+        captured["titles"] = [doc["title"] for doc in docs]
+        return LlmResponse(
+            answer_provided=True,
+            most_likely_answer="Some answer",
+            highlighting1=[],
+            highlighting2=[],
+            highlighting3=[],
+            reasoning=None,
+        )
+
+    inq.query_texts = fake_query_texts
+    inq.db = SimpleNamespace(docstore=SimpleNamespace(_dict={}))
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm._get_reranker",
+        lambda model_name: SimpleNamespace(predict=lambda pairs: [0.9, 0.8]),
+    )
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    docs_out, _, _ = inq.make_query(
+        "What was the poverty rate in Kenya as of 2024?",
+        latest_filter=False,
+        highlighting=True,
+        latest_weight=0,
+    )
+
+    assert [doc["title"] for doc in docs_out] == ["Best Report", "Second Report"]
+    assert captured["titles"] == ["Best Report", "Second Report"]
 
 
 def test_make_query_temporal_pre_filter_falls_back_to_full_pool(monkeypatch):
