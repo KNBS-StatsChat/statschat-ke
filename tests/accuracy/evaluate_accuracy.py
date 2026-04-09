@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 from urllib.parse import urlparse
 
 import pandas as pd
@@ -119,6 +119,29 @@ class EvaluationResult:
     context_from: Optional[str] = None
     context_reference: Optional[str] = None
     relevant_publications: Optional[str] = None
+    scoring_method: Optional[str] = None
+    pipeline_doc_hit_at_1: Optional[bool] = None
+    pipeline_doc_hit_at_k: Optional[bool] = None
+    pipeline_precision_at_k: Optional[float] = None
+    pipeline_recall_at_k: Optional[float] = None
+    pipeline_mrr: Optional[float] = None
+    pipeline_ndcg: Optional[float] = None
+    pipeline_page_precision_at_k: Optional[float] = None
+    pipeline_page_recall_at_k: Optional[float] = None
+    pipeline_page_mrr: Optional[float] = None
+    pipeline_page_ndcg: Optional[float] = None
+
+
+FAISS_PROXY_RENAME_MAP = {
+    "doc_hit_at_1": "faiss_proxy_doc_hit_at_1",
+    "doc_hit_at_k": "faiss_proxy_doc_hit_at_k",
+    "precision_at_k": "faiss_proxy_precision_at_k",
+    "recall_at_k": "faiss_proxy_recall_at_k",
+    "mrr": "faiss_proxy_mrr",
+    "ndcg": "faiss_proxy_ndcg",
+    "retrieval_metric_source": "faiss_proxy_metric_source",
+    "retrieved_doc_ids": "faiss_proxy_retrieved_doc_ids",
+}
 
 
 @dataclass
@@ -408,6 +431,34 @@ def parse_evidence_pages(
     return pages_by_doc
 
 
+def make_page_key(doc_id: str, page: int) -> str:
+    return f"{normalize_doc_id(doc_id)}:p.{page}"
+
+
+def parse_predicted_evidence_pairs(value: object) -> list[tuple[str, int]]:
+    if is_blank(value):
+        return []
+
+    pairs: list[tuple[str, int]] = []
+    for evidence in split_semicolon(str(value)):
+        match = re.search(r"(?i)^(.+):\s*p\.\s*([0-9]+)\s*$", evidence.strip())
+        if not match:
+            continue
+        doc_id = normalize_doc_id(match.group(1))
+        page = int(match.group(2))
+        if doc_id:
+            pairs.append((doc_id, page))
+    return pairs
+
+
+def flatten_evidence_page_keys(evidence_pages: dict[str, set[int]]) -> list[str]:
+    page_keys: list[str] = []
+    for doc_id, pages in evidence_pages.items():
+        for page in sorted(pages):
+            page_keys.append(make_page_key(doc_id, page))
+    return page_keys
+
+
 def extract_doc_id(match: dict) -> str:
     page_url = str(match.get("page_url", "")).strip()
     if page_url:
@@ -558,9 +609,16 @@ def compute_retrieval_metrics(
     relevant_doc_ids: list[str],
     retrieved_doc_ids: list[str],
     k: int,
+    *,
+    normalizer: Optional[Callable[[str], str]] = None,
 ) -> tuple[float, float, float, float]:
-    relevant_set = {normalize_doc_id(doc_id) for doc_id in relevant_doc_ids}
-    retrieved_norm_all = [normalize_doc_id(doc_id) for doc_id in retrieved_doc_ids]
+    normalize = normalizer or normalize_doc_id
+    relevant_set = {
+        normalize(doc_id) for doc_id in relevant_doc_ids if str(doc_id).strip()
+    }
+    retrieved_norm_all = [
+        normalize(doc_id) for doc_id in retrieved_doc_ids if str(doc_id).strip()
+    ]
     retrieved_unique: list[str] = []
     seen: set[str] = set()
     for doc_id in retrieved_norm_all:
@@ -597,9 +655,16 @@ def compute_doc_hit_flags(
     relevant_doc_ids: list[str],
     retrieved_doc_ids: list[str],
     k: int,
+    *,
+    normalizer: Optional[Callable[[str], str]] = None,
 ) -> tuple[bool, bool]:
-    relevant_set = {normalize_doc_id(doc_id) for doc_id in relevant_doc_ids}
-    retrieved_norm_all = [normalize_doc_id(doc_id) for doc_id in retrieved_doc_ids]
+    normalize = normalizer or normalize_doc_id
+    relevant_set = {
+        normalize(doc_id) for doc_id in relevant_doc_ids if str(doc_id).strip()
+    }
+    retrieved_norm_all = [
+        normalize(doc_id) for doc_id in retrieved_doc_ids if str(doc_id).strip()
+    ]
     retrieved_unique: list[str] = []
     seen: set[str] = set()
     for doc_id in retrieved_norm_all:
@@ -612,6 +677,139 @@ def compute_doc_hit_flags(
     doc_hit_at_1 = bool(top_k) and top_k[0] in relevant_set
     doc_hit_at_k = any(doc_id in relevant_set for doc_id in top_k)
     return doc_hit_at_1, doc_hit_at_k
+
+
+def compute_pipeline_reference_metrics(
+    relevant_doc_ids: list[str],
+    evidence_pages: dict[str, set[int]],
+    reference_doc_ids: list[str],
+    reference_pairs: list[tuple[str, int]],
+    k: int,
+) -> dict[str, Optional[float | bool]]:
+    metrics: dict[str, Optional[float | bool]] = {
+        "pipeline_doc_hit_at_1": None,
+        "pipeline_doc_hit_at_k": None,
+        "pipeline_precision_at_k": None,
+        "pipeline_recall_at_k": None,
+        "pipeline_mrr": None,
+        "pipeline_ndcg": None,
+        "pipeline_page_precision_at_k": None,
+        "pipeline_page_recall_at_k": None,
+        "pipeline_page_mrr": None,
+        "pipeline_page_ndcg": None,
+    }
+
+    if relevant_doc_ids:
+        (
+            metrics["pipeline_precision_at_k"],
+            metrics["pipeline_recall_at_k"],
+            metrics["pipeline_mrr"],
+            metrics["pipeline_ndcg"],
+        ) = compute_retrieval_metrics(
+            relevant_doc_ids=relevant_doc_ids,
+            retrieved_doc_ids=reference_doc_ids,
+            k=k,
+        )
+        (
+            metrics["pipeline_doc_hit_at_1"],
+            metrics["pipeline_doc_hit_at_k"],
+        ) = compute_doc_hit_flags(
+            relevant_doc_ids=relevant_doc_ids,
+            retrieved_doc_ids=reference_doc_ids,
+            k=k,
+        )
+
+    relevant_page_keys = flatten_evidence_page_keys(evidence_pages)
+    if relevant_page_keys:
+        retrieved_page_keys = [
+            make_page_key(doc_id, page) for doc_id, page in reference_pairs
+        ]
+        (
+            metrics["pipeline_page_precision_at_k"],
+            metrics["pipeline_page_recall_at_k"],
+            metrics["pipeline_page_mrr"],
+            metrics["pipeline_page_ndcg"],
+        ) = compute_retrieval_metrics(
+            relevant_doc_ids=relevant_page_keys,
+            retrieved_doc_ids=retrieved_page_keys,
+            k=k,
+            normalizer=lambda value: value.strip().lower(),
+        )
+
+    return metrics
+
+
+def determine_scoring_method(
+    *,
+    should_answer: Optional[bool],
+    refusal: bool,
+    exact_match: Optional[int],
+    numeric_correct: bool,
+    golden_has_numbers: bool,
+    similarity_score: Optional[float],
+    similarity_threshold: float,
+    token_f1: Optional[float],
+    f1_threshold: float,
+    semantic_similarity: Optional[float],
+    semantic_threshold: float,
+) -> Optional[str]:
+    if should_answer is True:
+        if refusal:
+            return "refusal"
+        if exact_match == 1:
+            return "exact_match"
+        if numeric_correct:
+            return "numeric_match"
+        if golden_has_numbers:
+            return "none"
+        if similarity_score is not None and similarity_score >= similarity_threshold:
+            return "text_match"
+        if token_f1 is not None and token_f1 >= f1_threshold:
+            return "token_f1"
+        if (
+            semantic_similarity is not None
+            and semantic_similarity >= semantic_threshold
+        ):
+            return "semantic_similarity"
+        return "none"
+
+    if should_answer is False:
+        return "correct_refusal" if refusal else "false_answer"
+
+    return None
+
+
+def rename_faiss_proxy_columns(df: pd.DataFrame) -> pd.DataFrame:
+    rename_map = {
+        old: new for old, new in FAISS_PROXY_RENAME_MAP.items() if old in df.columns
+    }
+    if not rename_map:
+        return df
+    return df.rename(columns=rename_map)
+
+
+def results_to_dataframe(results: list[EvaluationResult]) -> pd.DataFrame:
+    return rename_faiss_proxy_columns(
+        pd.DataFrame([result.__dict__ for result in results])
+    )
+
+
+def dataframe_to_results(results_df: pd.DataFrame) -> list[EvaluationResult]:
+    valid_fields = set(EvaluationResult.__dataclass_fields__.keys())
+    reverse_rename_map = {new: old for old, new in FAISS_PROXY_RENAME_MAP.items()}
+    rows: list[EvaluationResult] = []
+    for row in results_df.to_dict(orient="records"):
+        remapped_row = row.copy()
+        for new_name, old_name in reverse_rename_map.items():
+            if new_name in remapped_row and old_name not in remapped_row:
+                remapped_row[old_name] = remapped_row[new_name]
+        filtered = {
+            key: value for key, value in remapped_row.items() if key in valid_fields
+        }
+        for field_name in valid_fields:
+            filtered.setdefault(field_name, None)
+        rows.append(EvaluationResult(**filtered))
+    return rows
 
 
 def unique_preserve_order(values: Iterable[str]) -> list[str]:
@@ -832,6 +1030,7 @@ def evaluate(
             split_semicolon(evidence_locations_raw) if evidence_locations_raw else []
         )
         evidence_pages = parse_evidence_pages(relevant_doc_ids, evidence_locations)
+        scoring_method: Optional[str] = None
 
         precision_at_k: Optional[float] = None
         recall_at_k: Optional[float] = None
@@ -868,6 +1067,16 @@ def evaluate(
         context_from: Optional[str] = None
         context_reference: Optional[str] = None
         relevant_publications: Optional[str] = None
+        pipeline_doc_hit_at_1: Optional[bool] = None
+        pipeline_doc_hit_at_k: Optional[bool] = None
+        pipeline_precision_at_k: Optional[float] = None
+        pipeline_recall_at_k: Optional[float] = None
+        pipeline_mrr: Optional[float] = None
+        pipeline_ndcg: Optional[float] = None
+        pipeline_page_precision_at_k: Optional[float] = None
+        pipeline_page_recall_at_k: Optional[float] = None
+        pipeline_page_mrr: Optional[float] = None
+        pipeline_page_ndcg: Optional[float] = None
 
         if not query_text:
             results.append(
@@ -1018,6 +1227,28 @@ def evaluate(
                     page in evidence_pages.get(doc_id, set())
                     for doc_id, page in reference_pairs
                 )
+
+            pipeline_metrics = compute_pipeline_reference_metrics(
+                relevant_doc_ids=relevant_doc_ids,
+                evidence_pages=evidence_pages,
+                reference_doc_ids=all_reference_doc_ids,
+                reference_pairs=reference_pairs,
+                k=retrieval_k,
+            )
+            pipeline_doc_hit_at_1 = pipeline_metrics["pipeline_doc_hit_at_1"]  # type: ignore[assignment]
+            pipeline_doc_hit_at_k = pipeline_metrics["pipeline_doc_hit_at_k"]  # type: ignore[assignment]
+            pipeline_precision_at_k = pipeline_metrics["pipeline_precision_at_k"]  # type: ignore[assignment]
+            pipeline_recall_at_k = pipeline_metrics["pipeline_recall_at_k"]  # type: ignore[assignment]
+            pipeline_mrr = pipeline_metrics["pipeline_mrr"]  # type: ignore[assignment]
+            pipeline_ndcg = pipeline_metrics["pipeline_ndcg"]  # type: ignore[assignment]
+            pipeline_page_precision_at_k = pipeline_metrics[
+                "pipeline_page_precision_at_k"
+            ]  # type: ignore[assignment]
+            pipeline_page_recall_at_k = pipeline_metrics[
+                "pipeline_page_recall_at_k"
+            ]  # type: ignore[assignment]
+            pipeline_page_mrr = pipeline_metrics["pipeline_page_mrr"]  # type: ignore[assignment]
+            pipeline_page_ndcg = pipeline_metrics["pipeline_page_ndcg"]  # type: ignore[assignment]
         except Exception as exc:  # noqa: BLE001
             results.append(
                 EvaluationResult(
@@ -1068,6 +1299,17 @@ def evaluate(
                     context_from=context_from,
                     context_reference=context_reference,
                     relevant_publications=relevant_publications,
+                    scoring_method=None,
+                    pipeline_doc_hit_at_1=pipeline_doc_hit_at_1,
+                    pipeline_doc_hit_at_k=pipeline_doc_hit_at_k,
+                    pipeline_precision_at_k=pipeline_precision_at_k,
+                    pipeline_recall_at_k=pipeline_recall_at_k,
+                    pipeline_mrr=pipeline_mrr,
+                    pipeline_ndcg=pipeline_ndcg,
+                    pipeline_page_precision_at_k=pipeline_page_precision_at_k,
+                    pipeline_page_recall_at_k=pipeline_page_recall_at_k,
+                    pipeline_page_mrr=pipeline_page_mrr,
+                    pipeline_page_ndcg=pipeline_page_ndcg,
                 )
             )
             continue
@@ -1129,6 +1371,8 @@ def evaluate(
         exact_match: Optional[int] = None
         token_f1: Optional[float] = None
         semantic_similarity: Optional[float] = None
+        numeric_correct = False
+        golden_has_numbers = False
 
         if should_answer is True:
             exact_match = exact_match_score(golden_answer, predicted)
@@ -1170,12 +1414,38 @@ def evaluate(
                         or passes_f1
                         or passes_semantic
                     )
+            scoring_method = determine_scoring_method(
+                should_answer=should_answer,
+                refusal=refusal,
+                exact_match=exact_match,
+                numeric_correct=numeric_correct,
+                golden_has_numbers=golden_has_numbers,
+                similarity_score=similarity_score,
+                similarity_threshold=similarity_threshold,
+                token_f1=token_f1,
+                f1_threshold=f1_threshold,
+                semantic_similarity=semantic_similarity,
+                semantic_threshold=semantic_threshold,
+            )
             answered_when_expected = model_answered
             answer_missing = not model_answered
         elif should_answer is False:
             is_correct = refusal
             correct_refusal = refusal
             false_answer = not refusal
+            scoring_method = determine_scoring_method(
+                should_answer=should_answer,
+                refusal=refusal,
+                exact_match=None,
+                numeric_correct=False,
+                golden_has_numbers=False,
+                similarity_score=None,
+                similarity_threshold=similarity_threshold,
+                token_f1=None,
+                f1_threshold=f1_threshold,
+                semantic_similarity=None,
+                semantic_threshold=semantic_threshold,
+            )
 
         results.append(
             EvaluationResult(
@@ -1226,6 +1496,17 @@ def evaluate(
                 context_from=context_from,
                 context_reference=context_reference,
                 relevant_publications=relevant_publications,
+                scoring_method=scoring_method,
+                pipeline_doc_hit_at_1=pipeline_doc_hit_at_1,
+                pipeline_doc_hit_at_k=pipeline_doc_hit_at_k,
+                pipeline_precision_at_k=pipeline_precision_at_k,
+                pipeline_recall_at_k=pipeline_recall_at_k,
+                pipeline_mrr=pipeline_mrr,
+                pipeline_ndcg=pipeline_ndcg,
+                pipeline_page_precision_at_k=pipeline_page_precision_at_k,
+                pipeline_page_recall_at_k=pipeline_page_recall_at_k,
+                pipeline_page_mrr=pipeline_page_mrr,
+                pipeline_page_ndcg=pipeline_page_ndcg,
             )
         )
 
@@ -1235,23 +1516,67 @@ def evaluate(
     return results
 
 
-def build_summary(
-    results: list[EvaluationResult], retrieval_k: int
+def build_summary_from_dataframe(
+    results_df: pd.DataFrame, retrieval_k: int
 ) -> dict[str, object]:
-    evaluated = [r for r in results if r.is_correct is not None]
+    df = results_df.copy()
+    for column in [
+        "should_answer",
+        "is_correct",
+        "correct_refusal",
+        "false_answer",
+        "answered_when_expected",
+        "answer_missing",
+        "reference_doc_match",
+        "any_reference_doc_match",
+        "evidence_page_match",
+        "any_reference_page_match",
+        "faiss_proxy_doc_hit_at_1",
+        "faiss_proxy_doc_hit_at_k",
+        "pipeline_doc_hit_at_1",
+        "pipeline_doc_hit_at_k",
+    ]:
+        if column in df.columns:
+            df[column] = df[column].apply(normalize_bool)
+
+    for column in [
+        "exact_match",
+        "token_f1",
+        "semantic_similarity",
+        "faiss_proxy_precision_at_k",
+        "faiss_proxy_recall_at_k",
+        "faiss_proxy_mrr",
+        "faiss_proxy_ndcg",
+        "pipeline_precision_at_k",
+        "pipeline_recall_at_k",
+        "pipeline_mrr",
+        "pipeline_ndcg",
+        "pipeline_page_precision_at_k",
+        "pipeline_page_recall_at_k",
+        "pipeline_page_mrr",
+        "pipeline_page_ndcg",
+    ]:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+
+    evaluated = df[df["is_correct"].notna()].copy()
     total = len(evaluated)
-    answerable = [r for r in evaluated if r.should_answer is True]
-    unanswerable = [r for r in evaluated if r.should_answer is False]
+    answerable = evaluated[
+        evaluated["should_answer"].map(lambda value: value is True)
+    ].copy()
+    unanswerable = evaluated[
+        evaluated["should_answer"].map(lambda value: value is False)
+    ].copy()
 
-    answerable_correct = sum(1 for r in answerable if r.is_correct)
-    unanswerable_correct = sum(1 for r in unanswerable if r.is_correct)
-
+    answerable_correct = int(answerable["is_correct"].fillna(False).sum())
+    unanswerable_correct = int(unanswerable["is_correct"].fillna(False).sum())
     overall_correct = answerable_correct + unanswerable_correct
     overall_accuracy = overall_correct / total if total else 0.0
-
-    answerable_accuracy = answerable_correct / len(answerable) if answerable else 0.0
+    answerable_accuracy = (
+        answerable_correct / len(answerable) if len(answerable) else 0.0
+    )
     unanswerable_accuracy = (
-        unanswerable_correct / len(unanswerable) if unanswerable else 0.0
+        unanswerable_correct / len(unanswerable) if len(unanswerable) else 0.0
     )
 
     summary: dict[str, object] = {
@@ -1264,113 +1589,85 @@ def build_summary(
         "overall_accuracy": overall_accuracy,
     }
 
-    api_modes = sorted({r.api_mode for r in results if r.api_mode})
-    if api_modes:
-        summary["api_modes_observed"] = ";".join(api_modes)
+    if "api_mode" in df.columns:
+        api_modes = sorted({str(v) for v in df["api_mode"].dropna() if str(v).strip()})
+        if api_modes:
+            summary["api_modes_observed"] = ";".join(api_modes)
 
-    em_scores = [r.exact_match for r in answerable if r.exact_match is not None]
-    f1_scores = [r.token_f1 for r in answerable if r.token_f1 is not None]
-    semantic_scores = [
-        r.semantic_similarity for r in answerable if r.semantic_similarity is not None
-    ]
-    if em_scores:
-        summary["exact_match_avg"] = sum(em_scores) / len(em_scores)
-    if f1_scores:
-        summary["token_f1_avg"] = sum(f1_scores) / len(f1_scores)
-    if semantic_scores:
-        summary["semantic_similarity_avg"] = sum(semantic_scores) / len(semantic_scores)
+    for column, summary_key in [
+        ("exact_match", "exact_match_avg"),
+        ("token_f1", "token_f1_avg"),
+        ("semantic_similarity", "semantic_similarity_avg"),
+    ]:
+        if column in answerable.columns:
+            values = answerable[column].dropna()
+            if not values.empty:
+                summary[summary_key] = float(values.mean())
 
-    retrieval_metrics = [
-        r
-        for r in evaluated
-        if r.precision_at_k is not None and r.recall_at_k is not None
-    ]
-    if retrieval_metrics:
-        summary["precision_at_k_avg"] = sum(
-            r.precision_at_k for r in retrieval_metrics
-        ) / len(retrieval_metrics)
-        summary["recall_at_k_avg"] = sum(
-            r.recall_at_k for r in retrieval_metrics
-        ) / len(retrieval_metrics)
-        summary["mrr_avg"] = sum(
-            r.mrr for r in retrieval_metrics if r.mrr is not None
-        ) / len(retrieval_metrics)
-        summary["ndcg_avg"] = sum(
-            r.ndcg for r in retrieval_metrics if r.ndcg is not None
-        ) / len(retrieval_metrics)
+    for prefix in ("faiss_proxy", "pipeline", "pipeline_page"):
+        precision_col = f"{prefix}_precision_at_k"
+        recall_col = f"{prefix}_recall_at_k"
+        mrr_col = f"{prefix}_mrr"
+        ndcg_col = f"{prefix}_ndcg"
+        if precision_col in evaluated.columns and recall_col in evaluated.columns:
+            metric_rows = evaluated[
+                evaluated[precision_col].notna() & evaluated[recall_col].notna()
+            ]
+            if not metric_rows.empty:
+                summary[f"{prefix}_precision_at_k_avg"] = float(
+                    metric_rows[precision_col].mean()
+                )
+                summary[f"{prefix}_recall_at_k_avg"] = float(
+                    metric_rows[recall_col].mean()
+                )
+                if mrr_col in metric_rows.columns:
+                    summary[f"{prefix}_mrr_avg"] = float(
+                        metric_rows[mrr_col].dropna().mean()
+                    )
+                if ndcg_col in metric_rows.columns:
+                    summary[f"{prefix}_ndcg_avg"] = float(
+                        metric_rows[ndcg_col].dropna().mean()
+                    )
 
-    retrieval_sources = sorted(
-        {r.retrieval_metric_source for r in results if r.retrieval_metric_source}
-    )
-    if retrieval_sources:
-        summary["retrieval_metric_sources"] = ";".join(retrieval_sources)
-
-    doc_hit_rows = [r for r in evaluated if r.doc_hit_at_k is not None]
-    if doc_hit_rows:
-        doc_hit_1_count = sum(1 for r in doc_hit_rows if r.doc_hit_at_1)
-        doc_hit_k_count = sum(1 for r in doc_hit_rows if r.doc_hit_at_k)
-        summary["doc_hit_at_1_rate"] = doc_hit_1_count / len(doc_hit_rows)
-        summary["doc_hit_at_1_count"] = doc_hit_1_count
-        summary["doc_hit_at_1_denom"] = len(doc_hit_rows)
-        summary["doc_hit_at_k_rate"] = doc_hit_k_count / len(doc_hit_rows)
-        summary["doc_hit_at_k_count"] = doc_hit_k_count
-        summary["doc_hit_at_k_denom"] = len(doc_hit_rows)
-
-    first_reference_doc_rows = [
-        r for r in evaluated if r.reference_doc_match is not None
-    ]
-    if first_reference_doc_rows:
-        first_reference_doc_count = sum(
-            1 for r in first_reference_doc_rows if r.reference_doc_match
+    if "faiss_proxy_metric_source" in df.columns:
+        retrieval_sources = sorted(
+            {str(v) for v in df["faiss_proxy_metric_source"].dropna() if str(v).strip()}
         )
-        summary["first_reference_doc_match_rate"] = first_reference_doc_count / len(
-            first_reference_doc_rows
-        )
-        summary["first_reference_doc_match_count"] = first_reference_doc_count
-        summary["first_reference_doc_match_denom"] = len(first_reference_doc_rows)
+        if retrieval_sources:
+            summary["faiss_proxy_metric_sources"] = ";".join(retrieval_sources)
 
-    any_reference_doc_rows = [
-        r for r in evaluated if r.any_reference_doc_match is not None
-    ]
-    if any_reference_doc_rows:
-        any_reference_doc_count = sum(
-            1 for r in any_reference_doc_rows if r.any_reference_doc_match
-        )
-        summary["any_reference_doc_match_rate"] = any_reference_doc_count / len(
-            any_reference_doc_rows
-        )
-        summary["any_reference_doc_match_count"] = any_reference_doc_count
-        summary["any_reference_doc_match_denom"] = len(any_reference_doc_rows)
+    for prefix in ("faiss_proxy", "pipeline"):
+        hit_k_col = f"{prefix}_doc_hit_at_k"
+        hit_1_col = f"{prefix}_doc_hit_at_1"
+        if hit_k_col in evaluated.columns:
+            doc_hit_rows = evaluated[evaluated[hit_k_col].notna()]
+            if not doc_hit_rows.empty:
+                hit_1_count = int(doc_hit_rows[hit_1_col].fillna(False).sum())
+                hit_k_count = int(doc_hit_rows[hit_k_col].fillna(False).sum())
+                summary[f"{prefix}_doc_hit_at_1_rate"] = hit_1_count / len(doc_hit_rows)
+                summary[f"{prefix}_doc_hit_at_1_count"] = hit_1_count
+                summary[f"{prefix}_doc_hit_at_1_denom"] = len(doc_hit_rows)
+                summary[f"{prefix}_doc_hit_at_k_rate"] = hit_k_count / len(doc_hit_rows)
+                summary[f"{prefix}_doc_hit_at_k_count"] = hit_k_count
+                summary[f"{prefix}_doc_hit_at_k_denom"] = len(doc_hit_rows)
 
-    first_reference_page_rows = [
-        r for r in evaluated if r.evidence_page_match is not None
-    ]
-    if first_reference_page_rows:
-        first_reference_page_count = sum(
-            1 for r in first_reference_page_rows if r.evidence_page_match
-        )
-        summary["first_reference_page_hit_rate"] = first_reference_page_count / len(
-            first_reference_page_rows
-        )
-        summary["first_reference_page_hit_count"] = first_reference_page_count
-        summary["first_reference_page_hit_denom"] = len(first_reference_page_rows)
+    for column_prefix, summary_prefix in [
+        ("reference_doc_match", "first_reference_doc_match"),
+        ("any_reference_doc_match", "any_reference_doc_match"),
+        ("evidence_page_match", "first_reference_page_hit"),
+        ("any_reference_page_match", "any_reference_page_hit"),
+    ]:
+        if column_prefix in evaluated.columns:
+            rows = evaluated[evaluated[column_prefix].notna()]
+            if not rows.empty:
+                count = int(rows[column_prefix].fillna(False).sum())
+                summary[f"{summary_prefix}_rate"] = count / len(rows)
+                summary[f"{summary_prefix}_count"] = count
+                summary[f"{summary_prefix}_denom"] = len(rows)
 
-    any_reference_page_rows = [
-        r for r in evaluated if r.any_reference_page_match is not None
-    ]
-    if any_reference_page_rows:
-        any_reference_page_count = sum(
-            1 for r in any_reference_page_rows if r.any_reference_page_match
-        )
-        summary["any_reference_page_hit_rate"] = any_reference_page_count / len(
-            any_reference_page_rows
-        )
-        summary["any_reference_page_hit_count"] = any_reference_page_count
-        summary["any_reference_page_hit_denom"] = len(any_reference_page_rows)
-
-    if unanswerable:
-        correct_refusal_count = sum(1 for r in unanswerable if r.correct_refusal)
-        false_answer_count = sum(1 for r in unanswerable if r.false_answer)
+    if not unanswerable.empty:
+        correct_refusal_count = int(unanswerable["correct_refusal"].fillna(False).sum())
+        false_answer_count = int(unanswerable["false_answer"].fillna(False).sum())
         summary["correct_refusal_rate"] = correct_refusal_count / len(unanswerable)
         summary["correct_refusal_count"] = correct_refusal_count
         summary["correct_refusal_denom"] = len(unanswerable)
@@ -1378,11 +1675,11 @@ def build_summary(
         summary["false_answer_count"] = false_answer_count
         summary["false_answer_denom"] = len(unanswerable)
 
-    if answerable:
-        answered_when_expected_count = sum(
-            1 for r in answerable if r.answered_when_expected
+    if not answerable.empty:
+        answered_when_expected_count = int(
+            answerable["answered_when_expected"].fillna(False).sum()
         )
-        answer_missing_count = sum(1 for r in answerable if r.answer_missing)
+        answer_missing_count = int(answerable["answer_missing"].fillna(False).sum())
         summary["answer_coverage"] = answered_when_expected_count / len(answerable)
         summary["answer_coverage_count"] = answered_when_expected_count
         summary["answer_coverage_denom"] = len(answerable)
@@ -1390,17 +1687,29 @@ def build_summary(
         summary["answer_missing_count"] = answer_missing_count
         summary["answer_missing_denom"] = len(answerable)
 
-    safe_response_rate = overall_accuracy
-    summary["safe_response_rate"] = safe_response_rate
-
-    errors = [r for r in results if r.error]
-    summary["error_count"] = len(errors)
-
+    correct_refusal_count = (
+        int(unanswerable["correct_refusal"].fillna(False).sum())
+        if "correct_refusal" in unanswerable.columns
+        else 0
+    )
+    summary["safe_response_rate"] = (
+        (answerable_correct + correct_refusal_count) / total if total else 0.0
+    )
+    summary["error_count"] = (
+        int(df["error"].notna().sum()) if "error" in df.columns else 0
+    )
     return summary
+
+
+def build_summary(
+    results: list[EvaluationResult], retrieval_k: int
+) -> dict[str, object]:
+    return build_summary_from_dataframe(results_to_dataframe(results), retrieval_k)
 
 
 def print_summary(summary: dict[str, object], retrieval_k: int) -> None:
     print("\nAccuracy summary")
+    print(f"Retrieval k: {retrieval_k}")
     print(f"Total evaluated: {summary['total_evaluated']}")
     print(f"Answerable: {summary['answerable_count']}")
     print(f"Unanswerable: {summary['unanswerable_count']}")
@@ -1419,26 +1728,65 @@ def print_summary(summary: dict[str, object], retrieval_k: int) -> None:
     if summary.get("semantic_similarity_avg") is not None:
         print(f"Semantic Similarity (avg): {summary['semantic_similarity_avg']:.3f}")
 
-    if summary.get("precision_at_k_avg") is not None:
-        print(f"Precision@k (avg): {summary['precision_at_k_avg']:.3f}")
-        print(f"Recall@k (avg): {summary['recall_at_k_avg']:.3f}")
-        print(f"MRR (avg): {summary['mrr_avg']:.3f}")
-        print(f"nDCG (avg): {summary['ndcg_avg']:.3f}")
-
-    retrieval_sources = summary.get("retrieval_metric_sources")
-    if retrieval_sources:
+    if summary.get("pipeline_precision_at_k_avg") is not None:
         print(
-            f"Retrieval metric source(s): {str(retrieval_sources).replace(';', ', ')}"
+            f"Pipeline Precision@k (avg): {summary['pipeline_precision_at_k_avg']:.3f}"
         )
+        print(f"Pipeline Recall@k (avg): {summary['pipeline_recall_at_k_avg']:.3f}")
+        print(f"Pipeline MRR (avg): {summary['pipeline_mrr_avg']:.3f}")
+        print(f"Pipeline nDCG (avg): {summary['pipeline_ndcg_avg']:.3f}")
 
-    if summary.get("doc_hit_at_1_rate") is not None:
+    if summary.get("pipeline_doc_hit_at_1_rate") is not None:
         print(
-            f"Doc Hit@1: {summary['doc_hit_at_1_rate']:.3f} "
-            f"({summary['doc_hit_at_1_count']}/{summary['doc_hit_at_1_denom']})"
+            f"Pipeline Doc Hit@1: {summary['pipeline_doc_hit_at_1_rate']:.3f} "
+            f"({summary['pipeline_doc_hit_at_1_count']}/"
+            f"{summary['pipeline_doc_hit_at_1_denom']})"
         )
         print(
-            f"Doc Hit@{retrieval_k}: {summary['doc_hit_at_k_rate']:.3f} "
-            f"({summary['doc_hit_at_k_count']}/{summary['doc_hit_at_k_denom']})"
+            f"Pipeline Doc Hit@{retrieval_k}: "
+            f"{summary['pipeline_doc_hit_at_k_rate']:.3f} "
+            f"({summary['pipeline_doc_hit_at_k_count']}/"
+            f"{summary['pipeline_doc_hit_at_k_denom']})"
+        )
+
+    if summary.get("pipeline_page_precision_at_k_avg") is not None:
+        print(
+            f"Pipeline Page Precision@k (avg): "
+            f"{summary['pipeline_page_precision_at_k_avg']:.3f}"
+        )
+        print(
+            f"Pipeline Page Recall@k (avg): "
+            f"{summary['pipeline_page_recall_at_k_avg']:.3f}"
+        )
+        print(f"Pipeline Page MRR (avg): {summary['pipeline_page_mrr_avg']:.3f}")
+        print(f"Pipeline Page nDCG (avg): {summary['pipeline_page_ndcg_avg']:.3f}")
+    faiss_sources = summary.get("faiss_proxy_metric_sources")
+    if faiss_sources:
+        print(f"FAISS proxy source(s): {str(faiss_sources).replace(';', ', ')}")
+
+    if summary.get("faiss_proxy_precision_at_k_avg") is not None:
+        print(
+            f"FAISS Proxy Precision@k (avg): "
+            f"{summary['faiss_proxy_precision_at_k_avg']:.3f}"
+        )
+        print(
+            f"FAISS Proxy Recall@k (avg): "
+            f"{summary['faiss_proxy_recall_at_k_avg']:.3f}"
+        )
+        print(f"FAISS Proxy MRR (avg): {summary['faiss_proxy_mrr_avg']:.3f}")
+        print(f"FAISS Proxy nDCG (avg): {summary['faiss_proxy_ndcg_avg']:.3f}")
+
+    if summary.get("faiss_proxy_doc_hit_at_1_rate") is not None:
+        print(
+            f"FAISS Proxy Doc Hit@1: {summary['faiss_proxy_doc_hit_at_1_rate']:.3f} "
+            f"({summary['faiss_proxy_doc_hit_at_1_count']}/"
+            f"{summary['faiss_proxy_doc_hit_at_1_denom']})"
+        )
+        print(
+            f"FAISS Proxy Doc Hit@{retrieval_k}: "
+            f"{summary['faiss_proxy_doc_hit_at_k_rate']:.3f} "
+            f"({summary['faiss_proxy_doc_hit_at_k_count']}/"
+            f"{summary['faiss_proxy_doc_hit_at_k_denom']})"
         )
 
     if summary.get("first_reference_doc_match_rate") is not None:
@@ -1509,7 +1857,7 @@ def save_issues(issues: list[Issue], output_path: Path) -> None:
 
 def save_results(results: list[EvaluationResult], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame([result.__dict__ for result in results])
+    df = results_to_dataframe(results)
     df.to_csv(output_path, index=False)
 
 
@@ -1528,7 +1876,7 @@ def save_results_excel(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     qa_df = pd.read_excel(source_excel, sheet_name=qa_sheet_name)
     qa_df = qa_df.rename(columns=lambda c: str(c).strip())
-    results_df = pd.DataFrame([result.__dict__ for result in results])
+    results_df = results_to_dataframe(results)
     merged = qa_df.merge(results_df, on=["query_id", "query_text"], how="left")
 
     predicted_answers_df = merged[
@@ -1550,6 +1898,7 @@ def save_results_excel(
             "context_reference",
             "relevant_publications",
             "reasoning",
+            "scoring_method",
         ]
     ].copy()
 
@@ -1743,6 +2092,7 @@ def save_run_report(
     lines.append("## Summary\n")
     lines.append("| Metric | Value |")
     lines.append("|--------|-------|")
+    lines.append(f"| Retrieval k | {retrieval_k} |")
     lines.append(f"| Total evaluated | {summary.get('total_evaluated', 0)} |")
     lines.append(f"| Answerable | {summary.get('answerable_count', 0)} |")
     lines.append(f"| Unanswerable | {summary.get('unanswerable_count', 0)} |")
@@ -1764,22 +2114,60 @@ def save_run_report(
             "| Semantic Similarity (avg) | "
             f"{float(summary['semantic_similarity_avg']):.3f} |"
         )
-    if summary.get("precision_at_k_avg") is not None:
+    if summary.get("pipeline_precision_at_k_avg") is not None:
         lines.append(
-            f"| Precision@{retrieval_k} (avg) | {float(summary['precision_at_k_avg']):.3f} |"
+            "| Pipeline Precision@"
+            f"{retrieval_k} (avg) | {float(summary['pipeline_precision_at_k_avg']):.3f} |"
         )
         lines.append(
-            f"| Recall@{retrieval_k} (avg) | {float(summary['recall_at_k_avg']):.3f} |"
+            f"| Pipeline Recall@{retrieval_k} (avg) | "
+            f"{float(summary['pipeline_recall_at_k_avg']):.3f} |"
         )
-        lines.append(f"| MRR (avg) | {float(summary['mrr_avg']):.3f} |")
-        lines.append(f"| nDCG (avg) | {float(summary['ndcg_avg']):.3f} |")
+        lines.append(
+            f"| Pipeline MRR (avg) | {float(summary['pipeline_mrr_avg']):.3f} |"
+        )
+        lines.append(
+            f"| Pipeline nDCG (avg) | {float(summary['pipeline_ndcg_avg']):.3f} |"
+        )
+    if summary.get("pipeline_page_precision_at_k_avg") is not None:
+        lines.append(
+            f"| Pipeline Page Precision@{retrieval_k} (avg) | "
+            f"{float(summary['pipeline_page_precision_at_k_avg']):.3f} |"
+        )
+        lines.append(
+            f"| Pipeline Page Recall@{retrieval_k} (avg) | "
+            f"{float(summary['pipeline_page_recall_at_k_avg']):.3f} |"
+        )
+        lines.append(
+            f"| Pipeline Page MRR (avg) | "
+            f"{float(summary['pipeline_page_mrr_avg']):.3f} |"
+        )
+        lines.append(
+            f"| Pipeline Page nDCG (avg) | "
+            f"{float(summary['pipeline_page_ndcg_avg']):.3f} |"
+        )
+    if summary.get("faiss_proxy_precision_at_k_avg") is not None:
+        lines.append(
+            f"| FAISS Proxy Precision@{retrieval_k} (avg) | "
+            f"{float(summary['faiss_proxy_precision_at_k_avg']):.3f} |"
+        )
+        lines.append(
+            f"| FAISS Proxy Recall@{retrieval_k} (avg) | "
+            f"{float(summary['faiss_proxy_recall_at_k_avg']):.3f} |"
+        )
+        lines.append(
+            f"| FAISS Proxy MRR (avg) | {float(summary['faiss_proxy_mrr_avg']):.3f} |"
+        )
+        lines.append(
+            f"| FAISS Proxy nDCG (avg) | {float(summary['faiss_proxy_ndcg_avg']):.3f} |"
+        )
     api_modes = summary.get("api_modes_observed")
     if api_modes:
         lines.append(f"| API mode(s) | {str(api_modes).replace(';', ', ')} |")
-    retrieval_sources = summary.get("retrieval_metric_sources")
+    retrieval_sources = summary.get("faiss_proxy_metric_sources")
     if retrieval_sources:
         lines.append(
-            f"| Retrieval source(s) | {str(retrieval_sources).replace(';', ', ')} |"
+            f"| FAISS proxy source(s) | {str(retrieval_sources).replace(';', ', ')} |"
         )
     lines.append("")
 
@@ -1839,6 +2227,8 @@ def save_run_report(
             metrics_parts.append(f"Fuzzy={result.similarity_score:.1f}")
         if result.evidence_page_match is not None:
             metrics_parts.append(f"EvidenceMatch={result.evidence_page_match}")
+        if result.scoring_method:
+            metrics_parts.append(f"Scoring={result.scoring_method}")
         if metrics_parts:
             lines.append(f"**Metrics:** {' | '.join(metrics_parts)}\n")
 
@@ -1914,6 +2304,121 @@ def save_summary_metrics_csv(run_dir: Path, summary: dict[str, object]) -> None:
     pd.DataFrame([summary]).to_csv(output_path, index=False)
 
 
+def enrich_saved_results_dataframe(
+    results_df: pd.DataFrame,
+    qa_df: pd.DataFrame,
+    *,
+    retrieval_k: int,
+    similarity_threshold: float,
+    abs_tol: float,
+    rel_tol: float,
+    f1_threshold: float,
+    semantic_threshold: float,
+) -> pd.DataFrame:
+    df = rename_faiss_proxy_columns(results_df.copy())
+    qa_lookup = qa_df.set_index("query_id", drop=False)
+    matched_query_ids = 0
+    unmatched_query_ids: list[str] = []
+
+    for column in [
+        "pipeline_doc_hit_at_1",
+        "pipeline_doc_hit_at_k",
+        "pipeline_precision_at_k",
+        "pipeline_recall_at_k",
+        "pipeline_mrr",
+        "pipeline_ndcg",
+        "pipeline_page_precision_at_k",
+        "pipeline_page_recall_at_k",
+        "pipeline_page_mrr",
+        "pipeline_page_ndcg",
+        "scoring_method",
+    ]:
+        if column not in df.columns:
+            df[column] = None
+
+    for idx, row in df.iterrows():
+        query_id = str(row.get("query_id", "")).strip()
+        if not query_id or query_id not in qa_lookup.index:
+            if query_id:
+                unmatched_query_ids.append(query_id)
+            continue
+        matched_query_ids += 1
+
+        qa_row = qa_lookup.loc[query_id]
+        if isinstance(qa_row, pd.DataFrame):
+            qa_row = qa_row.iloc[0]
+
+        relevant_doc_ids_raw = str(qa_row.get("relevant_doc_ids", "")).strip()
+        evidence_locations_raw = str(qa_row.get("evidence_locations", "")).strip()
+        relevant_doc_ids = (
+            split_semicolon(relevant_doc_ids_raw) if relevant_doc_ids_raw else []
+        )
+        evidence_locations = (
+            split_semicolon(evidence_locations_raw) if evidence_locations_raw else []
+        )
+        evidence_pages = parse_evidence_pages(relevant_doc_ids, evidence_locations)
+
+        reference_pairs = parse_predicted_evidence_pairs(
+            row.get("predicted_evidence_locations")
+        )
+        reference_doc_ids_all = str(row.get("reference_doc_ids_all", "")).strip()
+        reference_doc_ids = (
+            split_semicolon(reference_doc_ids_all) if reference_doc_ids_all else []
+        )
+
+        pipeline_metrics = compute_pipeline_reference_metrics(
+            relevant_doc_ids=relevant_doc_ids,
+            evidence_pages=evidence_pages,
+            reference_doc_ids=reference_doc_ids,
+            reference_pairs=reference_pairs,
+            k=retrieval_k,
+        )
+        for key, value in pipeline_metrics.items():
+            df.at[idx, key] = value
+
+        should_answer = normalize_bool(row.get("should_answer"))
+        golden_answer = str(row.get("golden_answer", "")).strip()
+        predicted_answer = str(row.get("predicted_answer", "")).strip()
+        exact_match = pd.to_numeric(row.get("exact_match"), errors="coerce")
+        token_f1 = pd.to_numeric(row.get("token_f1"), errors="coerce")
+        semantic_similarity = pd.to_numeric(
+            row.get("semantic_similarity"), errors="coerce"
+        )
+        similarity_score = pd.to_numeric(row.get("similarity_score"), errors="coerce")
+        refusal = bool(normalize_bool(row.get("is_refusal")))
+        numeric_correct = numeric_match(
+            golden_answer, predicted_answer, abs_tol=abs_tol, rel_tol=rel_tol
+        )
+        golden_has_numbers = bool(parse_scaled_numbers(golden_answer))
+        df.at[idx, "scoring_method"] = determine_scoring_method(
+            should_answer=should_answer,
+            refusal=refusal,
+            exact_match=int(exact_match) if not pd.isna(exact_match) else None,
+            numeric_correct=numeric_correct,
+            golden_has_numbers=golden_has_numbers,
+            similarity_score=(
+                float(similarity_score) if not pd.isna(similarity_score) else None
+            ),
+            similarity_threshold=similarity_threshold,
+            token_f1=float(token_f1) if not pd.isna(token_f1) else None,
+            f1_threshold=f1_threshold,
+            semantic_similarity=(
+                float(semantic_similarity) if not pd.isna(semantic_similarity) else None
+            ),
+            semantic_threshold=semantic_threshold,
+        )
+
+    if len(df) > 0 and matched_query_ids == 0:
+        sample_unmatched = ", ".join(unmatched_query_ids[:5]) or "(none)"
+        raise ValueError(
+            "Rescoring matched zero rows between results CSV and QA sheet by query_id. "
+            f"Sample result query_ids: {sample_unmatched}. "
+            "Pass the correct --excel file or update the saved run metadata."
+        )
+
+    return df
+
+
 def load_generation_metadata(excel_path: Path) -> dict[str, str]:
     try:
         df = pd.read_excel(excel_path, sheet_name="Generation_Metadata")
@@ -1977,7 +2482,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--excel",
         type=Path,
-        default=Path("tests/accuracy/StatsChat_QA_Template_2.xlsx"),
+        default=Path("tests/accuracy/StatsChat_QA_Verified_Audited.xlsx"),
         help="Path to the Excel QA template",
     )
     parser.add_argument(
@@ -2052,6 +2557,16 @@ def parse_args() -> argparse.Namespace:
         help="CSV output for per-question evaluation results",
     )
     parser.add_argument(
+        "--results-input",
+        type=Path,
+        default=None,
+        help=(
+            "Existing accuracy_results.csv to re-score locally without calling the API. "
+            "When provided, the evaluator enriches the saved run with pipeline metrics "
+            "and scoring_method and writes a new CSV/summary."
+        ),
+    )
+    parser.add_argument(
         "--answers-output",
         type=Path,
         default=Path("tests/accuracy/StatsChat_QA_With_Answers.xlsx"),
@@ -2080,7 +2595,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--retrieval-k",
         type=int,
-        default=5,
+        default=8,
         help="k for Precision@k/Recall@k/MRR/nDCG",
     )
     parser.add_argument(
@@ -2166,6 +2681,54 @@ def main() -> None:
         print("No data quality issues found.")
 
     if args.validate_only:
+        return
+
+    if args.results_input is not None:
+        if not args.results_input.exists():
+            print(f"Results CSV not found: {args.results_input}", file=sys.stderr)
+            sys.exit(1)
+
+        results_output = args.results_output
+        if results_output == Path("tests/accuracy/accuracy_results.csv"):
+            results_output = args.results_input.with_name(
+                f"{args.results_input.stem}_rescored.csv"
+            )
+        summary_output = args.summary_output
+        if summary_output is None:
+            summary_output = results_output.with_name(
+                f"{results_output.stem}_summary.csv"
+            )
+
+        results_df = pd.read_csv(args.results_input)
+        results_df = enrich_saved_results_dataframe(
+            results_df,
+            df,
+            retrieval_k=args.retrieval_k,
+            similarity_threshold=args.similarity_threshold,
+            abs_tol=args.abs_tol,
+            rel_tol=args.rel_tol,
+            f1_threshold=args.f1_threshold,
+            semantic_threshold=args.semantic_threshold,
+        )
+        results_df.to_csv(results_output, index=False)
+        print(f"Rescored results saved to: {results_output}")
+
+        summary = build_summary_from_dataframe(results_df, retrieval_k=args.retrieval_k)
+        save_summary(summary, summary_output)
+        print(f"Summary saved to: {summary_output}")
+        report_output = results_output.with_name(f"{results_output.stem}_report.md")
+        save_run_report(
+            report_output.parent,
+            dataframe_to_results(results_df),
+            df,
+            summary,
+            retrieval_k=args.retrieval_k,
+        )
+        generated_report = report_output.parent / "run_report.md"
+        if generated_report.exists():
+            generated_report.replace(report_output)
+        print(f"Run report saved to: {report_output}")
+        print_summary(summary, retrieval_k=args.retrieval_k)
         return
 
     semantic_model = None

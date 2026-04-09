@@ -220,13 +220,24 @@ Important result columns include:
 - `any_reference_doc_match`
 - `evidence_page_match`
 - `any_reference_page_match`
-- `doc_hit_at_1`
-- `doc_hit_at_k`
-- `precision_at_k`
-- `recall_at_k`
-- `mrr`
-- `ndcg`
-- `retrieved_doc_ids`
+- `faiss_proxy_doc_hit_at_1`
+- `faiss_proxy_doc_hit_at_k`
+- `faiss_proxy_precision_at_k`
+- `faiss_proxy_recall_at_k`
+- `faiss_proxy_mrr`
+- `faiss_proxy_ndcg`
+- `faiss_proxy_retrieved_doc_ids`
+- `pipeline_doc_hit_at_1`
+- `pipeline_doc_hit_at_k`
+- `pipeline_precision_at_k`
+- `pipeline_recall_at_k`
+- `pipeline_mrr`
+- `pipeline_ndcg`
+- `pipeline_page_precision_at_k`
+- `pipeline_page_recall_at_k`
+- `pipeline_page_mrr`
+- `pipeline_page_ndcg`
+- `scoring_method`
 - `error`
 
 Each timestamped run folder under `tests/accuracy/runs/{local|cloud}/{timestamp}/` also contains:

@@ -431,4 +431,243 @@ def test_evaluate_cloud_requests_debug_and_populates_context(monkeypatch):
     assert result.reference_pages_all == "2;1"
     assert result.any_reference_doc_match is True
     assert result.any_reference_page_match is True
+    assert result.pipeline_doc_hit_at_1 is True
+    assert result.pipeline_doc_hit_at_k is True
+    assert result.pipeline_precision_at_k == 0.2
+    assert result.pipeline_recall_at_k == 1.0
+    assert result.pipeline_mrr == 1.0
+    assert result.pipeline_page_precision_at_k == 0.2
+    assert result.pipeline_page_recall_at_k == 1.0
+    assert result.pipeline_page_mrr == 1.0
+    assert result.scoring_method == "numeric_match"
     assert result.is_correct is True
+
+
+def test_results_to_dataframe_renames_faiss_proxy_columns():
+    module = _load_evaluate_accuracy()
+
+    result = module.EvaluationResult(
+        query_id="Q001",
+        query_text="Question",
+        should_answer=True,
+        golden_answer="42",
+        predicted_answer="42",
+        predicted_relevant_doc_ids=None,
+        predicted_evidence_locations=None,
+        predicted_source_text=None,
+        model_answered=True,
+        correct_refusal=False,
+        false_answer=False,
+        answered_when_expected=True,
+        answer_missing=False,
+        api_mode="cloud",
+        reference_count=1,
+        reference_url="https://example.com/doc1.pdf#page=2",
+        reference_doc_id="doc1",
+        reference_page=2,
+        reference_doc_ids_all="doc1",
+        reference_pages_all="2",
+        reference_doc_match=True,
+        any_reference_doc_match=True,
+        evidence_page_match=True,
+        any_reference_page_match=True,
+        doc_hit_at_1=True,
+        doc_hit_at_k=True,
+        exact_match=1,
+        token_f1=1.0,
+        semantic_similarity=1.0,
+        is_refusal=False,
+        is_correct=True,
+        similarity_score=100.0,
+        precision_at_k=1.0,
+        recall_at_k=1.0,
+        mrr=1.0,
+        ndcg=1.0,
+        retrieval_metric_source="local_similarity_search_proxy",
+        retrieved_doc_ids="doc1",
+        error=None,
+    )
+
+    df = module.results_to_dataframe([result])
+
+    assert "precision_at_k" not in df.columns
+    assert "faiss_proxy_precision_at_k" in df.columns
+    assert "faiss_proxy_doc_hit_at_k" in df.columns
+    assert "faiss_proxy_metric_source" in df.columns
+
+
+def test_enrich_saved_results_dataframe_adds_pipeline_metrics_and_scoring_method():
+    module = _load_evaluate_accuracy()
+
+    results_df = pd.DataFrame(
+        [
+            {
+                "query_id": "Q001",
+                "query_text": "What is the inflation rate in February 2025?",
+                "should_answer": True,
+                "golden_answer": "0.035",
+                "predicted_answer": "3.5 per cent",
+                "predicted_evidence_locations": "doc1:p.2;doc2:p.1",
+                "reference_doc_ids_all": "doc1;doc2",
+                "reference_doc_id": "doc1",
+                "reference_page": 2,
+                "exact_match": 0,
+                "token_f1": 0.0,
+                "semantic_similarity": None,
+                "similarity_score": 10.0,
+                "is_refusal": False,
+                "doc_hit_at_1": True,
+                "doc_hit_at_k": True,
+                "precision_at_k": 0.2,
+                "recall_at_k": 1.0,
+                "mrr": 1.0,
+                "ndcg": 1.0,
+                "retrieval_metric_source": "local_similarity_search_proxy",
+                "retrieved_doc_ids": "doc1;doc2",
+                "is_correct": True,
+            }
+        ]
+    )
+    qa_df = pd.DataFrame(
+        [
+            {
+                "query_id": "Q001",
+                "query_text": "What is the inflation rate in February 2025?",
+                "golden_answer": "0.035",
+                "relevant_doc_ids": "doc1.pdf",
+                "evidence_locations": "doc1.pdf p.2",
+                "source_text": "Inflation was 3.5 per cent in February 2025.",
+                "should_answer": True,
+                "Reviewers": "AB;CD",
+            }
+        ]
+    )
+
+    enriched = module.enrich_saved_results_dataframe(
+        results_df,
+        qa_df,
+        retrieval_k=5,
+        similarity_threshold=85.0,
+        abs_tol=0.1,
+        rel_tol=0.01,
+        f1_threshold=0.80,
+        semantic_threshold=0.90,
+    )
+
+    assert "faiss_proxy_precision_at_k" in enriched.columns
+    assert float(enriched.loc[0, "pipeline_precision_at_k"]) == 0.2
+    assert float(enriched.loc[0, "pipeline_page_precision_at_k"]) == 0.2
+    assert enriched.loc[0, "pipeline_doc_hit_at_1"] is True
+    assert enriched.loc[0, "scoring_method"] == "numeric_match"
+
+
+def test_enrich_saved_results_dataframe_raises_on_zero_query_id_matches():
+    module = _load_evaluate_accuracy()
+
+    results_df = pd.DataFrame(
+        [
+            {
+                "query_id": "QQ001",
+                "query_text": "Question",
+                "should_answer": True,
+                "golden_answer": "42",
+                "predicted_answer": "42",
+                "is_refusal": False,
+                "is_correct": True,
+            }
+        ]
+    )
+    qa_df = pd.DataFrame(
+        [
+            {
+                "query_id": "Q001",
+                "query_text": "Question",
+                "golden_answer": "42",
+                "relevant_doc_ids": "doc1.pdf",
+                "evidence_locations": "doc1.pdf p.2",
+                "source_text": "Answer is 42.",
+                "should_answer": True,
+                "Reviewers": "AB;CD",
+            }
+        ]
+    )
+
+    try:
+        module.enrich_saved_results_dataframe(
+            results_df,
+            qa_df,
+            retrieval_k=8,
+            similarity_threshold=85.0,
+            abs_tol=0.1,
+            rel_tol=0.01,
+            f1_threshold=0.80,
+            semantic_threshold=0.90,
+        )
+    except ValueError as exc:
+        assert "matched zero rows" in str(exc)
+        assert "QQ001" in str(exc)
+    else:
+        raise AssertionError("Expected enrich_saved_results_dataframe to fail loudly")
+
+
+def test_enrich_saved_results_dataframe_uses_reference_doc_ids_all_for_doc_metrics():
+    module = _load_evaluate_accuracy()
+
+    results_df = pd.DataFrame(
+        [
+            {
+                "query_id": "Q001",
+                "query_text": "Question",
+                "should_answer": True,
+                "golden_answer": "42",
+                "predicted_answer": "42",
+                "predicted_evidence_locations": "doc1:p.2",
+                "reference_doc_ids_all": "doc1;doc2",
+                "exact_match": 1,
+                "token_f1": 1.0,
+                "semantic_similarity": 1.0,
+                "similarity_score": 100.0,
+                "is_refusal": False,
+                "is_correct": True,
+            }
+        ]
+    )
+    qa_df = pd.DataFrame(
+        [
+            {
+                "query_id": "Q001",
+                "query_text": "Question",
+                "golden_answer": "42",
+                "relevant_doc_ids": "doc2.pdf",
+                "evidence_locations": "doc2.pdf p.9",
+                "source_text": "Answer is 42.",
+                "should_answer": True,
+                "Reviewers": "AB;CD",
+            }
+        ]
+    )
+
+    enriched = module.enrich_saved_results_dataframe(
+        results_df,
+        qa_df,
+        retrieval_k=8,
+        similarity_threshold=85.0,
+        abs_tol=0.1,
+        rel_tol=0.01,
+        f1_threshold=0.80,
+        semantic_threshold=0.90,
+    )
+
+    assert enriched.loc[0, "pipeline_doc_hit_at_k"] is True
+    assert float(enriched.loc[0, "pipeline_recall_at_k"]) == 1.0
+    assert float(enriched.loc[0, "pipeline_page_recall_at_k"]) == 0.0
+
+
+def test_parse_args_defaults_to_verified_audited_and_retrieval_k_8(monkeypatch):
+    module = _load_evaluate_accuracy()
+
+    monkeypatch.setattr(sys, "argv", ["evaluate_accuracy.py"])
+    args = module.parse_args()
+
+    assert args.excel == Path("tests/accuracy/StatsChat_QA_Verified_Audited.xlsx")
+    assert args.retrieval_k == 8
