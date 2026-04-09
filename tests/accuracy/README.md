@@ -572,3 +572,53 @@ For LLM-generated QA, reviewer initials are intentionally optional.
   - the Excel workbook for human-readable gold vs predicted comparison
   - the per-row results CSV for detailed technical analysis
   - the summary CSV for headline metrics such as overall accuracy, retrieval metrics, and refusal rates
+
+## Standalone Evidence Span Evaluation
+
+For additional retrieval diagnostics, you can evaluate a saved run with
+deterministic evidence-span checks using `tests/accuracy/evaluate_ragas.py`.
+
+This script does not call the API again. It reads:
+
+- the audited workbook, typically `tests/accuracy/StatsChat_QA_Verified_Audited.xlsx`
+- an existing `accuracy_results.csv` from a saved run
+
+It computes:
+
+- exact evidence-span containment
+- RapidFuzz `partial_ratio` overlap
+- a combined evidence-span hit flag
+
+The mapping is:
+
+- `user_input <- query_text`
+- `source_text <- audited evidence span`
+- `retrieved_contexts <- context_texts.split("\\n---\\n")`
+
+Example:
+
+```bash
+.venv/bin/python tests/accuracy/evaluate_ragas.py \
+  --excel tests/accuracy/StatsChat_QA_Verified_Audited.xlsx \
+  --results-input tests/accuracy/runs/cloud/2026-04-09_162741/accuracy_results.csv
+```
+
+By default this writes:
+
+- `span_recall_results.csv`
+- `span_recall_summary.csv`
+- `span_recall_report.md`
+
+into the same directory as the supplied `accuracy_results.csv`.
+
+Notes:
+
+- Rows are only evaluated when `should_answer = TRUE`, `predicted_answer` is non-empty,
+  `source_text` is present, and `context_texts` contains at least one retrieved chunk.
+- Exact hit is a normalized substring check of `source_text` inside any retrieved chunk.
+- Fuzzy hit uses `RapidFuzz partial_ratio` to tolerate OCR drift and minor chunk noise.
+- On the audited KNBS benchmark, this evaluator is best used as a row-level
+  diagnostic rather than a headline KPI. See
+  [Evidence Span Evaluator Limitations](/Users/EjlliD/Developer/statschat-ke/docs/investigations/2026-04-09-evidence-span-evaluator-limitations.md).
+- This is a secondary diagnostic layer. It does not replace the main deterministic
+  benchmark in `evaluate_accuracy.py`.
