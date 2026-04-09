@@ -265,8 +265,8 @@ def _select_lagged_year_subset(
     max_query_year = max(query_tokens["years"])
     preference_order = [
         ({max_query_year + 1}, "year+1"),
-        ({max_query_year + 2}, "year+2"),
         (set(query_tokens["years"]), "query year"),
+        ({max_query_year + 2}, "year+2"),
     ]
 
     for preferred_years, label in preference_order:
@@ -525,6 +525,7 @@ class Inquirer:
         page_expansion_doc_limit: int = 3,
         page_expansion_seed_pages_per_doc: int = 2,
         page_expansion_window: int = 1,
+        lagged_year_candidate_k: int | None = None,
         **_unused_search_config,
     ):
         """
@@ -567,6 +568,13 @@ class Inquirer:
         self.temporal_candidate_k = max(
             int(temporal_candidate_k or max(k_docs * 12, 96)),
             int(self.reranker_candidate_k),
+        )
+        # Only used for annual family/year queries that would otherwise fall
+        # through to a year+2 proxy. Keep this larger pool narrowly gated so
+        # the broader candidate surface does not perturb normal queries.
+        self.lagged_year_candidate_k = max(
+            int(lagged_year_candidate_k or max(self.temporal_candidate_k * 3, 320)),
+            int(self.temporal_candidate_k),
         )
         self.recency_bias_weight = float(recency_bias_weight)
         self.max_chunks_per_doc = max(int(max_chunks_per_doc), 1)
@@ -1105,24 +1113,30 @@ class Inquirer:
             return docs1, "", empty_response
         docs = self._dedupe_exact_chunks(docs1)
 
-        if query_families:
+        def apply_family_filter(candidates: list[dict]) -> list[dict]:
+            if not query_families:
+                return candidates
+
             family_subset = [
-                doc for doc in docs if _doc_report_families(doc) & query_families
+                doc for doc in candidates if _doc_report_families(doc) & query_families
             ]
             if family_subset:
                 self.logger.info(
                     "Report-family pre-filter: reranking %s of %s candidates for %s",
                     len(family_subset),
-                    len(docs),
+                    len(candidates),
                     sorted(query_families),
                 )
-                docs = family_subset
-            else:
-                self.logger.info(
-                    "Report-family pre-filter: no candidates matched %s; "
-                    "falling back to current pool",
-                    sorted(query_families),
-                )
+                return family_subset
+
+            self.logger.info(
+                "Report-family pre-filter: no candidates matched %s; "
+                "falling back to current pool",
+                sorted(query_families),
+            )
+            return candidates
+
+        docs = apply_family_filter(docs)
 
         if is_precise_temporal_query:
             temporal_subset = [
@@ -1148,6 +1162,38 @@ class Inquirer:
             lagged_subset, lagged_label = _select_lagged_year_subset(
                 docs, query_temporal
             )
+            if (
+                lagged_subset
+                and lagged_label is not None
+                and lagged_label.startswith("year+2")
+            ):
+                widened_candidate_k = getattr(
+                    self,
+                    "lagged_year_candidate_k",
+                    getattr(self, "temporal_candidate_k", 0),
+                )
+                if candidate_k is None or widened_candidate_k > candidate_k:
+                    self.logger.info(
+                        "Annual-report year preference retry: widening candidates "
+                        "from %s to %s because initial pool fell to %s",
+                        candidate_k,
+                        widened_candidate_k,
+                        lagged_label,
+                    )
+                    widened_docs = self.similarity_search(
+                        question,
+                        latest_filter=latest_filter_enabled,
+                        candidate_k=widened_candidate_k,
+                    )
+                    widened_docs = self._dedupe_exact_chunks(widened_docs)
+                    widened_docs = apply_family_filter(widened_docs)
+                    widened_subset, widened_label = _select_lagged_year_subset(
+                        widened_docs, query_temporal
+                    )
+                    if widened_subset:
+                        docs = widened_subset
+                        lagged_subset = widened_subset
+                        lagged_label = widened_label
             if lagged_subset:
                 self.logger.info(
                     "Annual-report year preference: reranking %s of %s candidates "

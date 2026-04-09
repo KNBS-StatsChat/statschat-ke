@@ -745,6 +745,33 @@ def test_select_lagged_year_subset_prefers_year_plus_one():
     assert label == "year+1 [2025]"
 
 
+def test_select_lagged_year_subset_prefers_query_year_before_year_plus_two():
+    docs = [
+        {
+            "title": "2019 Economic Survey",
+            "date": "01 May 2019",
+            "url": "https://example/2019-Economic-Survey.pdf",
+        },
+        {
+            "title": "2021 Economic Survey",
+            "date": "01 May 2021",
+            "url": "https://example/2021-Economic-Survey.pdf",
+        },
+    ]
+
+    subset, label = _select_lagged_year_subset(
+        docs,
+        parse_temporal_tokens(
+            "How many people aged 5 years and above had a disability in Kenya "
+            "according to the 2019 population census?"
+        ),
+    )
+
+    assert subset is not None
+    assert [doc["title"] for doc in subset] == ["2019 Economic Survey"]
+    assert label == "query year [2019]"
+
+
 def test_make_query_temporal_pre_filter_drops_neighbouring_years(monkeypatch):
     inq = Inquirer.__new__(Inquirer)
     inq.logger = MagicMock()
@@ -837,10 +864,10 @@ def test_make_query_family_pre_filter_prefers_lagged_annual_report(monkeypatch):
     inq.temporal_candidate_k = 96
     inq.reranker_candidate_k = 48
 
-    captured_candidate_k: dict[str, object] = {}
+    captured_candidate_k: list[int | None] = []
 
     def fake_similarity(q, latest_filter=True, return_dicts=True, candidate_k=None):
-        captured_candidate_k["value"] = candidate_k
+        captured_candidate_k.append(candidate_k)
         return [
             {
                 "page_content": "2024 outcomes in the 2024 Economic Survey",
@@ -897,8 +924,92 @@ def test_make_query_family_pre_filter_prefers_lagged_annual_report(monkeypatch):
         latest_weight=0,
     )
 
-    assert captured_candidate_k["value"] == 96
+    assert captured_candidate_k == [96]
     assert captured_titles["titles"] == ["2025 Economic Survey"]
+
+
+def test_make_query_family_pre_filter_retries_wider_pool_on_year_plus_two(
+    monkeypatch,
+):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+    inq.k_docs = 3
+    inq.k_contexts = 3
+    inq.reranker_model_name = None
+    inq.recency_bias_weight = 0.5
+    inq.temporal_candidate_k = 96
+    inq.lagged_year_candidate_k = 320
+    inq.reranker_candidate_k = 48
+
+    captured_candidate_k: list[int | None] = []
+
+    def fake_similarity(q, latest_filter=True, return_dicts=True, candidate_k=None):
+        captured_candidate_k.append(candidate_k)
+        base_docs = [
+            {
+                "page_content": "historical disability note",
+                "date": "01 May 2023",
+                "title": "2023 Economic Survey",
+                "score": 0.30,
+                "page_url": "u2023#page=364",
+                "url": "https://example/2023-Economic-Survey.pdf",
+            },
+            {
+                "page_content": "2019 census disability note in 2021 survey",
+                "date": "01 May 2021",
+                "title": "2021 Economic Survey",
+                "score": 0.20,
+                "page_url": "u2021#page=379",
+                "url": "https://example/2021-Economic-Survey.pdf",
+            },
+        ]
+        if candidate_k and candidate_k >= 320:
+            return [
+                {
+                    "page_content": "The proportion of persons with disability stood at 2.2 per cent (918,270 persons).",
+                    "date": "01 May 2020",
+                    "title": "2020 Economic Survey",
+                    "score": 0.10,
+                    "page_url": "u2020#page=413",
+                    "url": "https://example/2020-Economic-Survey.pdf",
+                }
+            ] + base_docs
+        return base_docs
+
+    inq.similarity_search = fake_similarity
+
+    captured_titles: dict[str, object] = {}
+
+    def fake_query_texts(question, docs):
+        captured_titles["titles"] = [d["title"] for d in docs]
+        return LlmResponse(
+            answer_provided=True,
+            most_likely_answer="918,270 persons",
+            highlighting1=[],
+            highlighting2=[],
+            highlighting3=[],
+            reasoning=None,
+        )
+
+    inq.query_texts = fake_query_texts
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    inq.make_query(
+        "How many people aged 5 years and above had a disability in Kenya "
+        "according to the 2019 population census?",
+        latest_filter=False,
+        highlighting=True,
+        latest_weight=0,
+    )
+
+    assert captured_candidate_k == [96, 320]
+    assert captured_titles["titles"] == ["2020 Economic Survey"]
 
 
 def test_make_query_doc_local_page_expansion_promotes_neighbor_page(monkeypatch):
@@ -1333,8 +1444,10 @@ def test_inquirer_temporal_candidate_k_default(monkeypatch):
 
     # k_docs=8 -> max(8*12, 96) = 96
     assert inquirer.temporal_candidate_k == 96
+    assert inquirer.lagged_year_candidate_k == 320
     # And it must be at least as large as the standard reranker pool
     assert inquirer.temporal_candidate_k >= inquirer.reranker_candidate_k
+    assert inquirer.lagged_year_candidate_k >= inquirer.temporal_candidate_k
 
 
 def test_build_reranker_passage_includes_metadata_and_content():
