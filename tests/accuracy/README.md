@@ -278,17 +278,50 @@ The Excel workbook written by `--write-answers-excel` now contains:
 There are three different "document" concepts in the evaluator. Keeping them separate avoids a lot of confusion.
 
 - `relevant_doc_ids`: the gold relevant document IDs from the QA spreadsheet. This is the ground truth.
-- `retrieved_doc_ids`: the ranked document IDs produced during evaluation by local retrieval proxy `similarity_search(...)`. These are used for retrieval metrics such as `Precision@k`, `Recall@k`, `MRR`, and `nDCG`.
-- `reference_doc_id` / `reference_doc_ids_all`: the document IDs extracted from the API response `references` field. These are used for citation-style checks, not for the retrieval formulas.
+- `retrieved_doc_ids`: the ranked document IDs produced during evaluation by the
+  local retrieval proxy `similarity_search(...)`. These feed the
+  `faiss_proxy_*` retrieval metrics.
+- `reference_doc_id` / `reference_doc_ids_all`: the document IDs extracted from
+  the API response `references` field. These feed the `pipeline_*` retrieval
+  metrics and the first/any reference doc/page match metrics.
 
 Important distinction:
 
-- retrieval metrics compare `relevant_doc_ids` against `retrieved_doc_ids`
-- reference and page-match metrics compare gold evidence against the API's returned references
+- FAISS-proxy retrieval metrics compare `relevant_doc_ids` against the local
+  retrieval proxy ranked list
+- pipeline retrieval metrics compare `relevant_doc_ids` against the API's
+  returned `references` ranked list
+- reference and page-match metrics compare gold evidence against the API's
+  returned references
 
 This means a first-reference mismatch does **not** automatically mean the `Precision@k` or `Recall@k` formula is wrong. It usually means the API cited a different document first, or returned multiple references and the gold one was not first.
 
 ## Metric Definitions And Formulas
+
+The evaluator has three metric families:
+
+- **Answer metrics**: compare the model's predicted answer string against the
+  audited gold answer string.
+- **Retrieval metrics**: compare a ranked list of documents or pages against the
+  audited gold document set.
+- **Reference / citation metrics**: compare the returned references and pages
+  against the audited document/page evidence.
+
+For retrieval metrics, the FAISS-proxy path and the pipeline path use the
+**same formulas and the same helper functions**:
+
+- `compute_retrieval_metrics(...)`
+- `compute_doc_hit_flags(...)`
+
+The only thing that changes is the input ranked list:
+
+- `faiss_proxy_*` uses the evaluator's local `similarity_search(...)` ranked list
+- `pipeline_*` uses the API's returned `references` ranked list
+- `pipeline_page_*` uses the same API references, but normalized as `(doc_id, page)`
+  keys instead of plain document IDs
+
+So if `faiss_proxy_mrr` and `pipeline_mrr` differ, the math is not different.
+The ranked list is.
 
 For retrieval metrics, the script first:
 
@@ -309,12 +342,22 @@ The evaluator first computes a per-row boolean `is_correct`, then aggregates it.
 For answerable rows (`should_answer = TRUE`):
 
 - a refusal-style answer is automatically incorrect
-- otherwise a row is marked correct if **any** of the following passes:
+- otherwise the evaluator computes:
   - exact match
   - numeric match within tolerance
-  - RapidFuzz text similarity above threshold
-  - token F1 above threshold
-  - semantic similarity above threshold
+  - RapidFuzz text similarity
+  - token F1
+  - semantic similarity
+
+Then `is_correct` branches as follows:
+
+- if the gold answer contains numbers:
+  - `is_correct = exact_match OR numeric_match`
+- otherwise:
+  - `is_correct = exact_match OR numeric_match OR text_match OR token_f1 OR semantic_similarity`
+
+This numeric override is intentional. It prevents fuzzy text similarity from
+accepting wrong numbers that happen to look textually similar.
 
 For unanswerable rows (`should_answer = FALSE`):
 
@@ -349,6 +392,12 @@ Overall accuracy =
 
 `1` if normalized predicted answer equals normalized gold answer, else `0`.
 
+Important note:
+
+- `EM` is reported as a diagnostic average
+- it is **not** the main correctness gate on numeric-heavy benchmarks
+- that is why a run can have `EM = 0.000` and still have a high `overall_accuracy`
+
 ### Token F1
 
 Token-overlap F1 between normalized gold answer and predicted answer.
@@ -360,6 +409,14 @@ Cosine similarity between sentence-transformer embeddings of the gold and predic
 ### Numeric Match
 
 Numeric answers are also checked with absolute and relative tolerance, including percent handling.
+
+Defaults:
+
+- `abs_tol = 0.1`
+- `rel_tol = 0.01`
+
+So for numeric answers, values within `1%` relative error are accepted even if
+the answer string is phrased differently or rounded slightly.
 
 ### Retrieval Metrics
 
@@ -435,6 +492,35 @@ Doc Hit@1 = 1 if the first retrieved unique document is in G, else 0
 Doc Hit@k = 1 if any document in R_k is in G, else 0
 ```
 
+## Why Some Retrieval Metrics Collapse On This Benchmark
+
+On the current audited workbook:
+
+- every row has exactly one gold relevant document
+
+That means some retrieval metrics become numerically identical even though they
+are not the same metric in general:
+
+- `Recall@k = Doc Hit@k`
+  - with one gold doc, recall can only be `0` or `1`
+- `Precision@k = Doc Hit@k / k`
+  - with one gold doc, top-`k` precision can only be `0` or `1/k`
+
+So on this 37-row sheet:
+
+- `pipeline_recall_at_k` and `pipeline_doc_hit_at_k` carry the same information
+- `pipeline_precision_at_k` is mostly a rescaled version of `pipeline_doc_hit_at_k`
+
+The metrics that still add independent signal on this sheet are:
+
+- `Doc Hit@1`
+- `Doc Hit@k`
+- `MRR`
+- `nDCG`
+
+As soon as a row has more than one gold relevant document, these equalities stop
+holding.
+
 ### Reference And Evidence Match Metrics
 
 These are different from retrieval metrics. They are based on the API response `references` field.
@@ -471,7 +557,14 @@ Implementation note:
 
 ### Safe Response Rate
 
-In the current implementation this is equal to `overall_accuracy`.
+```text
+Safe Response Rate =
+(# correct answerable rows + # correct refusals) / (# all evaluated rows)
+```
+
+On the current audited sheet this is numerically equal to `overall_accuracy`
+because all `37` rows are answerable. It is still kept as a separate metric so
+it can diverge when `should_answer = FALSE` rows are added later.
 
 ### Refusal And Guardrail Metrics
 
@@ -525,6 +618,23 @@ Answer Missing Rate =
 ```
 
 This detects overly cautious refusals or missing answers on answerable questions.
+
+## Current Audited Sheet Behavior
+
+For the current `StatsChat_QA_Verified_Audited.xlsx` benchmark:
+
+- all `37` rows are answerable
+- every row has exactly one gold relevant document
+- most rows have numeric gold answers
+
+This leads to a few predictable metric behaviors:
+
+- `Answerable accuracy = Overall accuracy`
+- `Safe response rate = Overall accuracy`
+- `Recall@k = Doc Hit@k`
+- `Precision@k = Doc Hit@k / k`
+
+This is a property of the current sheet, not a bug in the formulas.
 
 ## Validation Rules
 
