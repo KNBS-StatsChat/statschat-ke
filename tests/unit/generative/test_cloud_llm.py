@@ -212,7 +212,7 @@ def test_make_query_uses_similarity_and_formats_answer(monkeypatch):
     inq.similarity_search = fake_similarity
 
     # Query_texts should be called and return a populated LlmResponse
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         return LlmResponse(
             answer_provided=True,
             most_likely_answer="SOME ANSWER",
@@ -256,7 +256,7 @@ def test_make_query_prefers_most_likely_answer_over_highlight(monkeypatch):
         ]
     )
 
-    inq.query_texts = lambda question, docs: LlmResponse(
+    inq.query_texts = lambda question, docs, **_kwargs: LlmResponse(
         answer_provided=True,
         most_likely_answer="Kenya's overall year on year inflation rate was 6.9 per cent in January 2024.",
         highlighting1=["Consumer Prices and Inflation"],
@@ -301,7 +301,7 @@ def test_make_query_respects_boolean_latest_filter_flag(monkeypatch):
         ]
 
     inq.similarity_search = fake_similarity
-    inq.query_texts = lambda question, docs: LlmResponse(
+    inq.query_texts = lambda question, docs, **_kwargs: LlmResponse(
         answer_provided=True,
         most_likely_answer="SOME ANSWER",
         highlighting1=[],
@@ -349,7 +349,7 @@ def test_make_query_preserves_distinct_pages_from_same_report(monkeypatch):
 
     captured_docs: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured_docs["count"] = len(docs)
         captured_docs["page_urls"] = [doc["page_url"] for doc in docs]
         return LlmResponse(
@@ -426,7 +426,7 @@ def test_make_query_reranks_before_truncating(monkeypatch):
 
     captured_docs: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured_docs["titles"] = [doc["title"] for doc in docs]
         return LlmResponse(
             answer_provided=True,
@@ -574,6 +574,126 @@ def test_query_texts_diversifies_fragment_page_urls_using_base_url(monkeypatch):
 
     assert isinstance(parsed, LlmResponse)
     assert captured["titles"] == ["Report A", "Report B"]
+
+
+def test_query_texts_refines_pages_within_existing_doc_allocation(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.k_contexts = 2
+    inq.max_chunks_per_doc = 2
+    inq.per_doc_penalty = 0.2
+    inq.extractive_prompt = "p"
+    inq.stuff_document_prompt = "d"
+    inq.llm = None
+    inq.verbose = False
+    inq.logger = MagicMock()
+    inq.reranker_model_name = "dummy-reranker"
+    inq.generation_page_selection_enabled = True
+    inq.generation_page_shortlist_k = 24
+
+    agriculture_url = "https://example.com/agriculture.pdf"
+    other_url = "https://example.com/other.pdf"
+    docs = [
+        {
+            "page_content": "green grams section",
+            "date": "01 January 2024",
+            "title": "National Agriculture Production Report 2024",
+            "url": agriculture_url,
+            "score": 0.1,
+            "selection_score": 0.95,
+            "page_number": 39,
+            "page_url": f"{agriculture_url}#page=39",
+        },
+        {
+            "page_content": "other report evidence",
+            "date": "01 January 2024",
+            "title": "Other Report",
+            "url": other_url,
+            "score": 0.12,
+            "selection_score": 0.94,
+            "page_number": 1,
+            "page_url": f"{other_url}#page=1",
+        },
+    ]
+
+    inq.db = SimpleNamespace(
+        docstore=SimpleNamespace(
+            _dict={
+                "agri14": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "The area under food crops increased from 4,935.3 thousand hectares in 2022 to 5,371.7 thousand hectares in 2023.",
+                        "metadata": {
+                            "date": "01 January 2024",
+                            "title": "National Agriculture Production Report 2024",
+                            "page_number": 14,
+                            "page_url": "#page=14",
+                            "url": agriculture_url,
+                        },
+                    }
+                ),
+                "agri39": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "green grams section",
+                        "metadata": {
+                            "date": "01 January 2024",
+                            "title": "National Agriculture Production Report 2024",
+                            "page_number": 39,
+                            "page_url": "#page=39",
+                            "url": agriculture_url,
+                        },
+                    }
+                ),
+                "other1": SimpleNamespace(
+                    model_dump=lambda: {
+                        "page_content": "other report evidence",
+                        "metadata": {
+                            "date": "01 January 2024",
+                            "title": "Other Report",
+                            "page_number": 1,
+                            "page_url": "#page=1",
+                            "url": other_url,
+                        },
+                    }
+                ),
+            }
+        )
+    )
+
+    captured: dict[str, object] = {}
+    fake_response_text = '{"answer_provided": true, "most_likely_answer": "5,371.7 thousand hectares", "highlighting1": [], "highlighting2": [], "highlighting3": [], "reasoning": "r"}'
+
+    def fake_invoke(payload, return_only_outputs=True):
+        captured["contents"] = [doc.page_content for doc in payload["input_documents"]]
+        return {"output_text": fake_response_text}
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm._get_reranker",
+        lambda model_name: SimpleNamespace(
+            predict=lambda pairs: [
+                (
+                    0.95
+                    if "5,371.7 thousand hectares" in passage
+                    else 0.20 if "green grams section" in passage else 0.75
+                )
+                for _, passage in pairs
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.load_qa_with_sources_chain",
+        lambda *a, **k: SimpleNamespace(invoke=fake_invoke),
+    )
+
+    parsed = inq.query_texts(
+        "What was the area under food crops in 2023?",
+        docs,
+        latest_filter_enabled=False,
+    )
+
+    assert isinstance(parsed, LlmResponse)
+    assert captured["contents"] == [
+        "The area under food crops increased from 4,935.3 thousand hectares in 2022 to 5,371.7 thousand hectares in 2023.",
+        "other report evidence",
+    ]
 
 
 def test_apply_recency_bias_skips_explicit_year_queries():
@@ -819,7 +939,7 @@ def test_make_query_temporal_pre_filter_drops_neighbouring_years(monkeypatch):
 
     captured_titles: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured_titles["titles"] = [d["title"] for d in docs]
         return LlmResponse(
             answer_provided=True,
@@ -899,7 +1019,7 @@ def test_make_query_family_pre_filter_prefers_lagged_annual_report(monkeypatch):
 
     captured_titles: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured_titles["titles"] = [d["title"] for d in docs]
         return LlmResponse(
             answer_provided=True,
@@ -982,7 +1102,7 @@ def test_make_query_family_pre_filter_retries_wider_pool_on_year_plus_two(
 
     captured_titles: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured_titles["titles"] = [d["title"] for d in docs]
         return LlmResponse(
             answer_provided=True,
@@ -1064,7 +1184,7 @@ def test_make_query_doc_local_page_expansion_promotes_neighbor_page(monkeypatch)
 
     captured: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured["page_urls"] = [doc["page_url"] for doc in docs]
         return LlmResponse(
             answer_provided=True,
@@ -1207,7 +1327,7 @@ def test_make_query_doc_local_page_expansion_preserves_top_k_membership(
 
     captured: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured["page_urls"] = [doc["page_url"] for doc in docs]
         return LlmResponse(
             answer_provided=True,
@@ -1338,7 +1458,7 @@ def test_make_query_doc_local_page_expansion_noops_with_empty_page_index(monkeyp
 
     captured: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured["titles"] = [doc["title"] for doc in docs]
         return LlmResponse(
             answer_provided=True,
@@ -1400,7 +1520,7 @@ def test_make_query_temporal_pre_filter_falls_back_to_full_pool(monkeypatch):
 
     captured: dict[str, object] = {}
 
-    def fake_query_texts(question, docs):
+    def fake_query_texts(question, docs, **_kwargs):
         captured["count"] = len(docs)
         return LlmResponse(
             answer_provided=True,

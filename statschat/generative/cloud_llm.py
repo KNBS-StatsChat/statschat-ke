@@ -5,6 +5,7 @@ from collections import defaultdict
 from functools import lru_cache
 
 from dotenv import load_dotenv
+from rapidfuzz import fuzz
 from langchain_openai import ChatOpenAI
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_community.vectorstores import FAISS
@@ -68,6 +69,7 @@ QUARTER_NUMBER_PATTERN = re.compile(
     r"\bquarter\s+(?:([1-4])|(one|two|three|four|first|second|third|fourth))\b",
     re.IGNORECASE,
 )
+TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 ORDINAL_TO_QUARTER = {
     "first": 1,
     "1st": 1,
@@ -136,6 +138,27 @@ REPORT_FAMILY_QUERY_PATTERNS = {
         re.compile(r"\bmobile phone\b.*\bregardless of ownership\b", re.IGNORECASE),
     ),
 }
+GENERATION_PAGE_STOPWORDS = frozenset(
+    {
+        "according",
+        "and",
+        "are",
+        "did",
+        "for",
+        "from",
+        "kenya",
+        "kenyan",
+        "the",
+        "this",
+        "that",
+        "was",
+        "were",
+        "what",
+        "which",
+        "with",
+        "report",
+    }
+)
 
 
 def _extract_years(text: str) -> set[int]:
@@ -395,6 +418,50 @@ def _build_reranker_passage(doc: dict) -> str:
     return "\n".join(parts)
 
 
+def _normalized_tokens(text: str) -> list[str]:
+    """Return lowercase alphanumeric tokens for lightweight lexical scoring."""
+    return TOKEN_PATTERN.findall(str(text).lower())
+
+
+def _content_terms(text: str) -> list[str]:
+    """Return query terms that carry signal for page-level selection."""
+    return [
+        token
+        for token in _normalized_tokens(text)
+        if len(token) >= 3 and token not in GENERATION_PAGE_STOPWORDS
+    ]
+
+
+def _ngrams(tokens: list[str], size: int) -> list[str]:
+    """Return contiguous token n-grams."""
+    if size <= 0 or len(tokens) < size:
+        return []
+    return [
+        " ".join(tokens[index : index + size])
+        for index in range(len(tokens) - size + 1)
+    ]
+
+
+def _score_generation_page_candidate(query: str, page_text: str) -> float:
+    """Score whether a page is a good within-document generation candidate."""
+    query_terms = _content_terms(query)
+    if not query_terms:
+        return 0.0
+
+    page_terms = set(_content_terms(page_text))
+    overlap_score = len(set(query_terms) & page_terms) * 10.0
+    normalized_page = " ".join(_normalized_tokens(page_text))
+    phrase_score = sum(
+        5.0
+        for phrase in _ngrams(query_terms, 2) + _ngrams(query_terms, 3)
+        if phrase in normalized_page
+    )
+    fuzzy_score = (
+        fuzz.partial_ratio(" ".join(_normalized_tokens(query)), normalized_page) / 10.0
+    )
+    return overlap_score + phrase_score + fuzzy_score
+
+
 def _apply_recency_bias(
     results: list[dict], query: str, recency_bias_weight: float
 ) -> list[dict]:
@@ -525,6 +592,8 @@ class Inquirer:
         page_expansion_doc_limit: int = 3,
         page_expansion_seed_pages_per_doc: int = 2,
         page_expansion_window: int = 1,
+        generation_page_selection_enabled: bool = True,
+        generation_page_shortlist_k: int = 24,
         lagged_year_candidate_k: int | None = None,
         **_unused_search_config,
     ):
@@ -584,6 +653,8 @@ class Inquirer:
             int(page_expansion_seed_pages_per_doc), 0
         )
         self.page_expansion_window = max(int(page_expansion_window), 0)
+        self.generation_page_selection_enabled = bool(generation_page_selection_enabled)
+        self.generation_page_shortlist_k = max(int(generation_page_shortlist_k), 0)
 
         # Load variables from .env
         load_dotenv()
@@ -894,6 +965,148 @@ class Inquirer:
 
         return expanded_docs
 
+    def _rank_generation_page_shortlist(
+        self,
+        query: str,
+        docs_for_group: list[dict],
+        latest_filter_enabled: bool,
+        shortlist_k: int,
+    ) -> list[dict]:
+        """Return the best page candidates inside one already-selected document."""
+        if not docs_for_group or shortlist_k <= 0:
+            return []
+
+        base_url = _base_document_url(docs_for_group[0]).lower()
+        if not base_url:
+            return []
+
+        db = (
+            getattr(self, "db_latest", None)
+            if latest_filter_enabled
+            else getattr(self, "db", None)
+        )
+        docstore_dict = getattr(getattr(db, "docstore", None), "_dict", None)
+        if not isinstance(docstore_dict, dict):
+            return []
+
+        page_index = self._get_docstore_page_index(latest_filter_enabled)
+        if not page_index or base_url not in page_index:
+            return []
+
+        original_scores = {
+            _extract_page_number(doc): float(doc.get("score", 0.0))
+            for doc in docs_for_group
+            if _extract_page_number(doc) is not None
+        }
+        best_by_page: dict[int, dict] = {}
+        for page_number, doc_ids in page_index[base_url].items():
+            for doc_id in doc_ids:
+                stored_doc = docstore_dict.get(doc_id)
+                if stored_doc is None:
+                    continue
+                record = self._stored_document_to_record(stored_doc)
+                record_page = _extract_page_number(record)
+                if record_page is None:
+                    continue
+
+                lexical_score = _score_generation_page_candidate(
+                    query, str(record.get("page_content", ""))
+                )
+                record["generation_page_score"] = lexical_score
+                record["score"] = original_scores.get(
+                    record_page, record.get("score", 0.0)
+                )
+                current_best = best_by_page.get(record_page)
+                if (
+                    current_best is None
+                    or lexical_score > current_best["generation_page_score"]
+                ):
+                    best_by_page[record_page] = record
+
+        shortlisted = sorted(
+            best_by_page.values(),
+            key=lambda doc: float(doc.get("generation_page_score", 0.0)),
+            reverse=True,
+        )[:shortlist_k]
+        if not shortlisted:
+            return []
+
+        reranker_model_name = getattr(self, "reranker_model_name", None)
+        if not reranker_model_name:
+            return shortlisted
+
+        reranker = _get_reranker(reranker_model_name)
+        pairs = [(query, _build_reranker_passage(doc)) for doc in shortlisted]
+        ce_scores = reranker.predict(pairs)
+        for doc, ce_score in zip(shortlisted, ce_scores):
+            doc["generation_page_reranker_score"] = float(ce_score)
+
+        shortlisted.sort(
+            key=lambda doc: float(doc.get("generation_page_reranker_score", 0.0)),
+            reverse=True,
+        )
+        return shortlisted
+
+    def _refine_generation_context_pages(
+        self,
+        query: str,
+        selected_docs: list[dict],
+        latest_filter_enabled: bool,
+    ) -> list[dict]:
+        """
+        Improve page choice inside each document's existing generation allocation.
+
+        This deliberately does not add new documents or change the number of
+        context slots each already-selected document receives. It only swaps in
+        stronger pages from the same document when a capped within-document
+        shortlist and rerank finds them.
+        """
+        if (
+            not selected_docs
+            or not getattr(self, "generation_page_selection_enabled", True)
+            or not hasattr(self, "db")
+        ):
+            return selected_docs
+
+        shortlist_k = max(int(getattr(self, "generation_page_shortlist_k", 24)), 0)
+        if shortlist_k == 0:
+            return selected_docs
+
+        docs_by_group: defaultdict[str, list[dict]] = defaultdict(list)
+        for doc in selected_docs:
+            docs_by_group[_doc_group_key(doc)].append(doc)
+
+        replacements_by_group: dict[str, list[dict]] = {}
+        for doc_key, docs_for_group in docs_by_group.items():
+            ranked_pages = self._rank_generation_page_shortlist(
+                query,
+                docs_for_group,
+                latest_filter_enabled,
+                shortlist_k,
+            )
+            if not ranked_pages:
+                continue
+
+            replacements_by_group[doc_key] = ranked_pages[: len(docs_for_group)]
+
+        if not replacements_by_group:
+            return selected_docs
+
+        offsets_by_group: defaultdict[str, int] = defaultdict(int)
+        refined_docs: list[dict] = []
+        for doc in selected_docs:
+            doc_key = _doc_group_key(doc)
+            replacements = replacements_by_group.get(doc_key)
+            offset = offsets_by_group[doc_key]
+            offsets_by_group[doc_key] += 1
+
+            if replacements and offset < len(replacements):
+                refined_docs.append(replacements[offset])
+            else:
+                refined_docs.append(doc)
+
+        return refined_docs
+
     def similarity_search(
         self,
         query: str,
@@ -967,7 +1180,13 @@ class Inquirer:
         self.logger.info(f"Reranked {len(docs)} results with cross-encoder")
         return docs
 
-    def query_texts(self, query: str, docs: list[dict]) -> LlmResponse:
+    def query_texts(
+        self,
+        query: str,
+        docs: list[dict],
+        *,
+        latest_filter_enabled: bool | None = None,
+    ) -> LlmResponse:
         """
         Generates an answer to the query based on relationship
         to docs filtered in similarity_search
@@ -995,6 +1214,10 @@ class Inquirer:
             max_chunks_per_doc=getattr(self, "max_chunks_per_doc", 3),
             per_doc_penalty=getattr(self, "per_doc_penalty", 0.2),
         )
+        if latest_filter_enabled is not None:
+            selected_docs = self._refine_generation_context_pages(
+                query, selected_docs, latest_filter_enabled
+            )
 
         # reshape Document object structure
         top_matches = [
@@ -1231,7 +1454,9 @@ class Inquirer:
             + f" with top distance {best_distance if docs else 'Inf'}"
         )
 
-        validated_response = self.query_texts(question, docs)
+        validated_response = self.query_texts(
+            question, docs, latest_filter_enabled=latest_filter_enabled
+        )
         self.logger.info(f"QAPAIR - Question: {question}, Answer: {validated_response}")
 
         if highlighting:
