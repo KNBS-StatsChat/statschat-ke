@@ -183,9 +183,17 @@ def detect_qa_sheet_name(
 def is_blank(value: object) -> bool:
     if value is None:
         return True
-    if isinstance(value, float) and pd.isna(value):
-        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
     return str(value).strip() == ""
+
+
+def cell_text(value: object) -> str:
+    """Return a stripped string while preserving spreadsheet blanks as empty."""
+    return "" if is_blank(value) else str(value).strip()
 
 
 def normalize_bool(value: object) -> Optional[bool]:
@@ -843,7 +851,7 @@ def validate_rows(
         )
 
     for _, row in df.iterrows():
-        query_id = str(row.get("query_id", "")).strip()
+        query_id = cell_text(row.get("query_id", ""))
         if not query_id:
             issues.append(
                 Issue(query_id="", issue="missing_query_id", detail="query_id is blank")
@@ -867,11 +875,11 @@ def validate_rows(
                 )
             )
 
-        golden_answer = str(row.get("golden_answer", "")).strip()
-        source_text = str(row.get("source_text", "")).strip()
-        relevant_doc_ids = str(row.get("relevant_doc_ids", "")).strip()
-        evidence_locations = str(row.get("evidence_locations", "")).strip()
-        query_text = str(row.get("query_text", "")).strip()
+        golden_answer = cell_text(row.get("golden_answer", ""))
+        source_text = cell_text(row.get("source_text", ""))
+        relevant_doc_ids = cell_text(row.get("relevant_doc_ids", ""))
+        evidence_locations = cell_text(row.get("evidence_locations", ""))
+        query_text = cell_text(row.get("query_text", ""))
 
         if should_answer is True:
             for field_name, field_value in {
@@ -1017,11 +1025,11 @@ def evaluate(
         df = df.head(max_rows)
 
     for _, row in df.iterrows():
-        query_id = str(row.get("query_id", "")).strip()
-        query_text = str(row.get("query_text", "")).strip()
-        golden_answer = str(row.get("golden_answer", "")).strip()
-        relevant_doc_ids_raw = str(row.get("relevant_doc_ids", "")).strip()
-        evidence_locations_raw = str(row.get("evidence_locations", "")).strip()
+        query_id = cell_text(row.get("query_id", ""))
+        query_text = cell_text(row.get("query_text", ""))
+        golden_answer = cell_text(row.get("golden_answer", ""))
+        relevant_doc_ids_raw = cell_text(row.get("relevant_doc_ids", ""))
+        evidence_locations_raw = cell_text(row.get("evidence_locations", ""))
         should_answer = normalize_bool(row.get("should_answer"))
         relevant_doc_ids = (
             split_semicolon(relevant_doc_ids_raw) if relevant_doc_ids_raw else []
@@ -1144,8 +1152,8 @@ def evaluate(
             )
             response.raise_for_status()
             payload = response.json()
-            predicted = str(payload.get("answer", "")).strip()
-            predicted_source_text = str(payload.get("context_reference", "")).strip()
+            predicted = cell_text(payload.get("answer", ""))
+            predicted_source_text = cell_text(payload.get("context_reference", ""))
             detected_api_mode = detect_api_mode(payload)
             api_mode_used = detected_api_mode if api_mode == "auto" else api_mode
             (
@@ -1364,7 +1372,9 @@ def evaluate(
         else:
             retrieval_metric_source = "disabled_by_flag"
 
-        refusal = is_refusal_answer(predicted, refusal_phrases)
+        refusal = is_refusal_answer(predicted, refusal_phrases) or (
+            should_answer is False and not predicted
+        )
         model_answered = bool(predicted) and not refusal
         similarity_score: Optional[float] = None
         is_correct: Optional[bool] = None
@@ -2337,7 +2347,7 @@ def enrich_saved_results_dataframe(
             df[column] = None
 
     for idx, row in df.iterrows():
-        query_id = str(row.get("query_id", "")).strip()
+        query_id = cell_text(row.get("query_id", ""))
         if not query_id or query_id not in qa_lookup.index:
             if query_id:
                 unmatched_query_ids.append(query_id)
@@ -2348,8 +2358,8 @@ def enrich_saved_results_dataframe(
         if isinstance(qa_row, pd.DataFrame):
             qa_row = qa_row.iloc[0]
 
-        relevant_doc_ids_raw = str(qa_row.get("relevant_doc_ids", "")).strip()
-        evidence_locations_raw = str(qa_row.get("evidence_locations", "")).strip()
+        relevant_doc_ids_raw = cell_text(qa_row.get("relevant_doc_ids", ""))
+        evidence_locations_raw = cell_text(qa_row.get("evidence_locations", ""))
         relevant_doc_ids = (
             split_semicolon(relevant_doc_ids_raw) if relevant_doc_ids_raw else []
         )
@@ -2361,7 +2371,7 @@ def enrich_saved_results_dataframe(
         reference_pairs = parse_predicted_evidence_pairs(
             row.get("predicted_evidence_locations")
         )
-        reference_doc_ids_all = str(row.get("reference_doc_ids_all", "")).strip()
+        reference_doc_ids_all = cell_text(row.get("reference_doc_ids_all", ""))
         reference_doc_ids = (
             split_semicolon(reference_doc_ids_all) if reference_doc_ids_all else []
         )
@@ -2377,15 +2387,17 @@ def enrich_saved_results_dataframe(
             df.at[idx, key] = value
 
         should_answer = normalize_bool(row.get("should_answer"))
-        golden_answer = str(row.get("golden_answer", "")).strip()
-        predicted_answer = str(row.get("predicted_answer", "")).strip()
+        golden_answer = cell_text(row.get("golden_answer", ""))
+        predicted_answer = cell_text(row.get("predicted_answer", ""))
         exact_match = pd.to_numeric(row.get("exact_match"), errors="coerce")
         token_f1 = pd.to_numeric(row.get("token_f1"), errors="coerce")
         semantic_similarity = pd.to_numeric(
             row.get("semantic_similarity"), errors="coerce"
         )
         similarity_score = pd.to_numeric(row.get("similarity_score"), errors="coerce")
-        refusal = bool(normalize_bool(row.get("is_refusal")))
+        refusal = bool(normalize_bool(row.get("is_refusal"))) or (
+            should_answer is False and not predicted_answer
+        )
         numeric_correct = numeric_match(
             golden_answer, predicted_answer, abs_tol=abs_tol, rel_tol=rel_tol
         )
@@ -2622,8 +2634,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--query-id-prefix",
         type=str,
-        default="Q",
-        help="Expected query ID prefix in QA_Data (default: Q)",
+        default="QQ",
+        help="Expected query ID prefix in QA_Data (default: QQ)",
     )
     parser.add_argument(
         "--require-reviewers",

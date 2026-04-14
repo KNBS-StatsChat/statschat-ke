@@ -102,6 +102,7 @@ python tests/accuracy/generate_qa_with_refs.py \
 ```bash
 python tests/accuracy/evaluate_accuracy.py \
   --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
+  --query-id-prefix Q \
   --validate-only
 ```
 
@@ -130,6 +131,7 @@ The cloud API itself needs the configured provider key in its environment, for e
 python tests/accuracy/evaluate_accuracy.py \
   --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
   --host http://127.0.0.1:8000 \
+  --query-id-prefix Q \
   --content-type all \
   --timeout 420
 
@@ -138,6 +140,7 @@ python tests/accuracy/evaluate_accuracy.py \
   --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
   --host http://127.0.0.1:8001 \
   --api-mode cloud \
+  --query-id-prefix Q \
   --content-type all \
   --timeout 420
 ```
@@ -362,6 +365,8 @@ accepting wrong numbers that happen to look textually similar.
 For unanswerable rows (`should_answer = FALSE`):
 
 - a row is marked correct if the model refused appropriately
+- an empty or missing predicted answer also counts as a correct refusal
+- a substantive non-refusal answer is a false answer
 
 Aggregate accuracy metrics are then:
 
@@ -573,7 +578,7 @@ These metrics use the `should_answer` label together with the model's observed b
 The evaluator derives:
 
 - `model_answered = TRUE` if the model returned a non-refusal answer
-- `model_answered = FALSE` if the model returned a refusal-style answer
+- `model_answered = FALSE` if the model returned a refusal-style answer or no answer
 
 #### `Correct Refusal Rate`
 

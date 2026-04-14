@@ -20,6 +20,62 @@ def _load_evaluate_accuracy():
     return module
 
 
+def _evaluate_unanswerable_response(module, monkeypatch, answer: object):
+    df = pd.DataFrame(
+        [
+            {
+                "query_id": "QQ038",
+                "query_text": "What was Tanzania's GDP growth rate in 2023?",
+                "golden_answer": None,
+                "relevant_doc_ids": None,
+                "evidence_locations": None,
+                "source_text": None,
+                "should_answer": False,
+                "Reviewers": None,
+            }
+        ]
+    )
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "question": "What was Tanzania's GDP growth rate in 2023?",
+                "content_type": "all",
+                "answer": answer,
+                "references": [],
+                "debug_response": {},
+            }
+
+    def fake_get(url, params, timeout):
+        return DummyResponse()
+
+    monkeypatch.setattr(module.requests, "get", fake_get)
+
+    return module.evaluate(
+        df=df,
+        base_url="http://example.test",
+        content_type="all",
+        api_mode="cloud",
+        timeout=12.0,
+        max_rows=None,
+        sleep_seconds=0.0,
+        refusal_phrases=module.DEFAULT_REFUSAL_PHRASES,
+        similarity_threshold=85.0,
+        abs_tol=0.1,
+        rel_tol=0.01,
+        retrieval_k=8,
+        compute_retrieval=False,
+        semantic_model=None,
+        f1_threshold=0.80,
+        semantic_threshold=0.90,
+        skip_rows=0,
+        request_api_debug=True,
+    )[0]
+
+
 def test_numeric_match_treats_scaled_units_as_equivalent():
     module = _load_evaluate_accuracy()
 
@@ -443,6 +499,63 @@ def test_evaluate_cloud_requests_debug_and_populates_context(monkeypatch):
     assert result.is_correct is True
 
 
+def test_validate_rows_allows_blank_unanswerable_fields():
+    module = _load_evaluate_accuracy()
+
+    df = pd.DataFrame(
+        [
+            {
+                "query_id": "QQ038",
+                "query_text": "What was Tanzania's GDP growth rate in 2023?",
+                "golden_answer": None,
+                "relevant_doc_ids": None,
+                "evidence_locations": None,
+                "source_text": None,
+                "should_answer": False,
+                "Reviewers": None,
+            }
+        ]
+    )
+
+    issues = module.validate_rows(
+        df,
+        require_reviewers=False,
+        query_id_prefix="QQ",
+    )
+
+    assert issues == []
+
+
+def test_evaluate_unanswerable_empty_answer_counts_as_correct_refusal(monkeypatch):
+    module = _load_evaluate_accuracy()
+
+    result = _evaluate_unanswerable_response(module, monkeypatch, "")
+
+    assert result.is_refusal is True
+    assert result.model_answered is False
+    assert result.correct_refusal is True
+    assert result.false_answer is False
+    assert result.is_correct is True
+    assert result.scoring_method == "correct_refusal"
+
+
+def test_evaluate_unanswerable_substantive_answer_counts_as_false_answer(monkeypatch):
+    module = _load_evaluate_accuracy()
+
+    result = _evaluate_unanswerable_response(
+        module,
+        monkeypatch,
+        "Tanzania's GDP grew by 5.2 per cent in 2023.",
+    )
+
+    assert result.is_refusal is False
+    assert result.model_answered is True
+    assert result.correct_refusal is False
+    assert result.false_answer is True
+    assert result.is_correct is False
+    assert result.scoring_method == "false_answer"
+
+
 def test_results_to_dataframe_renames_faiss_proxy_columns():
     module = _load_evaluate_accuracy()
 
@@ -671,3 +784,4 @@ def test_parse_args_defaults_to_verified_audited_and_retrieval_k_8(monkeypatch):
 
     assert args.excel == Path("tests/accuracy/StatsChat_QA_Verified_Audited.xlsx")
     assert args.retrieval_k == 8
+    assert args.query_id_prefix == "QQ"
