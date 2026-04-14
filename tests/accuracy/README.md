@@ -499,9 +499,9 @@ Doc Hit@k = 1 if any document in R_k is in G, else 0
 
 ## Why Some Retrieval Metrics Collapse On This Benchmark
 
-On the current audited workbook:
+On the answerable rows in the current audited workbook:
 
-- every row has exactly one gold relevant document
+- every answerable row has exactly one gold relevant document
 
 That means some retrieval metrics become numerically identical even though they
 are not the same metric in general:
@@ -511,7 +511,7 @@ are not the same metric in general:
 - `Precision@k = Doc Hit@k / k`
   - with one gold doc, top-`k` precision can only be `0` or `1/k`
 
-So on this 37-row sheet:
+So on the current answerable subset:
 
 - `pipeline_recall_at_k` and `pipeline_doc_hit_at_k` carry the same information
 - `pipeline_precision_at_k` is mostly a rescaled version of `pipeline_doc_hit_at_k`
@@ -567,9 +567,10 @@ Safe Response Rate =
 (# correct answerable rows + # correct refusals) / (# all evaluated rows)
 ```
 
-On the current audited sheet this is numerically equal to `overall_accuracy`
-because all `37` rows are answerable. It is still kept as a separate metric so
-it can diverge when `should_answer = FALSE` rows are added later.
+On the current evaluator this is normally numerically equal to
+`overall_accuracy`, because unanswerable rows are correct only when they are
+correct refusals. It is still kept as a separate named metric so the report
+clearly distinguishes safe-answer behavior from answer-only accuracy.
 
 ### Refusal And Guardrail Metrics
 
@@ -628,16 +629,17 @@ This detects overly cautious refusals or missing answers on answerable questions
 
 For the current `StatsChat_QA_Verified_Audited.xlsx` benchmark:
 
-- all `37` rows are answerable
-- every row has exactly one gold relevant document
-- most rows have numeric gold answers
+- `37` rows are answerable
+- `13` rows are unanswerable guardrail checks
+- every answerable row has exactly one gold relevant document
+- most answerable rows have numeric gold answers
 
 This leads to a few predictable metric behaviors:
 
-- `Answerable accuracy = Overall accuracy`
-- `Safe response rate = Overall accuracy`
-- `Recall@k = Doc Hit@k`
-- `Precision@k = Doc Hit@k / k`
+- `Overall accuracy` now combines answerable accuracy and unanswerable refusal accuracy
+- `Safe response rate` is reported separately so refusal behavior remains visible
+- on answerable rows, `Recall@k = Doc Hit@k`
+- on answerable rows, `Precision@k = Doc Hit@k / k`
 
 This is a property of the current sheet, not a bug in the formulas.
 
@@ -657,7 +659,8 @@ For answerable rows, the evaluator expects:
 
 Additional checks include:
 
-- query ID format, default `Q###`
+- query ID format, default `QQ###` for the audited workbook; pass
+  `--query-id-prefix Q` for generated workbooks that use `Q###`
 - duplicate query IDs
 - quoted `source_text`
 - evidence page formatting
