@@ -834,6 +834,12 @@ def test_infer_query_report_families_from_metric_hints():
     assert "economic_survey" in infer_query_report_families(
         "By what percentage did petroleum product imports increase in 2024?"
     )
+    assert "cpi_inflation" in infer_query_report_families(
+        "What was Kenya's inflation rate in April 2025?"
+    )
+    assert "cpi_inflation" in infer_query_report_families(
+        "What was the CPI for April 2025?"
+    )
     assert "national_agriculture_production_report" in infer_query_report_families(
         "How much maize was produced in 2023?"
     )
@@ -859,6 +865,18 @@ def test_doc_report_families_reads_title_and_url_metadata():
     assert _doc_report_families(agriculture_doc) == {
         "national_agriculture_production_report"
     }
+    assert _doc_report_families(
+        {
+            "title": "",
+            "url": "https://example/2023-Economic-Survey.pdf",
+        }
+    ) == {"economic_survey"}
+    assert _doc_report_families(
+        {
+            "title": "Kenya Consumer Price Indices and Inflation Rates April 2025",
+            "url": "https://example/Kenya-Consumer-Price-Indices-and-Inflation-Rates-April-2025.pdf",
+        }
+    ) == {"cpi_inflation"}
     assert _doc_report_families(
         {"title": "Kenya Demographic and Health Survey 2030"}
     ) == {"kenya_demographic_and_health_survey"}
@@ -1006,6 +1024,89 @@ def test_make_query_temporal_pre_filter_drops_neighbouring_years(monkeypatch):
     ]
 
 
+def test_make_query_precise_temporal_retries_wider_pool(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+    inq.k_docs = 3
+    inq.k_contexts = 3
+    inq.reranker_model_name = None
+    inq.recency_bias_weight = 0.5
+    inq.temporal_candidate_k = 96
+    inq.lagged_year_candidate_k = 320
+    inq.reranker_candidate_k = 48
+
+    captured_candidate_k: list[int | None] = []
+
+    def fake_similarity(q, latest_filter=True, return_dicts=True, candidate_k=None):
+        captured_candidate_k.append(candidate_k)
+        base_docs = [
+            {
+                "page_content": "Inflation was 5.0 per cent in April 2024",
+                "date": "01 April 2024",
+                "title": "Kenya Consumer Price Indices and Inflation Rates April 2024",
+                "score": 0.10,
+                "page_url": "u2024#page=1",
+                "url": "https://example/Kenya-Consumer-Price-Indices-and-Inflation-Rates-April-2024.pdf",
+            },
+            {
+                "page_content": "Inflation was 7.9 per cent in April 2023",
+                "date": "01 April 2023",
+                "title": "Kenya Consumer Price Indices and Inflation Rates April 2023",
+                "score": 0.20,
+                "page_url": "u2023#page=1",
+                "url": "https://example/Kenya-Consumer-Price-Indices-and-Inflation-Rates-April-2023.pdf",
+            },
+        ]
+        if candidate_k and candidate_k >= 320:
+            return [
+                {
+                    "page_content": "Inflation was 4.1 per cent in April 2025",
+                    "date": "01 April 2025",
+                    "title": "Kenya Consumer Price Indices and Inflation Rates April 2025",
+                    "score": 0.05,
+                    "page_url": "u2025#page=1",
+                    "url": "https://example/Kenya-Consumer-Price-Indices-and-Inflation-Rates-April-2025.pdf",
+                }
+            ] + base_docs
+        return base_docs
+
+    inq.similarity_search = fake_similarity
+
+    captured_titles: dict[str, object] = {}
+
+    def fake_query_texts(question, docs, **_kwargs):
+        captured_titles["titles"] = [d["title"] for d in docs]
+        return LlmResponse(
+            answer_provided=True,
+            most_likely_answer="4.1 per cent",
+            highlighting1=[],
+            highlighting2=[],
+            highlighting3=[],
+            reasoning=None,
+        )
+
+    inq.query_texts = fake_query_texts
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    inq.make_query(
+        "What was Kenya's inflation rate in April 2025?",
+        latest_filter=False,
+        highlighting=True,
+        latest_weight=0,
+    )
+
+    assert captured_candidate_k == [96, 320]
+    assert captured_titles["titles"] == [
+        "Kenya Consumer Price Indices and Inflation Rates April 2025"
+    ]
+
+
 def test_make_query_family_pre_filter_prefers_lagged_annual_report(monkeypatch):
     inq = Inquirer.__new__(Inquirer)
     inq.logger = MagicMock()
@@ -1080,6 +1181,89 @@ def test_make_query_family_pre_filter_prefers_lagged_annual_report(monkeypatch):
 
     assert captured_candidate_k == [96]
     assert captured_titles["titles"] == ["2025 Economic Survey"]
+
+
+def test_make_query_family_pre_filter_retries_when_lagged_year_missing(
+    monkeypatch,
+):
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.answer_threshold = 10
+    inq.document_threshold = 10
+    inq.k_docs = 3
+    inq.k_contexts = 3
+    inq.reranker_model_name = None
+    inq.recency_bias_weight = 0.5
+    inq.temporal_candidate_k = 96
+    inq.lagged_year_candidate_k = 320
+    inq.reranker_candidate_k = 48
+
+    captured_candidate_k: list[int | None] = []
+
+    def fake_similarity(q, latest_filter=True, return_dicts=True, candidate_k=None):
+        captured_candidate_k.append(candidate_k)
+        base_docs = [
+            {
+                "page_content": "Older recorded employment table",
+                "date": "01 May 2020",
+                "title": "2020 Economic Survey",
+                "score": 0.10,
+                "page_url": "u2020#page=71",
+                "url": "https://example/2020-Economic-Survey.pdf",
+            },
+            {
+                "page_content": "Older recorded employment table",
+                "date": "01 May 2016",
+                "title": "2016 Economic Survey",
+                "score": 0.20,
+                "page_url": "u2016#page=72",
+                "url": "https://example/2016-Economic-Survey.pdf",
+            },
+        ]
+        if candidate_k and candidate_k >= 320:
+            return [
+                {
+                    "page_content": "Total recorded employment in 2022 was 19,148.2 thousand",
+                    "date": "01 May 2023",
+                    "title": "2023 Economic Survey",
+                    "score": 0.05,
+                    "page_url": "u2023#page=93",
+                    "url": "https://example/2023-Economic-Survey.pdf",
+                }
+            ] + base_docs
+        return base_docs
+
+    inq.similarity_search = fake_similarity
+
+    captured_titles: dict[str, object] = {}
+
+    def fake_query_texts(question, docs, **_kwargs):
+        captured_titles["titles"] = [d["title"] for d in docs]
+        return LlmResponse(
+            answer_provided=True,
+            most_likely_answer="19,148.2 thousand",
+            highlighting1=[],
+            highlighting2=[],
+            highlighting3=[],
+            reasoning=None,
+        )
+
+    inq.query_texts = fake_query_texts
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.highlighter",
+        lambda docs, validated_response, logger: docs,
+    )
+
+    inq.make_query(
+        "What was the total recorded employment in Kenya in 2022, in thousands?",
+        latest_filter=False,
+        highlighting=True,
+        latest_weight=0,
+    )
+
+    assert captured_candidate_k == [96, 320]
+    assert captured_titles["titles"] == ["2023 Economic Survey"]
 
 
 def test_make_query_family_pre_filter_retries_wider_pool_on_year_plus_two(

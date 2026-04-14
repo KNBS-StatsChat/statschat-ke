@@ -87,6 +87,12 @@ ORDINAL_TO_QUARTER = {
 
 REPORT_FAMILY_DOC_PATTERNS = {
     "economic_survey": (re.compile(r"\beconomic survey\b", re.IGNORECASE),),
+    "cpi_inflation": (
+        re.compile(
+            r"\b(?:consumer price indices?|consumer price index|cpi|inflation rates?)\b",
+            re.IGNORECASE,
+        ),
+    ),
     "national_agriculture_production_report": (
         re.compile(r"\bnational agriculture production report\b", re.IGNORECASE),
     ),
@@ -108,6 +114,12 @@ REPORT_FAMILY_QUERY_PATTERNS = {
         re.compile(r"\brecorded employment\b", re.IGNORECASE),
         re.compile(r"\bpopulation census\b.*\bdisabil", re.IGNORECASE),
         re.compile(r"\bdisabil.*\bpopulation census\b", re.IGNORECASE),
+    ),
+    "cpi_inflation": (
+        re.compile(r"\binflation rates?\b", re.IGNORECASE),
+        re.compile(r"\bconsumer price indices?\b", re.IGNORECASE),
+        re.compile(r"\bconsumer price index\b", re.IGNORECASE),
+        re.compile(r"\bcpi\b", re.IGNORECASE),
     ),
     "national_agriculture_production_report": (
         re.compile(r"\bnational agriculture production report\b", re.IGNORECASE),
@@ -243,9 +255,14 @@ def _matches_all_patterns(text: str, patterns: tuple[re.Pattern[str], ...]) -> b
     return all(pattern.search(text) for pattern in patterns)
 
 
+def _normalize_report_family_text(text: str) -> str:
+    """Normalize URL/file-name separators before report-family regex matching."""
+    return re.sub(r"\s+", " ", re.sub(r"[-_/]+", " ", str(text or ""))).strip()
+
+
 def infer_query_report_families(text: str) -> set[str]:
     """Infer likely report families from explicit names or metric cues."""
-    text = str(text or "")
+    text = _normalize_report_family_text(text)
     return {
         family
         for family, patterns in REPORT_FAMILY_QUERY_PATTERNS.items()
@@ -260,7 +277,7 @@ def _doc_report_families(doc: dict) -> set[str]:
         str(doc.get("url", "")),
         str(doc.get("page_url", "")),
     ]
-    text = " ".join(parts)
+    text = _normalize_report_family_text(" ".join(parts))
     return {
         family
         for family, patterns in REPORT_FAMILY_DOC_PATTERNS.items()
@@ -300,6 +317,19 @@ def _select_lagged_year_subset(
             return subset, f"{label} {sorted(preferred_years)}"
 
     return None, None
+
+
+def _lagged_year_label_rank(label: str | None) -> int:
+    """Rank lagged-year preference labels; lower is more preferred."""
+    if label is None:
+        return 99
+    if label.startswith("year+1"):
+        return 0
+    if label.startswith("query year"):
+        return 1
+    if label.startswith("year+2"):
+        return 2
+    return 99
 
 
 def _doc_temporal_tokens(doc: dict) -> dict:
@@ -1361,6 +1391,29 @@ class Inquirer:
 
         docs = apply_family_filter(docs)
 
+        def retry_wider_temporal_pool(reason: str) -> list[dict] | None:
+            widened_candidate_k = getattr(
+                self,
+                "lagged_year_candidate_k",
+                getattr(self, "temporal_candidate_k", 0),
+            )
+            if candidate_k is not None and widened_candidate_k <= candidate_k:
+                return None
+
+            self.logger.info(
+                "Temporal candidate retry: widening candidates from %s to %s because %s",
+                candidate_k,
+                widened_candidate_k,
+                reason,
+            )
+            widened_docs = self.similarity_search(
+                question,
+                latest_filter=latest_filter_enabled,
+                candidate_k=widened_candidate_k,
+            )
+            widened_docs = self._dedupe_exact_chunks(widened_docs)
+            return apply_family_filter(widened_docs)
+
         if is_precise_temporal_query:
             temporal_subset = [
                 doc
@@ -1377,46 +1430,50 @@ class Inquirer:
                 )
                 docs = temporal_subset
             else:
-                self.logger.info(
-                    f"Temporal pre-filter: no candidates matched {query_temporal}; "
-                    "falling back to current pool"
+                widened_docs = retry_wider_temporal_pool(
+                    f"no candidates matched precise temporal tokens {query_temporal}"
                 )
+                widened_temporal_subset = (
+                    [
+                        doc
+                        for doc in widened_docs
+                        if _doc_matches_query_temporal(
+                            query_temporal, _doc_temporal_tokens(doc)
+                        )
+                    ]
+                    if widened_docs
+                    else []
+                )
+                if widened_temporal_subset:
+                    self.logger.info(
+                        "Temporal pre-filter retry: reranking %s of %s widened "
+                        "candidates that match query temporal tokens %s",
+                        len(widened_temporal_subset),
+                        len(widened_docs or []),
+                        query_temporal,
+                    )
+                    docs = widened_temporal_subset
+                else:
+                    self.logger.info(
+                        f"Temporal pre-filter: no candidates matched {query_temporal}; "
+                        "falling back to current pool"
+                    )
         elif query_families and query_temporal["years"]:
             lagged_subset, lagged_label = _select_lagged_year_subset(
                 docs, query_temporal
             )
-            if (
-                lagged_subset
-                and lagged_label is not None
-                and lagged_label.startswith("year+2")
-            ):
-                widened_candidate_k = getattr(
-                    self,
-                    "lagged_year_candidate_k",
-                    getattr(self, "temporal_candidate_k", 0),
+            if not lagged_label or not lagged_label.startswith("year+1"):
+                widened_docs = retry_wider_temporal_pool(
+                    "initial annual family pool missed preferred year+1 edition"
                 )
-                if candidate_k is None or widened_candidate_k > candidate_k:
-                    self.logger.info(
-                        "Annual-report year preference retry: widening candidates "
-                        "from %s to %s because initial pool fell to %s",
-                        candidate_k,
-                        widened_candidate_k,
-                        lagged_label,
-                    )
-                    widened_docs = self.similarity_search(
-                        question,
-                        latest_filter=latest_filter_enabled,
-                        candidate_k=widened_candidate_k,
-                    )
-                    widened_docs = self._dedupe_exact_chunks(widened_docs)
-                    widened_docs = apply_family_filter(widened_docs)
-                    widened_subset, widened_label = _select_lagged_year_subset(
-                        widened_docs, query_temporal
-                    )
-                    if widened_subset:
-                        docs = widened_subset
-                        lagged_subset = widened_subset
-                        lagged_label = widened_label
+                widened_subset, widened_label = _select_lagged_year_subset(
+                    widened_docs or [], query_temporal
+                )
+                if widened_subset and _lagged_year_label_rank(
+                    widened_label
+                ) < _lagged_year_label_rank(lagged_label):
+                    lagged_subset = widened_subset
+                    lagged_label = widened_label
             if lagged_subset:
                 self.logger.info(
                     "Annual-report year preference: reranking %s of %s candidates "
