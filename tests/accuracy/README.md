@@ -629,7 +629,7 @@ This detects overly cautious refusals or missing answers on answerable questions
 
 For the current `StatsChat_QA_Verified_Audited.xlsx` benchmark:
 
-- `37` rows are answerable
+- `61` rows are answerable
 - `13` rows are unanswerable guardrail checks
 - every answerable row has exactly one gold relevant document
 - most answerable rows have numeric gold answers
