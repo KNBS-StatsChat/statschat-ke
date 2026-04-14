@@ -4,6 +4,7 @@ Covers metadata flattening, similarity filtering, query parsing behavior,
 reranking/context selection, and error handling for invalid provider config.
 """
 
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -19,6 +20,7 @@ from statschat.generative.cloud_llm import (
     _extract_months,
     _extract_quarters,
     _extract_years,
+    _guardrail_refusal_reason,
     _select_lagged_year_subset,
     has_temporal_constraint,
     infer_query_report_families,
@@ -167,6 +169,71 @@ def test_query_texts_handles_empty_docs():
     assert isinstance(parsed, LlmResponse)
     assert parsed.answer_provided is False
     assert parsed.most_likely_answer is None
+
+
+def test_guardrail_refusal_reason_catches_out_of_scope_queries():
+    assert _guardrail_refusal_reason(
+        "What was Tanzania's GDP growth rate in 2023?",
+        today=date(2026, 4, 14),
+    )
+    assert _guardrail_refusal_reason(
+        "Compare Kenya's 2024 CPI inflation with Nigeria's 2024 CPI inflation.",
+        today=date(2026, 4, 14),
+    )
+    assert _guardrail_refusal_reason(
+        "Should Kenya reduce interest rates to control inflation?",
+        today=date(2026, 4, 14),
+    )
+    assert _guardrail_refusal_reason(
+        "What is the best county in Kenya?",
+        today=date(2026, 4, 14),
+    )
+    assert _guardrail_refusal_reason(
+        "What was Kenya's inflation rate in December 2026?",
+        today=date(2026, 4, 14),
+    )
+    assert _guardrail_refusal_reason(
+        "What is the salary of the KNBS Director General?",
+        today=date(2026, 4, 14),
+    )
+    assert _guardrail_refusal_reason(
+        "What is Kenya's military expenditure as a percentage of GDP in 2024?",
+        today=date(2026, 4, 14),
+    )
+
+
+def test_guardrail_refusal_reason_allows_in_scope_statistical_queries():
+    assert (
+        _guardrail_refusal_reason(
+            "What was Kenya's inflation rate in April 2025?",
+            today=date(2026, 4, 14),
+        )
+        is None
+    )
+    assert (
+        _guardrail_refusal_reason(
+            "Which Kenyan county leads by formal financial inclusion?",
+            today=date(2026, 4, 14),
+        )
+        is None
+    )
+
+
+def test_make_query_short_circuits_guardrail_refusals():
+    inq = Inquirer.__new__(Inquirer)
+    inq.logger = MagicMock()
+    inq.similarity_search = MagicMock()
+
+    docs, answer, response = inq.make_query(
+        "What was Tanzania's GDP growth rate in 2023?",
+        latest_filter=False,
+    )
+
+    assert docs == []
+    assert answer == ""
+    assert response.answer_provided is False
+    assert "outside the Kenya/KNBS corpus" in (response.reasoning or "")
+    inq.similarity_search.assert_not_called()
 
 
 def test_inquirer_init_invalid_provider_raises(monkeypatch):
@@ -1722,7 +1789,8 @@ def test_make_query_temporal_pre_filter_falls_back_to_full_pool(monkeypatch):
     inq.temporal_candidate_k = 96
     inq.reranker_candidate_k = 48
 
-    # No doc actually matches Q3 2099 — pre-filter must fall back, not return empty
+    # No doc actually matches Q3 2023 — pre-filter must fall back, not return empty.
+    # Future dates are handled by the guardrail before retrieval.
     inq.similarity_search = (
         lambda q, latest_filter=True, return_dicts=True, candidate_k=None: [
             {
@@ -1757,7 +1825,7 @@ def test_make_query_temporal_pre_filter_falls_back_to_full_pool(monkeypatch):
     )
 
     inq.make_query(
-        "What was Kenya's GDP growth in Q3 2099?",
+        "What was Kenya's GDP growth in Q3 2023?",
         latest_filter=False,
         highlighting=True,
         latest_weight=0,

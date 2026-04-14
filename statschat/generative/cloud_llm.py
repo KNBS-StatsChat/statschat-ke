@@ -2,6 +2,7 @@ import logging
 import os
 import re
 from collections import defaultdict
+from datetime import date
 from functools import lru_cache
 
 from dotenv import load_dotenv
@@ -67,6 +68,29 @@ QUARTER_ORDINAL_PATTERN = re.compile(
 )
 QUARTER_NUMBER_PATTERN = re.compile(
     r"\bquarter\s+(?:([1-4])|(one|two|three|four|first|second|third|fourth))\b",
+    re.IGNORECASE,
+)
+NON_KENYA_COUNTRY_PATTERN = re.compile(
+    r"\b("
+    r"tanzania|uganda|ethiopia|nigeria|rwanda|burundi|south\s+sudan|sudan|"
+    r"somalia|djibouti|eritrea|democratic\s+republic\s+of\s+congo|drc|"
+    r"congo|zambia|malawi|mozambique|south\s+africa|ghana"
+    r")\b",
+    re.IGNORECASE,
+)
+POLICY_ADVICE_PATTERN = re.compile(
+    r"(^|\b)(should|recommend|recommendation|recommendations)\b|"
+    r"\bwhat\s+polic(?:y|ies)\s+should\b",
+    re.IGNORECASE,
+)
+SUBJECTIVE_JUDGEMENT_PATTERN = re.compile(
+    r"\b(best|worst|performing\s+well|compared\s+to\s+its\s+potential)\b",
+    re.IGNORECASE,
+)
+UNSUPPORTED_TOPIC_PATTERN = re.compile(
+    r"\b(knbs\s+director\s+general|director\s+general).*\bsalary\b|"
+    r"\bsalary\b.*\b(knbs\s+director\s+general|director\s+general)\b|"
+    r"\b(military\s+expenditure|defen[cs]e\s+spending)\b",
     re.IGNORECASE,
 )
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
@@ -242,6 +266,50 @@ def parse_temporal_tokens(text: str) -> dict:
         "months": _extract_months(text),
         "quarters": _extract_quarters(text),
     }
+
+
+def _guardrail_refusal_reason(query: str, *, today: date | None = None) -> str | None:
+    """Return a refusal reason for clearly out-of-scope public queries."""
+    query_text = str(query or "").strip()
+    if not query_text:
+        return None
+
+    if NON_KENYA_COUNTRY_PATTERN.search(query_text):
+        return (
+            "Question asks for statistics outside the Kenya/KNBS corpus or for an "
+            "unsupported cross-country comparison."
+        )
+
+    if POLICY_ADVICE_PATTERN.search(query_text):
+        return (
+            "Question asks for policy advice or recommendations rather than an "
+            "official KNBS statistical fact."
+        )
+
+    if SUBJECTIVE_JUDGEMENT_PATTERN.search(query_text):
+        return (
+            "Question asks for a subjective judgement rather than an official KNBS "
+            "statistical fact."
+        )
+
+    if UNSUPPORTED_TOPIC_PATTERN.search(query_text):
+        return (
+            "Question asks for a topic outside the indexed KNBS statistical "
+            "publication scope."
+        )
+
+    temporal = parse_temporal_tokens(query_text)
+    today = today or date.today()
+    future_years = {year for year in temporal["years"] if year > today.year}
+    if future_years:
+        return "Question asks for future or unpublished statistical data."
+
+    if today.year in temporal["years"] and any(
+        month > today.month for month in temporal["months"]
+    ):
+        return "Question asks for future or unpublished statistical data."
+
+    return None
 
 
 def has_temporal_constraint(text: str) -> bool:
@@ -1332,6 +1400,18 @@ class Inquirer:
             LlmResponse: Generated response to query (pydantic model)
         """
         self.logger.info(f"Search query: {question}")
+        guardrail_reason = _guardrail_refusal_reason(question)
+        if guardrail_reason:
+            self.logger.info("Guardrail refusal: %s", guardrail_reason)
+            empty_response = LlmResponse(
+                answer_provided=False,
+                highlighting1=[],
+                highlighting2=[],
+                highlighting3=[],
+                reasoning=guardrail_reason,
+            )
+            return [], "", empty_response
+
         latest_filter_enabled = self._latest_filter_enabled(latest_filter)
 
         query_temporal = parse_temporal_tokens(question)

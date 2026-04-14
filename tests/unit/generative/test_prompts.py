@@ -65,6 +65,16 @@ def test_cloud_prompt_formatting():
     assert "answer_provided" in formatted_prompt
 
 
+def test_cloud_prompt_contains_guardrail_boundaries():
+    formatted_prompt = CLOUD_PROMPT.format(
+        question="Compare Kenya and Nigeria inflation.", summaries="Kenya CPI was 3%."
+    )
+
+    assert "statistics for other countries" in formatted_prompt
+    assert "Do not provide policy advice" in formatted_prompt
+    assert "set answer_provided to false" in formatted_prompt
+
+
 def test_document_prompts():
     """
     Verify the document formatting templates used for RAG context.
