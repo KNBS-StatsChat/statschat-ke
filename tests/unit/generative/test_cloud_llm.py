@@ -122,6 +122,37 @@ def test_query_texts_parses_chain_response(monkeypatch):
     assert parsed.most_likely_answer == "ANS"
 
 
+def test_query_texts_accepts_false_answer_without_answer_text(monkeypatch):
+    inq = Inquirer.__new__(Inquirer)
+    inq.k_contexts = 3
+    inq.extractive_prompt = "p"
+    inq.stuff_document_prompt = "d"
+    inq.llm = None
+    inq.verbose = False
+    inq.logger = MagicMock()
+
+    docs = [
+        {"page_content": "x", "date": "2024-01-01", "title": "T", "score": 0.1},
+    ]
+    fake_response_text = '{"answer_provided": false, "highlighting1": [], "highlighting2": [], "highlighting3": [], "reasoning": "No answer in context."}'
+    fake_chain = SimpleNamespace(
+        invoke=lambda payload, return_only_outputs=True: {
+            "output_text": fake_response_text
+        }
+    )
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.load_qa_with_sources_chain",
+        lambda *a, **k: fake_chain,
+    )
+
+    parsed = inq.query_texts("why", docs)
+
+    assert isinstance(parsed, LlmResponse)
+    assert parsed.answer_provided is False
+    assert parsed.most_likely_answer is None
+
+
 def test_query_texts_handles_empty_docs():
     inq = Inquirer.__new__(Inquirer)
     inq.k_contexts = 3
@@ -131,8 +162,11 @@ def test_query_texts_handles_empty_docs():
     inq.verbose = False
     inq.logger = MagicMock()
 
-    with pytest.raises(Exception):
-        inq.query_texts("why", [])
+    parsed = inq.query_texts("why", [])
+
+    assert isinstance(parsed, LlmResponse)
+    assert parsed.answer_provided is False
+    assert parsed.most_likely_answer is None
 
 
 def test_inquirer_init_invalid_provider_raises(monkeypatch):
