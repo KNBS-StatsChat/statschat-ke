@@ -111,6 +111,13 @@ ORDINAL_TO_QUARTER = {
 
 REPORT_FAMILY_DOC_PATTERNS = {
     "economic_survey": (re.compile(r"\beconomic survey\b", re.IGNORECASE),),
+    "facts_and_figures": (
+        re.compile(r"\b(?:kenya )?facts (?:and|&) figures\b", re.IGNORECASE),
+    ),
+    "statistical_abstract": (re.compile(r"\bstatistical abstract\b", re.IGNORECASE),),
+    "construction_input_price_indices": (
+        re.compile(r"\bconstruction input price ind(?:ex|ices)\b", re.IGNORECASE),
+    ),
     "cpi_inflation": (
         re.compile(
             r"\b(?:consumer price indices?|consumer price index|cpi|inflation rates?)\b",
@@ -128,6 +135,10 @@ REPORT_FAMILY_DOC_PATTERNS = {
         re.compile(r"\bkenya housing survey\b", re.IGNORECASE),
         re.compile(r"\bbasic report\b", re.IGNORECASE),
     ),
+    "finaccess": (re.compile(r"\bfinaccess\b", re.IGNORECASE),),
+    "leading_economic_indicators": (
+        re.compile(r"\bleading economic indicators?\b", re.IGNORECASE),
+    ),
 }
 
 REPORT_FAMILY_QUERY_PATTERNS = {
@@ -138,6 +149,26 @@ REPORT_FAMILY_QUERY_PATTERNS = {
         re.compile(r"\brecorded employment\b", re.IGNORECASE),
         re.compile(r"\bpopulation census\b.*\bdisabil", re.IGNORECASE),
         re.compile(r"\bdisabil.*\bpopulation census\b", re.IGNORECASE),
+    ),
+    "facts_and_figures": (
+        re.compile(r"\bfacts (?:and|&) figures\b", re.IGNORECASE),
+        re.compile(r"\bmodern sector\b.*\bwage employment\b", re.IGNORECASE),
+        re.compile(r"\bwage employment\b.*\bmodern sector\b", re.IGNORECASE),
+        re.compile(r"\bteachers service commission\b", re.IGNORECASE),
+        re.compile(r"\bgdp at constant prices\b", re.IGNORECASE),
+    ),
+    "statistical_abstract": (
+        re.compile(r"\bstatistical abstract\b", re.IGNORECASE),
+        re.compile(r"\bholiday\b.*\bbusiness visitors?\b", re.IGNORECASE),
+        re.compile(r"\bvisitor arrivals?\b", re.IGNORECASE),
+        re.compile(r"\bunmilled wheat\b", re.IGNORECASE),
+        re.compile(r"\bwheat\b.*\bimports?\b", re.IGNORECASE),
+        re.compile(r"\bimports?\b.*\bwheat\b", re.IGNORECASE),
+    ),
+    "construction_input_price_indices": (
+        re.compile(r"\bconstruction input price ind(?:ex|ices)\b", re.IGNORECASE),
+        re.compile(r"\bconstruction inflation\b", re.IGNORECASE),
+        re.compile(r"\bconstruction\b.*\binflation rate\b", re.IGNORECASE),
     ),
     "cpi_inflation": (
         re.compile(r"\binflation rates?\b", re.IGNORECASE),
@@ -172,6 +203,20 @@ REPORT_FAMILY_QUERY_PATTERNS = {
         re.compile(r"\bdwelling unit\b", re.IGNORECASE),
         re.compile(r"\bmobile phone\b.*\bownership status\b", re.IGNORECASE),
         re.compile(r"\bmobile phone\b.*\bregardless of ownership\b", re.IGNORECASE),
+    ),
+    "finaccess": (
+        re.compile(r"\bfinaccess\b", re.IGNORECASE),
+        re.compile(r"\bformal financial access\b", re.IGNORECASE),
+        re.compile(r"\bfinancial access rate\b", re.IGNORECASE),
+        re.compile(r"\bfinancial inclusion\b", re.IGNORECASE),
+        re.compile(r"\bmobile money\b.*\bdaily\b", re.IGNORECASE),
+        re.compile(r"\bfinancially healthy\b", re.IGNORECASE),
+        re.compile(r"\bfinancial health\b", re.IGNORECASE),
+    ),
+    "leading_economic_indicators": (
+        re.compile(r"\bleading economic indicators?\b", re.IGNORECASE),
+        re.compile(r"\bbroad money supply\b", re.IGNORECASE),
+        re.compile(r"\bm3\b", re.IGNORECASE),
     ),
 }
 GENERATION_PAGE_STOPWORDS = frozenset(
@@ -331,11 +376,14 @@ def _normalize_report_family_text(text: str) -> str:
 def infer_query_report_families(text: str) -> set[str]:
     """Infer likely report families from explicit names or metric cues."""
     text = _normalize_report_family_text(text)
-    return {
+    families = {
         family
         for family, patterns in REPORT_FAMILY_QUERY_PATTERNS.items()
         if any(pattern.search(text) for pattern in patterns)
     }
+    if "construction_input_price_indices" in families:
+        families.discard("cpi_inflation")
+    return families
 
 
 def _doc_report_families(doc: dict) -> set[str]:

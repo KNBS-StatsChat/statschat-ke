@@ -916,6 +916,21 @@ def test_infer_query_report_families_from_metric_hints():
     assert "kenya_demographic_and_health_survey" in infer_query_report_families(
         "What percentage of children in Kenya have a birth certificate?"
     )
+    assert "facts_and_figures" in infer_query_report_families(
+        "What was the total wage employment in Kenya's modern sector in 2024?"
+    )
+    assert "statistical_abstract" in infer_query_report_families(
+        "How many tonnes of unmilled wheat did Kenya import in 2024?"
+    )
+    assert infer_query_report_families(
+        "What was the construction inflation rate in Kenya in Q4 2024?"
+    ) == {"construction_input_price_indices"}
+    assert "finaccess" in infer_query_report_families(
+        "What was Kenya's formal financial access rate in 2024?"
+    )
+    assert "leading_economic_indicators" in infer_query_report_families(
+        "What was Kenya's broad money supply (M3) in August 2023?"
+    )
 
 
 def test_doc_report_families_reads_title_and_url_metadata():
@@ -944,6 +959,21 @@ def test_doc_report_families_reads_title_and_url_metadata():
             "url": "https://example/Kenya-Consumer-Price-Indices-and-Inflation-Rates-April-2025.pdf",
         }
     ) == {"cpi_inflation"}
+    assert _doc_report_families({"title": "2025 Facts and Figures"}) == {
+        "facts_and_figures"
+    }
+    assert _doc_report_families({"title": "2025 Statistical Abstract"}) == {
+        "statistical_abstract"
+    }
+    assert _doc_report_families(
+        {"title": "Construction Input Price Indices for Fourth Quarter 2024"}
+    ) == {"construction_input_price_indices"}
+    assert _doc_report_families(
+        {"title": "2024 FinAccess Household Survey Report"}
+    ) == {"finaccess"}
+    assert _doc_report_families(
+        {"title": "Leading Economic Indicators August 2024"}
+    ) == {"leading_economic_indicators"}
     assert _doc_report_families(
         {"title": "Kenya Demographic and Health Survey 2030"}
     ) == {"kenya_demographic_and_health_survey"}

@@ -87,6 +87,18 @@ def test_numeric_match_treats_scaled_units_as_equivalent():
     )
 
 
+def test_numeric_match_treats_table_thousands_marker_as_equivalent():
+    module = _load_evaluate_accuracy()
+
+    assert module.numeric_match(
+        "Turkana, with 8,625.2 thousand",
+        "Turkana had the largest meat goat population in Kenya in 2024, "
+        "with 8,625.2 ('000).",
+        abs_tol=0.1,
+        rel_tol=0.01,
+    )
+
+
 def test_numeric_match_still_handles_plain_numbers():
     module = _load_evaluate_accuracy()
 
@@ -637,7 +649,7 @@ def test_enrich_saved_results_dataframe_adds_pipeline_metrics_and_scoring_method
                 "ndcg": 1.0,
                 "retrieval_metric_source": "local_similarity_search_proxy",
                 "retrieved_doc_ids": "doc1;doc2",
-                "is_correct": True,
+                "is_correct": False,
             }
         ]
     )
@@ -671,6 +683,7 @@ def test_enrich_saved_results_dataframe_adds_pipeline_metrics_and_scoring_method
     assert float(enriched.loc[0, "pipeline_precision_at_k"]) == 0.2
     assert float(enriched.loc[0, "pipeline_page_precision_at_k"]) == 0.2
     assert enriched.loc[0, "pipeline_doc_hit_at_1"] is True
+    assert bool(enriched.loc[0, "is_correct"]) is True
     assert enriched.loc[0, "scoring_method"] == "numeric_match"
 
 

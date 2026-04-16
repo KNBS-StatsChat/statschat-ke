@@ -51,7 +51,8 @@ PERCENT_PATTERN = re.compile(
 )
 SCALED_NUMBER_PATTERN = re.compile(
     r"(?P<number>\d+(?:,\d{3})*(?:\.\d+)?)"
-    r"(?:\s*(?P<scale>thousand|million|billion|trillion))?",
+    r"(?:\s*(?P<scale>thousand|million|billion|trillion|"
+    r"\(?\s*['’`]?\s*0{3}\s*\)?))?",
     re.IGNORECASE,
 )
 QUOTE_PATTERN = re.compile(r"[\"“”]")
@@ -250,7 +251,12 @@ def parse_scaled_numbers(text: str) -> list[float]:
     for match in SCALED_NUMBER_PATTERN.finditer(text):
         number = float(match.group("number").replace(",", ""))
         scale = str(match.group("scale") or "").lower()
-        multiplier = SCALE_MULTIPLIERS.get(scale, 1.0)
+        normalized_scale = re.sub(r"[\s()'’`]", "", scale)
+        multiplier = (
+            1_000.0
+            if normalized_scale == "000"
+            else SCALE_MULTIPLIERS.get(normalized_scale, 1.0)
+        )
         values.append(number * multiplier)
     return values
 
@@ -2249,9 +2255,10 @@ def save_run_report(
         lines.append(f"| **Returned doc IDs** | {returned_doc_ids or '*(none)*'} |")
         lines.append(f"| **Expected evidence** | {evidence_locations or '*(none)*'} |")
         lines.append(f"| **Returned pages** | {returned_pages or '*(none)*'} |")
-        if result.reference_titles:
+        reference_titles = cell_text(result.reference_titles)
+        if reference_titles:
             lines.append(
-                f"| **Returned titles** | {result.reference_titles.replace(';', '; ')} |"
+                f"| **Returned titles** | {reference_titles.replace(';', '; ')} |"
             )
         if result.reference_scores:
             lines.append(f"| **Retrieval scores** | {result.reference_scores} |")
@@ -2263,40 +2270,46 @@ def save_run_report(
                 f"> {source_text[:500]}{'...' if len(source_text) > 500 else ''}\n"
             )
 
+        reasoning = cell_text(result.reasoning)
+        context_texts = cell_text(result.context_texts)
+        highlighting = cell_text(result.highlighting)
+        context_from = cell_text(result.context_from)
+        context_reference = cell_text(result.context_reference)
+        relevant_publications = cell_text(result.relevant_publications)
+        predicted_source_text = cell_text(result.predicted_source_text)
+
         has_debug = any(
             [
-                result.reasoning,
-                result.context_texts,
-                result.highlighting,
-                result.context_from,
-                result.context_reference,
-                result.relevant_publications,
-                result.predicted_source_text,
+                reasoning,
+                context_texts,
+                highlighting,
+                context_from,
+                context_reference,
+                relevant_publications,
+                predicted_source_text,
             ]
         )
         if has_debug:
             lines.append("### StatsChat Context\n")
-            if result.reasoning:
-                lines.append(f"**Reasoning:** {result.reasoning}\n")
-            if result.highlighting:
-                lines.append(f"**Key phrases:** {result.highlighting}\n")
-            if result.context_from:
-                lines.append(f"**Context from:** {result.context_from}\n")
-            if result.context_reference:
-                lines.append(f"**Context reference:** {result.context_reference}\n")
-            if result.relevant_publications:
-                lines.append(
-                    f"**Relevant publications:** {result.relevant_publications}\n"
-                )
-            if result.predicted_source_text:
+            if reasoning:
+                lines.append(f"**Reasoning:** {reasoning}\n")
+            if highlighting:
+                lines.append(f"**Key phrases:** {highlighting}\n")
+            if context_from:
+                lines.append(f"**Context from:** {context_from}\n")
+            if context_reference:
+                lines.append(f"**Context reference:** {context_reference}\n")
+            if relevant_publications:
+                lines.append(f"**Relevant publications:** {relevant_publications}\n")
+            if predicted_source_text:
                 lines.append("**Predicted source text:**\n")
                 lines.append(
-                    f"> {result.predicted_source_text[:500]}"
-                    f"{'...' if len(result.predicted_source_text) > 500 else ''}\n"
+                    f"> {predicted_source_text[:500]}"
+                    f"{'...' if len(predicted_source_text) > 500 else ''}\n"
                 )
-            if result.context_texts:
+            if context_texts:
                 lines.append("<details><summary>Retrieved context chunks</summary>\n")
-                lines.append(f"```\n{result.context_texts[:2000]}\n```\n")
+                lines.append(f"```\n{context_texts[:2000]}\n```\n")
                 lines.append("</details>\n")
 
         if result.error:
@@ -2342,6 +2355,16 @@ def enrich_saved_results_dataframe(
         "pipeline_page_mrr",
         "pipeline_page_ndcg",
         "scoring_method",
+        "model_answered",
+        "correct_refusal",
+        "false_answer",
+        "answered_when_expected",
+        "answer_missing",
+        "is_refusal",
+        "is_correct",
+        "exact_match",
+        "token_f1",
+        "similarity_score",
     ]:
         if column not in df.columns:
             df[column] = None
@@ -2386,39 +2409,103 @@ def enrich_saved_results_dataframe(
         for key, value in pipeline_metrics.items():
             df.at[idx, key] = value
 
-        should_answer = normalize_bool(row.get("should_answer"))
-        golden_answer = cell_text(row.get("golden_answer", ""))
+        should_answer = normalize_bool(
+            qa_row.get("should_answer", row.get("should_answer"))
+        )
+        golden_answer = cell_text(
+            qa_row.get("golden_answer", row.get("golden_answer", ""))
+        )
         predicted_answer = cell_text(row.get("predicted_answer", ""))
-        exact_match = pd.to_numeric(row.get("exact_match"), errors="coerce")
-        token_f1 = pd.to_numeric(row.get("token_f1"), errors="coerce")
+        df.at[idx, "should_answer"] = should_answer
+        df.at[idx, "golden_answer"] = golden_answer
+
+        exact_match_value: Optional[int] = None
+        token_f1_value: Optional[float] = None
+        similarity_score_value: Optional[float] = None
+        if should_answer is True:
+            exact_match_value = exact_match_score(golden_answer, predicted_answer)
+            token_f1_value = token_f1_score(golden_answer, predicted_answer)
+            similarity_score_value = text_match(golden_answer, predicted_answer)
+
         semantic_similarity = pd.to_numeric(
             row.get("semantic_similarity"), errors="coerce"
         )
-        similarity_score = pd.to_numeric(row.get("similarity_score"), errors="coerce")
-        refusal = bool(normalize_bool(row.get("is_refusal"))) or (
+        refusal = is_refusal_answer(predicted_answer, DEFAULT_REFUSAL_PHRASES) or (
             should_answer is False and not predicted_answer
         )
+        model_answered = bool(predicted_answer) and not refusal
         numeric_correct = numeric_match(
             golden_answer, predicted_answer, abs_tol=abs_tol, rel_tol=rel_tol
         )
         golden_has_numbers = bool(parse_scaled_numbers(golden_answer))
-        df.at[idx, "scoring_method"] = determine_scoring_method(
+
+        if should_answer is True:
+            passes_f1 = (
+                token_f1_value >= f1_threshold if token_f1_value is not None else False
+            )
+            passes_semantic = (
+                semantic_similarity >= semantic_threshold
+                if not pd.isna(semantic_similarity)
+                else False
+            )
+            if refusal:
+                is_correct = False
+            elif golden_has_numbers:
+                is_correct = exact_match_value == 1 or numeric_correct
+            else:
+                is_correct = (
+                    exact_match_value == 1
+                    or numeric_correct
+                    or (
+                        similarity_score_value is not None
+                        and similarity_score_value >= similarity_threshold
+                    )
+                    or passes_f1
+                    or passes_semantic
+                )
+            correct_refusal = None
+            false_answer = None
+            answered_when_expected = model_answered
+            answer_missing = not model_answered
+        elif should_answer is False:
+            is_correct = refusal
+            correct_refusal = refusal
+            false_answer = not refusal
+            answered_when_expected = None
+            answer_missing = None
+        else:
+            is_correct = None
+            correct_refusal = None
+            false_answer = None
+            answered_when_expected = None
+            answer_missing = None
+
+        scoring_method = determine_scoring_method(
             should_answer=should_answer,
             refusal=refusal,
-            exact_match=int(exact_match) if not pd.isna(exact_match) else None,
+            exact_match=exact_match_value,
             numeric_correct=numeric_correct,
             golden_has_numbers=golden_has_numbers,
-            similarity_score=(
-                float(similarity_score) if not pd.isna(similarity_score) else None
-            ),
+            similarity_score=similarity_score_value,
             similarity_threshold=similarity_threshold,
-            token_f1=float(token_f1) if not pd.isna(token_f1) else None,
+            token_f1=token_f1_value,
             f1_threshold=f1_threshold,
             semantic_similarity=(
                 float(semantic_similarity) if not pd.isna(semantic_similarity) else None
             ),
             semantic_threshold=semantic_threshold,
         )
+        df.at[idx, "exact_match"] = exact_match_value
+        df.at[idx, "token_f1"] = token_f1_value
+        df.at[idx, "similarity_score"] = similarity_score_value
+        df.at[idx, "is_refusal"] = refusal
+        df.at[idx, "model_answered"] = model_answered
+        df.at[idx, "is_correct"] = is_correct
+        df.at[idx, "correct_refusal"] = correct_refusal
+        df.at[idx, "false_answer"] = false_answer
+        df.at[idx, "answered_when_expected"] = answered_when_expected
+        df.at[idx, "answer_missing"] = answer_missing
+        df.at[idx, "scoring_method"] = scoring_method
 
     if len(df) > 0 and matched_query_ids == 0:
         sample_unmatched = ", ".join(unmatched_query_ids[:5]) or "(none)"
