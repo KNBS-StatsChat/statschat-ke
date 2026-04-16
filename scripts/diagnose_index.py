@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INDEX_PKL = ROOT / "data/db_langchain_rebuild_v1/index.pkl"
 URL_DICT = ROOT / "data/pdf_downloads/url_dict.json"
 JSON_DIR = ROOT / "data/json_conversions"
-QA_FILE = ROOT / "tests/accuracy/KNBS_Verified_QA_Examples_CorpusAligned.xlsx"
+QA_FILE = ROOT / "tests/accuracy/StatsChat_QA_Verified_Audited.xlsx"
 
 
 def load_docstore():

@@ -643,6 +643,31 @@ This leads to a few predictable metric behaviors:
 
 This is a property of the current sheet, not a bug in the formulas.
 
+## Active Benchmark Files
+
+Use `tests/accuracy/StatsChat_QA_Verified_Audited.xlsx` as the only active
+audited benchmark workbook unless a new audited successor is explicitly created.
+
+The root of `tests/accuracy/` still contains historical/generated workbooks from
+earlier evaluation passes. These are useful as audit history, but they should not
+be used for production-readiness scoring:
+
+- `StatsChat_QA_Auto*.xlsx`: generated/smoke workbooks
+- `StatsChat_QA_Codex*.xlsx`: intermediate candidate rows
+- `KNBS_Verified_QA_Examples*.xlsx`: older verified-example experiments
+- `*_With_Answers.xlsx`: evaluator output snapshots
+- `accuracy_results*.csv` and `qa_data_issues*.csv`: generated run outputs
+
+For reproducible benchmark analysis, prefer the timestamped run archive under:
+
+```text
+tests/accuracy/runs/{cloud|local}/{timestamp}/
+```
+
+The current cleanup direction is to keep only the audited source workbook in the
+active root and move old spreadsheets/results into an archive or remove them
+after explicit approval.
+
 ## Validation Rules
 
 For answerable rows, the evaluator expects:

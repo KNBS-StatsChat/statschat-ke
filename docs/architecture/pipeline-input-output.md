@@ -238,14 +238,24 @@ If the local path cannot find suitable PDFs (no results, or the top match is wor
 
 **What gets retrieved?**
 
-- The retriever pulls **up to `k_docs` chunks** from FAISS via `similarity_search_with_score(...)`.
-- In your current config, `k_docs = 2` (see `statschat/config/main.toml`).
-- Some results can be filtered out if they are above `similarity_threshold`, so the final count can be `< k_docs`.
+- The retriever first pulls a larger candidate pool from FAISS via
+  `similarity_search_with_score(...)`.
+- The candidate pool is then deduplicated, optionally report-family filtered,
+  temporal-edition filtered, reranked with a cross-encoder, and truncated.
+- In the current config, `k_docs = 8` and `k_contexts = 5`
+  (see `statschat/config/main.toml`).
+- Some results can be filtered out if they are above `similarity_threshold`, so
+  the final count can be `< k_docs`.
 
 **What does the LLM see as context?**
 
-- The LLM is passed **up to `k_contexts` chunks**, further filtered by a score rule: only chunks with `score <= 1.5 * best_score` are included.
-- In your current config, `k_contexts = 5`.
+- The LLM is passed **up to `k_contexts` chunks** selected from the reranked
+  pipeline results.
+- Generation context selection applies mild per-document diversity so one report
+  cannot flood every context slot.
+- The cloud path can also replace selected pages with better pages from the same
+  already-selected document, using a per-document page shortlist. This improves
+  page grounding without changing the global document ranking.
 
 **What is returned in `references`?**
 
@@ -263,8 +273,10 @@ If the best retrieved chunk’s score is worse than `document_threshold`, the co
 
 **Key differences**
 
-- Retrieval is **hard-coded** to `k_docs = 3` in `local_llm.py`.
-- The prompt uses **up to 2 chunks** as context (the script now pads or exits early if fewer than 2 chunks are retrieved).
+- Local retrieval reads `k_docs`, thresholds, embedding model, FAISS root, and
+  reranker settings from `statschat/config/main.toml`, with safe defaults.
+- The prompt uses up to the configured `k_contexts` chunks, selected with the
+  same mild document-diversity pattern used by the cloud path.
 - The API response returns:
   - `references`: a **single URL string** (the first match’s `page_url`)
   - `relevant_publication_one` and `relevant_publication_two`: titles for the top 2 matches
@@ -272,6 +284,21 @@ If the best retrieved chunk’s score is worse than `document_threshold`, the co
 Local mode also includes a small JSON-recovery step when parsing model output and uses deterministic generation settings to reduce JSON parse failures.
 
 Local mode also applies `answer_threshold` and `document_threshold` at the API layer to keep behavior consistent with the cloud path (e.g., avoid suggesting links exist when `references` is empty).
+
+Local mode now mirrors the cloud API surface for deployment concerns:
+
+- `/health`
+- optional API-key auth on `/search` and `/feedback`
+- CORS configuration
+- optional in-process rate limiting
+- out-of-scope guardrail refusals
+- temporal `latest_filter` override for date-specific queries
+
+However, local mode is **not yet full retrieval-parity equivalent** to the cloud
+path. The current cloud benchmark score depends on cloud-specific report-family
+routing, temporal retry, report-period selection, and page-shortlist replacement
+implemented in `statschat/generative/cloud_llm.py`. These are not fully shared
+with `statschat/generative/local_llm.py`.
 
 If you want “document outputs” to behave the same way across cloud/local, you’ll likely want to standardize these response formats.
 
@@ -318,7 +345,7 @@ In practice, the query-time “document output count” is bounded by:
 
 With your current config, that is typically:
 
-- **Up to 2** retrieved chunk references returned (`k_docs = 2`)
+- **Up to 8** retrieved chunk references returned (`k_docs = 8`)
 - **Up to 5** chunks eligible to be passed to the LLM (`k_contexts = 5`), though it may pass fewer.
 
 ## Where to change I/O behavior
