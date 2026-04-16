@@ -465,6 +465,26 @@ def _doc_temporal_tokens(doc: dict) -> dict:
     return parse_temporal_tokens(" ".join(parts))
 
 
+def _doc_period_tokens(doc: dict) -> dict:
+    """Extract the report period from title/URL before falling back to pub date.
+
+    For editioned bulletins, publication dates can lag the reported period. A
+    fourth-quarter 2023 construction bulletin may be published in 2024, but it
+    should not satisfy a query asking for Q4 2024.
+    """
+
+    period_parts = [
+        str(doc.get("title", "")),
+        str(doc.get("url", "")),
+        str(doc.get("page_url", "")),
+    ]
+    period_tokens = parse_temporal_tokens(" ".join(period_parts))
+    if period_tokens["years"] or period_tokens["months"] or period_tokens["quarters"]:
+        return period_tokens
+
+    return parse_temporal_tokens(str(doc.get("date", "")))
+
+
 def _doc_matches_query_temporal(query_tokens: dict, doc_tokens: dict) -> bool:
     """Return True if a doc satisfies every non-empty temporal dimension of the query.
 
@@ -480,6 +500,37 @@ def _doc_matches_query_temporal(query_tokens: dict, doc_tokens: dict) -> bool:
     if query_tokens["months"] and not (query_tokens["months"] & doc_tokens["months"]):
         return False
     return True
+
+
+def _select_precise_temporal_subset(
+    docs: list[dict],
+    query_tokens: dict,
+    query_families: set[str],
+) -> tuple[list[dict], str]:
+    """Select docs matching precise query periods with family-specific handling."""
+
+    if (
+        "leading_economic_indicators" in query_families
+        and query_tokens["years"]
+        and query_tokens["months"]
+        and not query_tokens["quarters"]
+    ):
+        preferred_years = {year + 1 for year in query_tokens["years"]}
+        preferred_subset = [
+            doc
+            for doc in docs
+            if (query_tokens["months"] & _doc_period_tokens(doc)["months"])
+            and (preferred_years & _doc_period_tokens(doc)["years"])
+        ]
+        if preferred_subset:
+            return preferred_subset, "leading indicators year+1 edition"
+
+    exact_subset = [
+        doc
+        for doc in docs
+        if _doc_matches_query_temporal(query_tokens, _doc_period_tokens(doc))
+    ]
+    return exact_subset, "exact report period"
 
 
 def _extract_doc_year(doc: dict) -> int | None:
@@ -1549,41 +1600,32 @@ class Inquirer:
             return apply_family_filter(widened_docs)
 
         if is_precise_temporal_query:
-            temporal_subset = [
-                doc
-                for doc in docs
-                if _doc_matches_query_temporal(
-                    query_temporal, _doc_temporal_tokens(doc)
-                )
-            ]
+            temporal_subset, temporal_subset_reason = _select_precise_temporal_subset(
+                docs, query_temporal, query_families
+            )
             if temporal_subset:
                 self.logger.info(
                     f"Temporal pre-filter: reranking {len(temporal_subset)} of "
-                    f"{len(docs)} candidates that match query temporal tokens "
-                    f"{query_temporal}"
+                    f"{len(docs)} candidates using {temporal_subset_reason} "
+                    f"for query temporal tokens {query_temporal}"
                 )
                 docs = temporal_subset
             else:
                 widened_docs = retry_wider_temporal_pool(
                     f"no candidates matched precise temporal tokens {query_temporal}"
                 )
-                widened_temporal_subset = (
-                    [
-                        doc
-                        for doc in widened_docs
-                        if _doc_matches_query_temporal(
-                            query_temporal, _doc_temporal_tokens(doc)
-                        )
-                    ]
-                    if widened_docs
-                    else []
+                widened_temporal_subset, widened_subset_reason = (
+                    _select_precise_temporal_subset(
+                        widened_docs or [], query_temporal, query_families
+                    )
                 )
                 if widened_temporal_subset:
                     self.logger.info(
                         "Temporal pre-filter retry: reranking %s of %s widened "
-                        "candidates that match query temporal tokens %s",
+                        "candidates using %s for query temporal tokens %s",
                         len(widened_temporal_subset),
                         len(widened_docs or []),
+                        widened_subset_reason,
                         query_temporal,
                     )
                     docs = widened_temporal_subset

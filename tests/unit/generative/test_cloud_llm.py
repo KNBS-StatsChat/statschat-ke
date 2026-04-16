@@ -14,6 +14,7 @@ from statschat.generative.cloud_llm import (
     Inquirer,
     _apply_recency_bias,
     _build_reranker_passage,
+    _doc_period_tokens,
     _doc_report_families,
     _doc_matches_query_temporal,
     _doc_temporal_tokens,
@@ -22,6 +23,7 @@ from statschat.generative.cloud_llm import (
     _extract_years,
     _guardrail_refusal_reason,
     _select_lagged_year_subset,
+    _select_precise_temporal_subset,
     has_temporal_constraint,
     infer_query_report_families,
     parse_temporal_tokens,
@@ -857,6 +859,20 @@ def test_doc_temporal_tokens_reads_metadata_blob():
     assert 12 in tokens["months"]
 
 
+def test_doc_period_tokens_prefers_title_period_over_publication_date():
+    doc = {
+        "title": "Construction Input Price Indices for Fourth Quarter 2023",
+        "date": "01 February 2024",
+        "url": "https://example/Construction-Input-Price-Indices-for-Fourth-Quarter-2023.pdf",
+    }
+
+    tokens = _doc_period_tokens(doc)
+
+    assert tokens["years"] == {2023}
+    assert tokens["quarters"] == {4}
+    assert tokens["months"] == set()
+
+
 def test_doc_matches_query_temporal_filters_neighbouring_years():
     query = parse_temporal_tokens(
         "What was Kenya's GDP growth rate in Quarter 3 of 2023?"
@@ -895,6 +911,58 @@ def test_doc_matches_query_temporal_accepts_range_year_titles():
         }
     )
     assert _doc_matches_query_temporal(query, doc) is True
+
+
+def test_select_precise_temporal_subset_uses_report_period_not_pub_date():
+    query = parse_temporal_tokens(
+        "What was the construction inflation rate in Kenya in Q4 2024?"
+    )
+    docs = [
+        {
+            "title": "Construction Input Price Indices for Fourth Quarter 2023",
+            "date": "01 February 2024",
+            "url": "https://example/Construction-Input-Price-Indices-for-Fourth-Quarter-2023.pdf",
+        },
+        {
+            "title": "Construction Input Price Indices for Fourth Quarter 2024",
+            "date": "01 February 2025",
+            "url": "https://example/Construction-Input-Price-Indices-for-Fourth-Quarter-2024.pdf",
+        },
+    ]
+
+    subset, reason = _select_precise_temporal_subset(
+        docs, query, {"construction_input_price_indices"}
+    )
+
+    assert reason == "exact report period"
+    assert [doc["title"] for doc in subset] == [
+        "Construction Input Price Indices for Fourth Quarter 2024"
+    ]
+
+
+def test_select_precise_temporal_subset_prefers_lei_year_plus_one_edition():
+    query = parse_temporal_tokens("What was Kenya's broad money supply in August 2023?")
+    docs = [
+        {
+            "title": "Leading Economic Indicators August 2023",
+            "date": "01 September 2023",
+            "url": "https://example/Leading-Economic-Indicators-August-2023.pdf",
+        },
+        {
+            "title": "Leading Economic Indicators August 2024",
+            "date": "01 September 2024",
+            "url": "https://example/Leading-Economic-Indicators-August-2024.pdf",
+        },
+    ]
+
+    subset, reason = _select_precise_temporal_subset(
+        docs, query, {"leading_economic_indicators"}
+    )
+
+    assert reason == "leading indicators year+1 edition"
+    assert [doc["title"] for doc in subset] == [
+        "Leading Economic Indicators August 2024"
+    ]
 
 
 def test_infer_query_report_families_from_metric_hints():
