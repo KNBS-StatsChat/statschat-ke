@@ -75,6 +75,8 @@ def _load_main_api_cloud(monkeypatch):
 
 
 def _build_cloud_client(monkeypatch):
+    monkeypatch.delenv("STATSCHAT_API_KEY", raising=False)
+    monkeypatch.delenv("STATSCHAT_RATE_LIMIT_PER_MINUTE", raising=False)
     main_api_cloud = _load_main_api_cloud(monkeypatch)
     transport = httpx.ASGITransport(app=main_api_cloud.app)
     return httpx.AsyncClient(transport=transport, base_url="http://testserver")

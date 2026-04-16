@@ -11,6 +11,13 @@ from datetime import datetime
 from markupsafe import escape
 
 from statschat import load_config
+from statschat.api_common import (
+    build_health_payload,
+    configure_api_logging,
+    configure_cors,
+    configure_request_logging,
+    protected_endpoint_dependencies,
+)
 from statschat.generative.cloud_llm import Inquirer, has_temporal_constraint
 from statschat.embedding.latest_flag_helpers import get_latest_flag
 
@@ -20,13 +27,7 @@ from statschat.embedding.latest_flag_helpers import get_latest_flag
 SESSION_NAME = f"statschat_api_{format(datetime.now(), '%Y_%m_%d_%H:%M')}"
 
 logger = logging.getLogger(__name__)
-log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-logging.basicConfig(
-    level=logging.INFO,
-    format=log_fmt,
-    # filename=f"log/{SESSION_NAME}.log",
-    filemode="a",
-)
+configure_api_logging(logger, SESSION_NAME)
 
 # %%
 # Config file to load
@@ -71,6 +72,8 @@ app = FastAPI(
         "email": "test@knbs.com",
     },
 )
+configure_cors(app)
+configure_request_logging(app, logger, api_mode="cloud")
 
 
 @app.get("/", tags=["Principle Endpoints"])
@@ -84,7 +87,27 @@ async def about():
     return response
 
 
-@app.get("/search", tags=["Principle Endpoints"])
+@app.get(
+    "/health",
+    tags=["Principle Endpoints"],
+)
+async def health():
+    """Return API liveness and non-secret runtime status."""
+
+    return build_health_payload(
+        api_mode="cloud",
+        config=CONFIG,
+        model_name=SEARCH_CONFIG.get("generative_model_name"),
+        provider=str(provider),
+        model_loaded=True,
+    )
+
+
+@app.get(
+    "/search",
+    tags=["Principle Endpoints"],
+    dependencies=protected_endpoint_dependencies(),
+)
 async def search(
     q: str,
     content_type: Union[str, None] = "latest",
@@ -154,14 +177,25 @@ class Feedback(BaseModel):
         and '0' for thumbs down."""
     )
     rating_comment: Optional[str] = Field(
-        description="""Recorded comment on the last answer. Optional."""
+        default=None, description="""Recorded comment on the last answer. Optional."""
     )
-    question: Optional[str] = Field(description="""Last question. Optional.""")
-    content_type: Optional[str] = Field(description="""Last content type. Optional.""")
-    answer: Optional[str] = Field(description="""Last answer. Optional.""")
+    question: Optional[str] = Field(
+        default=None, description="""Last question. Optional."""
+    )
+    content_type: Optional[str] = Field(
+        default=None, description="""Last content type. Optional."""
+    )
+    answer: Optional[str] = Field(
+        default=None, description="""Last answer. Optional."""
+    )
 
 
-@app.post("/feedback", status_code=202, tags=["Principle Endpoints"])
+@app.post(
+    "/feedback",
+    status_code=202,
+    tags=["Principle Endpoints"],
+    dependencies=protected_endpoint_dependencies(),
+)
 async def record_rating(feedback: Feedback):
     """Records feedback on a previous answer.
 

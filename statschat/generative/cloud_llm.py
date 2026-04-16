@@ -357,6 +357,12 @@ def _guardrail_refusal_reason(query: str, *, today: date | None = None) -> str |
     return None
 
 
+def guardrail_refusal_reason(query: str, *, today: date | None = None) -> str | None:
+    """Public wrapper for API entrypoints that share cloud guardrails."""
+
+    return _guardrail_refusal_reason(query, today=today)
+
+
 def has_temporal_constraint(text: str) -> bool:
     """True if the text carries any year, month, or quarter token."""
     tokens = parse_temporal_tokens(text)

@@ -58,6 +58,8 @@ def _load_main_api_local():
 
 
 def _build_client(monkeypatch):
+    monkeypatch.delenv("STATSCHAT_API_KEY", raising=False)
+    monkeypatch.delenv("STATSCHAT_RATE_LIMIT_PER_MINUTE", raising=False)
     main_api_local = _load_main_api_local()
 
     class DummyTokenizer:
@@ -160,6 +162,8 @@ def _load_main_api_cloud():
 
 
 def _build_cloud_client(monkeypatch):
+    monkeypatch.delenv("STATSCHAT_API_KEY", raising=False)
+    monkeypatch.delenv("STATSCHAT_RATE_LIMIT_PER_MINUTE", raising=False)
     main_api_cloud = _load_main_api_cloud()
 
     monkeypatch.setattr(main_api_cloud, "inquirer", main_api_cloud.inquirer)
@@ -187,6 +191,20 @@ async def test_openapi_contains_expected_paths(monkeypatch):
     payload = response.json()
     assert "/search" in payload["paths"]
     assert "/feedback" in payload["paths"]
+    assert "/health" in payload["paths"]
+
+
+@pytest.mark.anyio
+async def test_local_health_returns_runtime_status(monkeypatch):
+    async with _build_client(monkeypatch) as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["api_mode"] == "local"
+    assert payload["model_loaded"] is True
+    assert "faiss" in payload
 
 
 @pytest.mark.anyio
@@ -266,9 +284,73 @@ async def test_feedback_accepts_minimal_payload(monkeypatch):
     async with _build_client(monkeypatch) as client:
         response = await client.post("/feedback", json={"rating": 1})
 
-    assert response.status_code == 422
-    payload = response.json()
-    assert "detail" in payload
+    assert response.status_code == 202
+
+
+@pytest.mark.anyio
+async def test_local_search_requires_api_key_when_configured(monkeypatch):
+    async with _build_client(monkeypatch) as client:
+        monkeypatch.setenv("STATSCHAT_API_KEY", "secret")
+        missing = await client.get("/search", params={"q": "Population"})
+        allowed = await client.get(
+            "/search", params={"q": "Population"}, headers={"X-API-Key": "secret"}
+        )
+
+    assert missing.status_code == 401
+    assert allowed.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_local_temporal_query_overrides_latest_filter(monkeypatch):
+    main_api_local = _load_main_api_local()
+
+    class DummyTokenizer:
+        pass
+
+    class DummyModel:
+        pass
+
+    main_api_local.MODEL = DummyModel()
+    main_api_local.TOKENIZER = DummyTokenizer()
+    captured: dict[str, object] = {}
+
+    def fake_similarity_search(question, latest_filter=True):
+        captured["latest_filter"] = latest_filter
+        return [
+            {
+                "page_content": "context one",
+                "page_url": "https://example.com/one",
+                "title": "Publication One",
+                "score": 0.1,
+            }
+        ]
+
+    monkeypatch.setattr(main_api_local, "similarity_search", fake_similarity_search)
+    monkeypatch.setattr(main_api_local, "generate_response", lambda *_a, **_k: {})
+    monkeypatch.setattr(
+        main_api_local,
+        "format_response",
+        lambda *_a, **_k: {
+            "most_likely_answer": "Answer",
+            "where_context_from": "context",
+            "context_reference": "ref",
+        },
+    )
+
+    transport = httpx.ASGITransport(app=main_api_local.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        response = await client.get(
+            "/search",
+            params={
+                "q": "What was Kenya's GDP growth rate in Quarter 3 of 2023?",
+                "content_type": "latest",
+            },
+        )
+
+    assert response.status_code == 200
+    assert captured["latest_filter"] is False
 
 
 @pytest.mark.anyio
@@ -285,6 +367,19 @@ async def test_cloud_search_returns_schema(monkeypatch):
     assert payload["references"][0]["title"] == "Doc 1"
     assert payload["content_type"] == "latest"
     assert "debug_response" in payload
+
+
+@pytest.mark.anyio
+async def test_cloud_health_returns_runtime_status(monkeypatch):
+    async with _build_cloud_client(monkeypatch) as client:
+        response = await client.get("/health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["api_mode"] == "cloud"
+    assert payload["model_loaded"] is True
+    assert "faiss" in payload
 
 
 @pytest.mark.anyio

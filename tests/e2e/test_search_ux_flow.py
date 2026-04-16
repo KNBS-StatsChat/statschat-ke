@@ -50,6 +50,8 @@ def _load_main_api_local():
 
 
 def _build_client(monkeypatch):
+    monkeypatch.delenv("STATSCHAT_API_KEY", raising=False)
+    monkeypatch.delenv("STATSCHAT_RATE_LIMIT_PER_MINUTE", raising=False)
     main_api_local = _load_main_api_local()
 
     main_api_local.MODEL = object()

@@ -38,7 +38,9 @@ app = main_api_local.app
 
 
 @pytest.fixture
-async def client():
+async def client(monkeypatch):
+    monkeypatch.delenv("STATSCHAT_API_KEY", raising=False)
+    monkeypatch.delenv("STATSCHAT_RATE_LIMIT_PER_MINUTE", raising=False)
     main_api_local.MODEL = object()
     main_api_local.TOKENIZER = object()
     transport = httpx.ASGITransport(app=app)

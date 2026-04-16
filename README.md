@@ -127,6 +127,20 @@ or
 uvicorn fast-api.main_api_cloud:app --reload
 ```
 
+For deployed API instances, configure access and browser origins with runtime
+environment variables rather than committing secrets:
+
+```shell
+export OPENROUTER_API_KEY=...
+export STATSCHAT_API_KEY=...
+export STATSCHAT_CORS_ORIGINS=http://localhost:5000,https://your-frontend.example
+export STATSCHAT_RATE_LIMIT_PER_MINUTE=10
+```
+
+When `STATSCHAT_API_KEY` is set, `/search` and `/feedback` require either an
+`X-API-Key` header or an `Authorization: Bearer ...` header. `/health` remains
+public and returns non-secret runtime status for monitoring.
+
 The fastapi is set to respond to http requests on a particular port.
 You will see this in your terminal line, something like:
 

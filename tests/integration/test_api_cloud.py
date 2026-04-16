@@ -49,8 +49,10 @@ def _load_app_with_dummy_inquirer(make_query_impl, temporal_constraint_impl=None
 
 
 @pytest.fixture
-def client_factory():
+def client_factory(monkeypatch):
     def _factory(make_query_impl, temporal_constraint_impl=None):
+        monkeypatch.delenv("STATSCHAT_API_KEY", raising=False)
+        monkeypatch.delenv("STATSCHAT_RATE_LIMIT_PER_MINUTE", raising=False)
         app, ns = _load_app_with_dummy_inquirer(
             make_query_impl, temporal_constraint_impl=temporal_constraint_impl
         )
@@ -156,3 +158,91 @@ async def test_search_handles_empty_results(client_factory):
     data = resp.json()
     assert data["references"] == []
     assert data["answer"] == ""
+
+
+@pytest.mark.anyio
+async def test_search_requires_api_key_when_configured(monkeypatch):
+    """When STATSCHAT_API_KEY is configured, /search rejects unauthenticated calls."""
+
+    def make_query_impl(question, latest_filter, latest_weight, highlighting):
+        return (
+            [{"page_url": "http://example.com/doc", "title": "Doc", "score": 0.1}],
+            "Answer",
+            types.SimpleNamespace(__dict__={"raw": True}),
+        )
+
+    app, _ = _load_app_with_dummy_inquirer(make_query_impl)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        monkeypatch.setenv("STATSCHAT_API_KEY", "secret")
+        missing = await client.get("/search", params={"q": "Population"})
+        wrong = await client.get(
+            "/search", params={"q": "Population"}, headers={"X-API-Key": "bad"}
+        )
+        allowed = await client.get(
+            "/search", params={"q": "Population"}, headers={"X-API-Key": "secret"}
+        )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert allowed.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_cors_allows_configured_origin(monkeypatch):
+    """CORS middleware reflects explicitly configured frontend origins."""
+
+    monkeypatch.setenv("STATSCHAT_CORS_ORIGINS", "https://frontend.example")
+
+    def make_query_impl(question, latest_filter, latest_weight, highlighting):
+        return (
+            [{"page_url": "http://example.com/doc", "title": "Doc", "score": 0.1}],
+            "Answer",
+            types.SimpleNamespace(__dict__={"raw": True}),
+        )
+
+    app, _ = _load_app_with_dummy_inquirer(make_query_impl)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        response = await client.options(
+            "/search",
+            headers={
+                "Origin": "https://frontend.example",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://frontend.example"
+
+
+@pytest.mark.anyio
+async def test_rate_limit_rejects_excess_requests(monkeypatch):
+    """Optional in-process rate limiting protects query-costing endpoints."""
+
+    monkeypatch.setenv("STATSCHAT_RATE_LIMIT_PER_MINUTE", "1")
+
+    def make_query_impl(question, latest_filter, latest_weight, highlighting):
+        return (
+            [{"page_url": "http://example.com/doc", "title": "Doc", "score": 0.1}],
+            "Answer",
+            types.SimpleNamespace(__dict__={"raw": True}),
+        )
+
+    app, _ = _load_app_with_dummy_inquirer(make_query_impl)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        first = await client.get("/search", params={"q": "Population"})
+        second = await client.get("/search", params={"q": "Population"})
+
+    assert first.status_code == 200
+    assert second.status_code == 429

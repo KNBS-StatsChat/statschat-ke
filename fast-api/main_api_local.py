@@ -11,6 +11,17 @@ from markupsafe import escape
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from statschat import load_config
+from statschat.api_common import (
+    build_health_payload,
+    configure_api_logging,
+    configure_cors,
+    configure_request_logging,
+    protected_endpoint_dependencies,
+)
+from statschat.generative.query_policy import (
+    guardrail_refusal_reason,
+    has_temporal_constraint,
+)
 from statschat.generative.local_llm import (
     similarity_search,
     select_generation_contexts,
@@ -31,13 +42,7 @@ SEARCH_CONFIG = CONFIG.get("search", {})
 SESSION_NAME = f"statschat_api_{format(datetime.now(), '%Y_%m_%d_%H:%M')}"
 
 logger = logging.getLogger(__name__)
-log_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-logging.basicConfig(
-    level=logging.INFO,
-    format=log_fmt,
-    # filename=f"log/{SESSION_NAME}.log",
-    filemode="a",
-)
+configure_api_logging(logger, SESSION_NAME)
 
 
 app = FastAPI(
@@ -58,6 +63,8 @@ app = FastAPI(
         "email": "test@knbs.com",
     },
 )
+configure_cors(app)
+configure_request_logging(app, logger, api_mode="local")
 
 
 # Model configuration (loaded once at startup from shared config)
@@ -104,7 +111,24 @@ async def about():
     return response
 
 
-@app.get("/search", tags=["Principle Endpoints"])
+@app.get("/health", tags=["Principle Endpoints"])
+async def health():
+    """Return API liveness and non-secret runtime status."""
+
+    return build_health_payload(
+        api_mode="local",
+        config=CONFIG,
+        model_name=MODEL_ID,
+        provider="local",
+        model_loaded=MODEL is not None and TOKENIZER is not None,
+    )
+
+
+@app.get(
+    "/search",
+    tags=["Principle Endpoints"],
+    dependencies=protected_endpoint_dependencies(),
+)
 async def search(
     q: str,
     content_type: Union[str, None] = "latest",
@@ -136,6 +160,20 @@ async def search(
         logger.warning('Unknown content type. Fallback to "latest".')
         content_type = "latest"
 
+    guardrail_reason = guardrail_refusal_reason(question)
+    if guardrail_reason:
+        logger.info("Guardrail refusal: %s", guardrail_reason)
+        return {
+            "question": question,
+            "content_type": content_type,
+            "answer": "",
+            "references": "",
+            "context_from": "",
+            "context_reference": "",
+            "relevant_publication_one": "",
+            "relevant_publication_two": "",
+        }
+
     answer_threshold = float(CONFIG.get("search", {}).get("answer_threshold", 0.5))
     document_threshold = float(CONFIG.get("search", {}).get("document_threshold", 0.9))
     k_contexts = int(CONFIG.get("search", {}).get("k_contexts", 2))
@@ -145,10 +183,16 @@ async def search(
     if MODEL is None or TOKENIZER is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
+    effective_latest_filter = content_type == "latest"
+    if effective_latest_filter and has_temporal_constraint(question):
+        logger.info(
+            "Detected explicit temporal tokens in query; overriding "
+            "latest_filter to False so historical reports remain searchable."
+        )
+        effective_latest_filter = False
+
     # Get the most relevant text chunks
-    relevant_texts = similarity_search(
-        question, latest_filter=(content_type == "latest")
-    )
+    relevant_texts = similarity_search(question, latest_filter=effective_latest_filter)
 
     # Handle: no search results
     if not relevant_texts:
@@ -267,14 +311,25 @@ class Feedback(BaseModel):
         and '0' for thumbs down."""
     )
     rating_comment: Optional[str] = Field(
-        description="""Recorded comment on the last answer. Optional."""
+        default=None, description="""Recorded comment on the last answer. Optional."""
     )
-    question: Optional[str] = Field(description="""Last question. Optional.""")
-    content_type: Optional[str] = Field(description="""Last content type. Optional.""")
-    answer: Optional[str] = Field(description="""Last answer. Optional.""")
+    question: Optional[str] = Field(
+        default=None, description="""Last question. Optional."""
+    )
+    content_type: Optional[str] = Field(
+        default=None, description="""Last content type. Optional."""
+    )
+    answer: Optional[str] = Field(
+        default=None, description="""Last answer. Optional."""
+    )
 
 
-@app.post("/feedback", status_code=202, tags=["Principle Endpoints"])
+@app.post(
+    "/feedback",
+    status_code=202,
+    tags=["Principle Endpoints"],
+    dependencies=protected_endpoint_dependencies(),
+)
 async def record_rating(feedback: Feedback):
     """Records feedback on a previous answer.
 
