@@ -798,6 +798,7 @@ class Inquirer:
         generation_page_selection_enabled: bool = True,
         generation_page_shortlist_k: int = 24,
         lagged_year_candidate_k: int | None = None,
+        initialize_llm: bool = True,
         **_unused_search_config,
     ):
         """
@@ -870,8 +871,13 @@ class Inquirer:
             generative_model_name = env_model_override
 
         self.generative_model_name = generative_model_name
+        self.llm = None
 
-        if provider == "openai":
+        if not initialize_llm:
+            self.logger.info(
+                "Initialising cloud retrieval stack without a generation LLM."
+            )
+        elif provider == "openai":
             sec_key = os.getenv("OPENAI_API_KEY")
             self.llm = ChatOpenAI(
                 model=generative_model_name,
@@ -1383,142 +1389,21 @@ class Inquirer:
         self.logger.info(f"Reranked {len(docs)} results with cross-encoder")
         return docs
 
-    def query_texts(
-        self,
-        query: str,
-        docs: list[dict],
-        *,
-        latest_filter_enabled: bool | None = None,
-    ) -> LlmResponse:
-        """
-        Generates an answer to the query based on relationship
-        to docs filtered in similarity_search
-
-        Args:
-            query (str): Question for which most relevant publications will
-            be returned
-            docs (list[dict]): Documents closely related to query
-
-        Returns:
-            LlmResponse: Generated response to query (pydantic model)
-        """
-        # Handle case: no search results
-        if not docs:
-            return LlmResponse(
-                answer_provided=False,
-                highlighting1=[],
-                highlighting2=[],
-                highlighting3=[],
-            )
-
-        selected_docs = select_generation_contexts(
-            docs,
-            self.k_contexts,
-            max_chunks_per_doc=getattr(self, "max_chunks_per_doc", 3),
-            per_doc_penalty=getattr(self, "per_doc_penalty", 0.2),
-        )
-        if latest_filter_enabled is not None:
-            selected_docs = self._refine_generation_context_pages(
-                query, selected_docs, latest_filter_enabled
-            )
-
-        # reshape Document object structure
-        top_matches = [
-            Document(
-                page_content=text["page_content"],
-                metadata={
-                    "doc_num": i + 1,
-                    "date": text["date"],
-                    "title": text["title"],
-                },
-            )
-            for i, text in enumerate(selected_docs)
-        ]
-        self.logger.info(f"Passing top {len(top_matches)} results for QA")
-
-        # stuff all above documents to the model
-        chain = load_qa_with_sources_chain(
-            self.llm,
-            chain_type="stuff",
-            prompt=self.extractive_prompt,
-            document_prompt=self.stuff_document_prompt,
-            verbose=self.verbose,
-        )
-
-        # parameter values
-        try:
-            response = chain.invoke(
-                {"input_documents": top_matches, "question": query},
-                return_only_outputs=True,
-            )
-        except NotFoundError as exc:
-            self._raise_model_availability_error(exc)
-        except RateLimitError as exc:
-            self._raise_rate_limit_error(exc)
-
-        parser = PydanticOutputParser(pydantic_object=LlmResponse)
-        try:
-            if "output_text" in response:
-                validated_answer = parser.parse(response["output_text"])
-            elif "properties" in response:
-                validated_answer = parser.parse(response["properties"])
-            else:
-                validated_answer = parser.parse(response)
-        except Exception as e:
-            self.logger.error(f"Cannot parse response: {e}")
-            self.logger.error(f"response: {response}")
-            return LlmResponse(
-                answer_provided=False,
-                highlighting1=[],
-                highlighting2=[],
-                highlighting3=[],
-                reasoning=f"Cannot parse response: {e} /n/n  response: {response}",
-            )
-
-        return validated_answer
-
-    @lru_cache()
-    def make_query(
+    def retrieve_documents(
         self,
         question: str,
-        latest_filter: str = "on",
-        highlighting: bool = True,
+        *,
+        latest_filter: str | bool = "on",
         latest_weight: float = 1,
-    ) -> tuple[list[dict], str, LlmResponse]:
-        """
-        Utility, wraps code for querying the search engine, and then the summarizer.
-        Also handles storing the last answer made for feedback purposes.
+    ) -> tuple[list[dict], bool, float]:
+        """Run the shared cloud retrieval pipeline without invoking an LLM.
 
-        Args:
-            question (str): The user query.
-            latest_filter (str, optional): Whether to filter to bulletins with
-                'latest' flag.  Values 'on', 'On', 'true', 'True' are all indicative
-                for filtering. Defaults to 'on'.
-            highlighting (bool, optional): Whether highlighting to be used.
-                Defaults to true.
-            latest_weight (float, optional): How much the score of retrieved
-                publications should be reweighted towards the recent. Defaults to 1.
-
-        Returns:
-            list[dict]: supporting documents (with highlighting)
-            str: formatted answer for app to display
-            LlmResponse: Generated response to query (pydantic model)
+        This is used by the cloud API before cloud generation and by the local
+        API before local generation, so retrieval behavior can stay aligned
+        across API modes.
         """
-        self.logger.info(f"Search query: {question}")
-        guardrail_reason = _guardrail_refusal_reason(question)
-        if guardrail_reason:
-            self.logger.info("Guardrail refusal: %s", guardrail_reason)
-            empty_response = LlmResponse(
-                answer_provided=False,
-                highlighting1=[],
-                highlighting2=[],
-                highlighting3=[],
-                reasoning=guardrail_reason,
-            )
-            return [], "", empty_response
 
         latest_filter_enabled = self._latest_filter_enabled(latest_filter)
-
         query_temporal = parse_temporal_tokens(question)
         query_families = infer_query_report_families(question)
         is_temporal_query = bool(
@@ -1540,15 +1425,9 @@ class Inquirer:
             latest_filter=latest_filter_enabled,
             candidate_k=candidate_k,
         )
-
         if len(docs1) == 0:
-            empty_response = LlmResponse(
-                answer_provided=False,
-                highlighting1=[],
-                highlighting2=[],
-                highlighting3=[],
-            )
-            return docs1, "", empty_response
+            return docs1, latest_filter_enabled, float("inf")
+
         docs = self._dedupe_exact_chunks(docs1)
 
         def apply_family_filter(candidates: list[dict]) -> list[dict]:
@@ -1681,6 +1560,169 @@ class Inquirer:
         best_distance = (
             min(float(doc["score"]) for doc in docs) if docs else float("inf")
         )
+        return docs, latest_filter_enabled, best_distance
+
+    def select_generation_documents(
+        self,
+        query: str,
+        docs: list[dict],
+        *,
+        latest_filter_enabled: bool | None = None,
+    ) -> list[dict]:
+        """Select and refine generation contexts from retrieved documents."""
+
+        selected_docs = select_generation_contexts(
+            docs,
+            self.k_contexts,
+            max_chunks_per_doc=getattr(self, "max_chunks_per_doc", 3),
+            per_doc_penalty=getattr(self, "per_doc_penalty", 0.2),
+        )
+        if latest_filter_enabled is not None:
+            selected_docs = self._refine_generation_context_pages(
+                query, selected_docs, latest_filter_enabled
+            )
+        return selected_docs
+
+    def query_texts(
+        self,
+        query: str,
+        docs: list[dict],
+        *,
+        latest_filter_enabled: bool | None = None,
+    ) -> LlmResponse:
+        """
+        Generates an answer to the query based on relationship
+        to docs filtered in similarity_search
+
+        Args:
+            query (str): Question for which most relevant publications will
+            be returned
+            docs (list[dict]): Documents closely related to query
+
+        Returns:
+            LlmResponse: Generated response to query (pydantic model)
+        """
+        # Handle case: no search results
+        if not docs:
+            return LlmResponse(
+                answer_provided=False,
+                highlighting1=[],
+                highlighting2=[],
+                highlighting3=[],
+            )
+
+        selected_docs = self.select_generation_documents(
+            query, docs, latest_filter_enabled=latest_filter_enabled
+        )
+
+        # reshape Document object structure
+        top_matches = [
+            Document(
+                page_content=text["page_content"],
+                metadata={
+                    "doc_num": i + 1,
+                    "date": text["date"],
+                    "title": text["title"],
+                },
+            )
+            for i, text in enumerate(selected_docs)
+        ]
+        self.logger.info(f"Passing top {len(top_matches)} results for QA")
+
+        # stuff all above documents to the model
+        chain = load_qa_with_sources_chain(
+            self.llm,
+            chain_type="stuff",
+            prompt=self.extractive_prompt,
+            document_prompt=self.stuff_document_prompt,
+            verbose=self.verbose,
+        )
+
+        # parameter values
+        try:
+            response = chain.invoke(
+                {"input_documents": top_matches, "question": query},
+                return_only_outputs=True,
+            )
+        except NotFoundError as exc:
+            self._raise_model_availability_error(exc)
+        except RateLimitError as exc:
+            self._raise_rate_limit_error(exc)
+
+        parser = PydanticOutputParser(pydantic_object=LlmResponse)
+        try:
+            if "output_text" in response:
+                validated_answer = parser.parse(response["output_text"])
+            elif "properties" in response:
+                validated_answer = parser.parse(response["properties"])
+            else:
+                validated_answer = parser.parse(response)
+        except Exception as e:
+            self.logger.error(f"Cannot parse response: {e}")
+            self.logger.error(f"response: {response}")
+            return LlmResponse(
+                answer_provided=False,
+                highlighting1=[],
+                highlighting2=[],
+                highlighting3=[],
+                reasoning=f"Cannot parse response: {e} /n/n  response: {response}",
+            )
+
+        return validated_answer
+
+    @lru_cache()
+    def make_query(
+        self,
+        question: str,
+        latest_filter: str = "on",
+        highlighting: bool = True,
+        latest_weight: float = 1,
+    ) -> tuple[list[dict], str, LlmResponse]:
+        """
+        Utility, wraps code for querying the search engine, and then the summarizer.
+        Also handles storing the last answer made for feedback purposes.
+
+        Args:
+            question (str): The user query.
+            latest_filter (str, optional): Whether to filter to bulletins with
+                'latest' flag.  Values 'on', 'On', 'true', 'True' are all indicative
+                for filtering. Defaults to 'on'.
+            highlighting (bool, optional): Whether highlighting to be used.
+                Defaults to true.
+            latest_weight (float, optional): How much the score of retrieved
+                publications should be reweighted towards the recent. Defaults to 1.
+
+        Returns:
+            list[dict]: supporting documents (with highlighting)
+            str: formatted answer for app to display
+            LlmResponse: Generated response to query (pydantic model)
+        """
+        self.logger.info(f"Search query: {question}")
+        guardrail_reason = _guardrail_refusal_reason(question)
+        if guardrail_reason:
+            self.logger.info("Guardrail refusal: %s", guardrail_reason)
+            empty_response = LlmResponse(
+                answer_provided=False,
+                highlighting1=[],
+                highlighting2=[],
+                highlighting3=[],
+                reasoning=guardrail_reason,
+            )
+            return [], "", empty_response
+
+        docs, latest_filter_enabled, best_distance = self.retrieve_documents(
+            question,
+            latest_filter=latest_filter,
+            latest_weight=latest_weight,
+        )
+        if len(docs) == 0:
+            empty_response = LlmResponse(
+                answer_provided=False,
+                highlighting1=[],
+                highlighting2=[],
+                highlighting3=[],
+            )
+            return docs, "", empty_response
 
         self.logger.info(
             f"Received {len(docs)} references"

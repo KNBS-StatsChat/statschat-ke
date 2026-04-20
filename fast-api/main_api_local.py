@@ -18,13 +18,13 @@ from statschat.api_common import (
     configure_request_logging,
     protected_endpoint_dependencies,
 )
+from statschat.embedding.latest_flag_helpers import get_latest_flag
+from statschat.generative.cloud_llm import Inquirer as SharedRetrievalInquirer
 from statschat.generative.query_policy import (
     guardrail_refusal_reason,
     has_temporal_constraint,
 )
 from statschat.generative.local_llm import (
-    similarity_search,
-    select_generation_contexts,
     generate_response,
     format_response,
 )
@@ -75,6 +75,29 @@ MODEL_ID = str(
 )
 MODEL: Optional[AutoModelForCausalLM] = None
 TOKENIZER: Optional[AutoTokenizer] = None
+RETRIEVER: Optional[SharedRetrievalInquirer] = None
+
+
+def get_retriever() -> SharedRetrievalInquirer:
+    """Return the shared retrieval stack without initialising a cloud LLM."""
+
+    global RETRIEVER
+    if RETRIEVER is not None:
+        return RETRIEVER
+
+    retrieval_config = dict(SEARCH_CONFIG)
+    retrieval_config["generative_model_name"] = str(
+        retrieval_config.get("generative_model_name_cloud")
+        or retrieval_config.get("generative_model_name")
+        or "mistralai/mistral-small-3.1-24b-instruct:free"
+    )
+    RETRIEVER = SharedRetrievalInquirer(
+        **CONFIG["db"],
+        **retrieval_config,
+        logger=logger,
+        initialize_llm=False,
+    )
+    return RETRIEVER
 
 
 @app.on_event("startup")
@@ -191,8 +214,13 @@ async def search(
         )
         effective_latest_filter = False
 
-    # Get the most relevant text chunks
-    relevant_texts = similarity_search(question, latest_filter=effective_latest_filter)
+    latest_weight = get_latest_flag({"q": question}, CONFIG["app"]["latest_max"])
+    retriever = get_retriever()
+    relevant_texts, retriever_latest_filter, top_score = retriever.retrieve_documents(
+        question,
+        latest_filter=effective_latest_filter,
+        latest_weight=latest_weight,
+    )
 
     # Handle: no search results
     if not relevant_texts:
@@ -209,10 +237,6 @@ async def search(
         logger.info(f"Sending following response: {results}")
         return results
 
-    # Local retrieval normally provides a numeric similarity score. In tests/mocks it may be absent.
-    # Defaulting to 0.0 avoids incorrectly treating results as "no suitable PDFs".
-    top_score = float(relevant_texts[0].get("score", 0.0))
-
     # Handle: "no suitable PDFs" (keep answer consistent with references)
     if top_score > document_threshold:
         results = {
@@ -228,8 +252,13 @@ async def search(
         logger.info(f"Sending following response: {results}")
         return results
 
-    # Select top contexts for generation (configurable via search.k_contexts).
-    selected_matches = select_generation_contexts(relevant_texts, k_contexts=k_contexts)
+    # Select top contexts with the same page-aware policy used by cloud mode.
+    selected_matches = retriever.select_generation_documents(
+        question,
+        relevant_texts,
+        latest_filter_enabled=retriever_latest_filter,
+    )
+    selected_matches = selected_matches[:k_contexts]
     selected_contexts = [
         str(match.get("page_content", "")).strip()
         for match in selected_matches

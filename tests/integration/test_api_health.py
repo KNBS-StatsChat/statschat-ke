@@ -82,22 +82,32 @@ def _build_client(monkeypatch):
     main_api_local.MODEL = DummyModel()
     main_api_local.TOKENIZER = DummyTokenizer()
 
-    monkeypatch.setattr(
-        main_api_local,
-        "similarity_search",
-        lambda *_a, **_k: [
-            {
-                "page_content": "context one",
-                "page_url": "https://example.com/one",
-                "title": "Publication One",
-            },
-            {
-                "page_content": "context two",
-                "page_url": "https://example.com/two",
-                "title": "Publication Two",
-            },
-        ],
-    )
+    class DummyRetriever:
+        def retrieve_documents(self, *_a, **_k):
+            return (
+                [
+                    {
+                        "page_content": "context one",
+                        "page_url": "https://example.com/one",
+                        "title": "Publication One",
+                        "score": 0.1,
+                    },
+                    {
+                        "page_content": "context two",
+                        "page_url": "https://example.com/two",
+                        "title": "Publication Two",
+                        "score": 0.2,
+                    },
+                ],
+                False,
+                0.1,
+            )
+
+        def select_generation_documents(self, _query, docs, **_kwargs):
+            return docs[:2]
+
+    monkeypatch.setattr(main_api_local, "get_retriever", lambda: DummyRetriever())
+    monkeypatch.setattr(main_api_local, "get_latest_flag", lambda *_a, **_k: 1)
     monkeypatch.setattr(main_api_local, "generate_response", lambda *_a, **_k: {})
     monkeypatch.setattr(
         main_api_local,
@@ -314,18 +324,27 @@ async def test_local_temporal_query_overrides_latest_filter(monkeypatch):
     main_api_local.TOKENIZER = DummyTokenizer()
     captured: dict[str, object] = {}
 
-    def fake_similarity_search(question, latest_filter=True):
-        captured["latest_filter"] = latest_filter
-        return [
-            {
-                "page_content": "context one",
-                "page_url": "https://example.com/one",
-                "title": "Publication One",
-                "score": 0.1,
-            }
-        ]
+    class DummyRetriever:
+        def retrieve_documents(self, _question, *, latest_filter=True, **_kwargs):
+            captured["latest_filter"] = latest_filter
+            return (
+                [
+                    {
+                        "page_content": "context one",
+                        "page_url": "https://example.com/one",
+                        "title": "Publication One",
+                        "score": 0.1,
+                    }
+                ],
+                bool(latest_filter),
+                0.1,
+            )
 
-    monkeypatch.setattr(main_api_local, "similarity_search", fake_similarity_search)
+        def select_generation_documents(self, _query, docs, **_kwargs):
+            return docs[:1]
+
+    monkeypatch.setattr(main_api_local, "get_retriever", lambda: DummyRetriever())
+    monkeypatch.setattr(main_api_local, "get_latest_flag", lambda *_a, **_k: 1)
     monkeypatch.setattr(main_api_local, "generate_response", lambda *_a, **_k: {})
     monkeypatch.setattr(
         main_api_local,

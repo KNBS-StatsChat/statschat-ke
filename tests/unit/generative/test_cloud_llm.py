@@ -92,6 +92,38 @@ def test_similarity_search_filters_and_flattens():
     assert isinstance(r["score"], float)
 
 
+def test_inquirer_can_initialize_retrieval_without_llm(monkeypatch):
+    loaded_roots: list[str] = []
+
+    class DummyFAISS:
+        @staticmethod
+        def load_local(root, _embeddings, allow_dangerous_deserialization=False):
+            loaded_roots.append(root)
+            return SimpleNamespace(root=root)
+
+    def fail_chat_openai(*_args, **_kwargs):
+        raise AssertionError("ChatOpenAI should not be initialised")
+
+    monkeypatch.setattr(
+        "statschat.generative.cloud_llm.HuggingFaceEmbeddings",
+        lambda model_name: SimpleNamespace(model_name=model_name),
+    )
+    monkeypatch.setattr("statschat.generative.cloud_llm.FAISS", DummyFAISS)
+    monkeypatch.setattr("statschat.generative.cloud_llm.ChatOpenAI", fail_chat_openai)
+
+    inq = Inquirer(
+        faiss_db_root="data/db",
+        faiss_db_root_latest="data/db_latest",
+        embedding_model_name="dummy-embedding",
+        provider="openrouter",
+        logger=MagicMock(),
+        initialize_llm=False,
+    )
+
+    assert inq.llm is None
+    assert loaded_roots == ["data/db", "data/db_latest"]
+
+
 def test_query_texts_parses_chain_response(monkeypatch):
     inq = Inquirer.__new__(Inquirer)
     inq.k_contexts = 3

@@ -12,7 +12,7 @@ Why:
     - Ensures integration with the `statschat` package logic without heavy dependencies.
 """
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -53,39 +53,38 @@ async def client(monkeypatch):
 @pytest.fixture
 def mock_llm_logic():
     """
-    Mocks the `similarity_search` and `generate_response` functions from local_llm.py.
+    Mocks the shared retriever and local generation functions.
     This prevents the test from needing a real vector DB or LLM model.
     """
-    # Note: We patch 'main_api_local' directly because that's where the functions are imported into
-    # However, depending on import style, we might need to patch 'statschat.generative.local_llm'
-    # The api imports: from statschat.generative.local_llm import similarity_search, ...
-    # So we should patch where they are defined OR where they are used if imported via 'from x import y'.
-    # Patching where they are USED (in main_api_local namespace) is safer if `from` import was used.
-
-    # Since main_api_local is imported dynamically as a module named 'main_api_local', we patch that.
-
     with (
-        patch("main_api_local.similarity_search") as mock_sim,
+        patch("main_api_local.get_retriever") as mock_get_retriever,
         patch("main_api_local.generate_response") as mock_gen,
         patch("main_api_local.format_response") as mock_fmt,
         patch("main_api_local.AutoTokenizer") as mock_tokenizer,
         patch("main_api_local.AutoModelForCausalLM") as mock_model,
     ):
 
-        # Mock returns
-        # App expects list of dicts with 'page_content', 'page_url', 'title'
-        mock_sim.return_value = [
+        retrieved_docs = [
             {
                 "page_content": "doc1 source text",
                 "page_url": "http://knbs.or.ke/doc1.pdf",
                 "title": "Economic Survey 2023",
+                "score": 0.1,
             },
             {
                 "page_content": "doc2 source text",
                 "page_url": "http://knbs.or.ke/doc2.pdf",
                 "title": "Economic Survey 2022",
+                "score": 0.2,
             },
         ]
+
+        mock_retriever = Mock()
+        mock_retriever.retrieve_documents.return_value = (retrieved_docs, False, 0.1)
+        mock_retriever.select_generation_documents.side_effect = (
+            lambda _query, docs, **_kwargs: docs[:2]
+        )
+        mock_get_retriever.return_value = mock_retriever
         mock_gen.return_value = "Inflation is high."
         mock_fmt.return_value = {
             "answer": "Inflation is high.",
@@ -99,7 +98,11 @@ def mock_llm_logic():
         mock_tokenizer.from_pretrained.return_value = object()
         mock_model.from_pretrained.return_value = object()
 
-        yield {"search": mock_sim, "generate": mock_gen, "format": mock_fmt}
+        yield {
+            "retriever": mock_retriever,
+            "generate": mock_gen,
+            "format": mock_fmt,
+        }
 
 
 @pytest.mark.anyio

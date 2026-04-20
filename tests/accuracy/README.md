@@ -59,7 +59,10 @@ Important behavior:
 - it can run validation only, without calling the API
 - it checks generation/evaluation condition alignment if the sheet contains `Generation_Metadata`
 - it can evaluate either the local or cloud API
-- retrieval metrics are computed with `statschat.generative.local_llm.similarity_search(...)` as a local FAISS proxy for both local and cloud API runs
+- pipeline retrieval metrics are computed from the API response `references`
+- `faiss_proxy_*` retrieval metrics are also computed with
+  `statschat.generative.local_llm.similarity_search(...)` as a diagnostic local
+  FAISS proxy for both local and cloud API runs
 - by default it requests API debug payloads so cloud runs can capture reasoning and retrieved context; use `--no-api-debug` to disable that
 
 ## Recommended Workflow
@@ -75,6 +78,26 @@ If QA was generated from the full corpus in `data/json_conversions`, evaluate wi
 If QA was generated from a latest-only corpus and latest index, evaluate with `--content-type latest`.
 
 Generation and evaluation should use the same corpus conditions. If they do not, variance will be high and results will be hard to interpret.
+
+## Local And Cloud API Parity
+
+The local and cloud APIs now share the same retrieval architecture:
+
+- report-family routing
+- temporal candidate widening and edition selection
+- cross-encoder reranking
+- page-aware generation-context selection
+- out-of-scope guardrail policy
+
+The intended difference is the generator:
+
+- cloud API: shared retrieval + configured cloud LLM
+- local API: shared retrieval + local Hugging Face model
+
+This lets local/cloud comparisons focus mostly on LLM behavior instead of
+different retrieval tooling. The local API still keeps its legacy response shape
+(`references` is a single URL string), while cloud returns a list of reference
+objects.
 
 ## Run Commands
 
@@ -97,12 +120,11 @@ python tests/accuracy/generate_qa_with_refs.py \
   --seed 7
 ```
 
-### 2. Validate The Generated Sheet
+### 2. Validate The Audited Benchmark
 
 ```bash
 python tests/accuracy/evaluate_accuracy.py \
-  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
-  --query-id-prefix Q \
+  --excel tests/accuracy/StatsChat_QA_Verified_Audited.xlsx \
   --validate-only
 ```
 
@@ -129,19 +151,19 @@ The cloud API itself needs the configured provider key in its environment, for e
 ```bash
 # Local API
 python tests/accuracy/evaluate_accuracy.py \
-  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
+  --excel tests/accuracy/StatsChat_QA_Verified_Audited.xlsx \
   --host http://127.0.0.1:8000 \
-  --query-id-prefix Q \
   --content-type all \
+  --retrieval-k 8 \
   --timeout 420
 
 # Cloud API
 python tests/accuracy/evaluate_accuracy.py \
-  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
+  --excel tests/accuracy/StatsChat_QA_Verified_Audited.xlsx \
   --host http://127.0.0.1:8001 \
   --api-mode cloud \
-  --query-id-prefix Q \
   --content-type all \
+  --retrieval-k 8 \
   --timeout 420
 ```
 
@@ -149,9 +171,10 @@ python tests/accuracy/evaluate_accuracy.py \
 
 ```bash
 python tests/accuracy/evaluate_accuracy.py \
-  --excel tests/accuracy/StatsChat_QA_Auto.xlsx \
+  --excel tests/accuracy/StatsChat_QA_Verified_Audited.xlsx \
   --host http://127.0.0.1:8000 \
   --content-type all \
+  --retrieval-k 8 \
   --timeout 420 \
   --max-rows 3
 ```
@@ -698,7 +721,9 @@ For LLM-generated QA, reviewer initials are intentionally optional.
 
 - `generate_qa_with_refs.py` creates silver data, not a reviewed benchmark.
 - The generator currently uses local Hugging Face or OpenAI providers. It does **not** use RAGAS.
-- Retrieval metrics do not use the exact ranked list returned by the API response. In local mode they use `similarity_search(...)` as a proxy.
+- `faiss_proxy_*` metrics are diagnostic proxy metrics. They use
+  `similarity_search(...)`, not the exact ranked list returned by the API.
+- `pipeline_*` metrics use the API's returned `references` ranked list.
 - Reference-based metrics and retrieval metrics are intentionally different:
   - retrieval metrics evaluate ranked retrieval against `relevant_doc_ids`
   - reference/page metrics evaluate what the API actually cited in `references`

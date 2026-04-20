@@ -253,9 +253,9 @@ If the local path cannot find suitable PDFs (no results, or the top match is wor
   pipeline results.
 - Generation context selection applies mild per-document diversity so one report
   cannot flood every context slot.
-- The cloud path can also replace selected pages with better pages from the same
-  already-selected document, using a per-document page shortlist. This improves
-  page grounding without changing the global document ranking.
+- The shared retrieval path can also replace selected pages with better pages
+  from the same already-selected document, using a per-document page shortlist.
+  This improves page grounding without changing the global document ranking.
 
 **What is returned in `references`?**
 
@@ -266,17 +266,20 @@ If the local path cannot find suitable PDFs (no results, or the top match is wor
 
 If the best retrieved chunk’s score is worse than `document_threshold`, the code returns an empty `references` list.
 
-### Local API path (legacy/alternative)
+### Local API path
 
 - **Entry point**: `fast-api/main_api_local.py`
-- **Retriever**: `statschat/generative/local_llm.py` (`similarity_search`)
+- **Retriever**: shared retrieval stack in `statschat/generative/cloud_llm.py`
+  (`Inquirer.retrieve_documents(...)` and `select_generation_documents(...)`)
+- **Generator**: `statschat/generative/local_llm.py` (`generate_response`)
 
 **Key differences**
 
-- Local retrieval reads `k_docs`, thresholds, embedding model, FAISS root, and
-  reranker settings from `statschat/config/main.toml`, with safe defaults.
-- The prompt uses up to the configured `k_contexts` chunks, selected with the
-  same mild document-diversity pattern used by the cloud path.
+- Local retrieval reads the same `k_docs`, thresholds, embedding model, FAISS
+  root, reranker settings, report-family routing, temporal edition selection,
+  and page-selection settings as the cloud path.
+- The prompt uses up to the configured `k_contexts` chunks selected by the same
+  page-aware generation-context policy used by the cloud path.
 - The API response returns:
   - `references`: a **single URL string** (the first match’s `page_url`)
   - `relevant_publication_one` and `relevant_publication_two`: titles for the top 2 matches
@@ -294,11 +297,10 @@ Local mode now mirrors the cloud API surface for deployment concerns:
 - out-of-scope guardrail refusals
 - temporal `latest_filter` override for date-specific queries
 
-However, local mode is **not yet full retrieval-parity equivalent** to the cloud
-path. The current cloud benchmark score depends on cloud-specific report-family
-routing, temporal retry, report-period selection, and page-shortlist replacement
-implemented in `statschat/generative/cloud_llm.py`. These are not fully shared
-with `statschat/generative/local_llm.py`.
+Local and cloud modes are intended to be retrieval-parity equivalent. The
+remaining intentional difference is the generation backend: cloud mode calls the
+configured cloud LLM, while local mode calls the configured local Hugging Face
+model.
 
 If you want “document outputs” to behave the same way across cloud/local, you’ll likely want to standardize these response formats.
 
