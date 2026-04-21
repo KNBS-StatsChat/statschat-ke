@@ -299,6 +299,66 @@ def test_append_run_history_appends_rows(tmp_path, monkeypatch):
     assert bool(second_df.loc[1, "api_debug_requested"]) is True
 
 
+def test_run_metadata_prefers_live_api_health_model(tmp_path, monkeypatch):
+    module = _load_evaluate_accuracy()
+
+    monkeypatch.setattr(
+        module,
+        "load_runtime_search_config",
+        lambda _api_mode=None: {
+            "provider": "openrouter",
+            "model": "openai/gpt-5.4-mini",
+            "k_docs": "8",
+            "k_contexts": "5",
+            "answer_threshold": "1.1",
+            "document_threshold": "0.9",
+        },
+    )
+
+    args = Namespace(
+        api_mode="cloud",
+        host="http://127.0.0.1:8001",
+        excel=Path("tests/accuracy/sample.xlsx"),
+        content_type="all",
+        timeout=420.0,
+        max_rows=None,
+        skip_rows=0,
+        retrieval_k=8,
+        similarity_threshold=85.0,
+        f1_threshold=0.80,
+        semantic_threshold=0.90,
+    )
+    summary = {
+        "api_modes_observed": "cloud",
+        "total_evaluated": 74,
+        "answerable_count": 61,
+        "unanswerable_count": 13,
+        "overall_accuracy": 0.946,
+        "answerable_accuracy": 0.934,
+        "unanswerable_accuracy": 1.0,
+        "error_count": 0,
+    }
+    api_health = {
+        "status": "ok",
+        "provider": "openrouter",
+        "model": "mistralai/mistral-small-3.1-24b-instruct",
+    }
+
+    module.save_run_metadata(
+        tmp_path,
+        args,
+        summary,
+        datetime(2026, 4, 20, 14, 0, 0),
+        datetime(2026, 4, 20, 14, 5, 0),
+        api_health=api_health,
+    )
+
+    metadata = (tmp_path / "run_metadata.txt").read_text(encoding="utf-8")
+    assert "Model:              mistralai/mistral-small-3.1-24b-instruct" in metadata
+    assert "Model source:       api_health" in metadata
+    assert "Config model:       openai/gpt-5.4-mini" in metadata
+
+
 def test_load_runtime_search_config_reads_cloud_model_from_main_config(monkeypatch):
     module = _load_evaluate_accuracy()
 

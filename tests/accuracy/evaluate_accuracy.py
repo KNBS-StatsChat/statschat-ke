@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import re
 import string
@@ -1991,22 +1992,88 @@ def load_runtime_search_config(api_mode: str | None = None) -> dict[str, str]:
     return runtime_config
 
 
+def fetch_api_health(base_url: str, timeout: float) -> dict[str, object]:
+    """Fetch non-secret live API metadata for run provenance."""
+    health_url = f"{base_url.rstrip('/')}/health"
+    captured_at = datetime.now().isoformat(timespec="seconds")
+    try:
+        response = requests.get(health_url, timeout=min(float(timeout), 15.0))
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return {
+                "status": "invalid",
+                "error": "Health endpoint did not return a JSON object.",
+                "health_url": health_url,
+                "captured_at": captured_at,
+            }
+        payload = dict(payload)
+        payload["health_url"] = health_url
+        payload["captured_at"] = captured_at
+        return payload
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "error": str(exc),
+            "health_url": health_url,
+            "captured_at": captured_at,
+        }
+
+
+def save_api_health(run_dir: Path, api_health: dict[str, object]) -> Path:
+    """Persist the live API health payload alongside run artifacts."""
+    output_path = run_dir / "api_health.json"
+    output_path.write_text(
+        json.dumps(api_health, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return output_path
+
+
+def merge_runtime_with_api_health(
+    runtime_config: dict[str, str],
+    api_health: dict[str, object] | None,
+) -> dict[str, str]:
+    """Prefer live API health metadata over local config when available."""
+    merged = dict(runtime_config)
+    merged["model_source"] = "local_config"
+    merged["api_health_status"] = "not_captured"
+    if not api_health:
+        return merged
+
+    merged["api_health_status"] = str(api_health.get("status", "unknown"))
+    live_model = api_health.get("model")
+    live_provider = api_health.get("provider")
+    if live_model:
+        merged["model"] = str(live_model)
+        merged["model_source"] = "api_health"
+    if live_provider:
+        merged["provider"] = str(live_provider)
+    return merged
+
+
 def save_run_metadata(
     run_dir: Path,
     args: argparse.Namespace,
     summary: dict[str, object],
     run_start: datetime,
     run_end: datetime,
+    api_health: dict[str, object] | None = None,
 ) -> None:
     """Write run_metadata.txt with configuration and top-line results."""
     runtime_config = load_runtime_search_config(args.api_mode)
+    effective_runtime = merge_runtime_with_api_health(runtime_config, api_health)
 
     lines = [
         f"Run timestamp:      {run_start.strftime('%Y-%m-%d %H:%M:%S')}",
         f"Duration:           {(run_end - run_start).total_seconds():.1f}s",
         f"API mode(s):        {str(summary.get('api_modes_observed', 'n/a')).replace(';', ', ')}",
-        f"Provider:           {runtime_config['provider']}",
-        f"Model:              {runtime_config['model']}",
+        f"Provider:           {effective_runtime['provider']}",
+        f"Model:              {effective_runtime['model']}",
+        f"Model source:       {effective_runtime['model_source']}",
+        f"Config provider:    {runtime_config['provider']}",
+        f"Config model:       {runtime_config['model']}",
+        f"API health status:  {effective_runtime['api_health_status']}",
         f"API host:           {args.host}",
         f"QA file:            {args.excel}",
         f"Content type:       {args.content_type}",
@@ -2049,9 +2116,11 @@ def append_run_history(
     summary: dict[str, object],
     run_start: datetime,
     run_end: datetime,
+    api_health: dict[str, object] | None = None,
 ) -> Path:
     """Append a single-row run summary to the cross-run history CSV."""
     runtime_config = load_runtime_search_config(args.api_mode)
+    effective_runtime = merge_runtime_with_api_health(runtime_config, api_health)
     history_path = run_dir.parents[1] / "run_history.csv"
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2063,8 +2132,12 @@ def append_run_history(
         "run_dir": str(run_dir),
         "api_mode_requested": args.api_mode,
         "api_modes_observed": summary.get("api_modes_observed", ""),
-        "provider": runtime_config["provider"],
-        "model": runtime_config["model"],
+        "provider": effective_runtime["provider"],
+        "model": effective_runtime["model"],
+        "model_source": effective_runtime["model_source"],
+        "api_health_status": effective_runtime["api_health_status"],
+        "config_provider": runtime_config["provider"],
+        "config_model": runtime_config["model"],
         "host": args.host,
         "excel": str(args.excel),
         "content_type": args.content_type,
@@ -2834,6 +2907,7 @@ def main() -> None:
     if not args.no_semantic:
         semantic_model = SemanticSimilarityEvaluator(args.semantic_model)
 
+    api_health = fetch_api_health(args.host, args.timeout)
     run_start = datetime.now()
     results = evaluate(
         df=df,
@@ -2878,6 +2952,8 @@ def main() -> None:
         print(f"Excel with answers saved to: {args.answers_output}")
 
     run_dir = create_run_dir(determine_effective_api_mode(args.api_mode, results))
+    api_health_output = save_api_health(run_dir, api_health)
+    print(f"API health saved to: {api_health_output}")
     run_results_output = run_dir / "accuracy_results.csv"
     save_results(results, run_results_output)
     print(f"Run results saved to: {run_results_output}")
@@ -2885,7 +2961,7 @@ def main() -> None:
         run_issues_output = run_dir / "qa_data_issues.csv"
         save_issues(issues, run_issues_output)
         print(f"Run data quality issues saved to: {run_issues_output}")
-    save_run_metadata(run_dir, args, summary, run_start, run_end)
+    save_run_metadata(run_dir, args, summary, run_start, run_end, api_health=api_health)
     print(f"Run metadata saved to: {run_dir / 'run_metadata.txt'}")
     save_run_report(
         run_dir,
@@ -2897,7 +2973,14 @@ def main() -> None:
     print(f"Run report saved to: {run_dir / 'run_report.md'}")
     save_summary_metrics_csv(run_dir, summary)
     print(f"Summary metrics saved to: {run_dir / 'summary_metrics.csv'}")
-    history_path = append_run_history(run_dir, args, summary, run_start, run_end)
+    history_path = append_run_history(
+        run_dir,
+        args,
+        summary,
+        run_start,
+        run_end,
+        api_health=api_health,
+    )
     print(f"Run history updated: {history_path}")
 
     print_summary(summary, retrieval_k=args.retrieval_k)
