@@ -197,3 +197,12 @@ This script will webscrape PDF documents from the KNBS website, convert them to 
 > [!NOTE]
 > YOU WILL ONLY NEED TO DO THE VECTOR STORE SETUP ONCE
 > AFTERWARDS IT WILL ONLY NEED TO BE UPDATED
+
+> [!IMPORTANT]
+> The current application configuration expects the April 2026 rebuilt index
+> at `data/db_langchain_rebuild_v1`, built from `data/json_split_rebuild_v1`
+> with `split_length = 1000`, `split_overlap = 150`, and
+> `sentence-transformers/all-mpnet-base-v2`. These `data/` artifacts are local
+> and are not usually pulled from Git. If the directory is missing, obtain the
+> shared rebuilt artifacts or run a full `SETUP` rebuild with the same settings.
+> See `docs/config_guide.md` for the current index-artifact details.

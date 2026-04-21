@@ -7,6 +7,29 @@ This guide explains the configuration options for StatsChat. The configuration f
 - **faiss_db_root**: Path to the root directory for the FAISS database.
 - **embedding_model_name**: Name of the embedding model used for vector representations.
 
+## Index Artifacts And Team Rebuilds
+
+The repository does not normally carry the full `data/` directory or the FAISS
+index files, because these are large, local build artifacts. Pulling the code
+therefore updates the configured paths, but it does not guarantee that the
+matching local index exists on each developer's machine.
+
+The current configuration expects the April 2026 rebuilt index:
+
+- **Split JSON directory**: `data/json_split_rebuild_v1`
+- **FAISS index root**: `data/db_langchain_rebuild_v1`
+- **Embedding model**: `sentence-transformers/all-mpnet-base-v2`
+- **Split length**: `1000`
+- **Split overlap**: `150`
+- **Preprocess mode for full rebuild**: `SETUP`
+
+If a colleague does not have `data/db_langchain_rebuild_v1` locally, the API
+will not be using the same retrieval index as the accuracy report. They should
+either obtain the April 2026 rebuilt `data/` artifacts from the shared project
+artifact store, or rebuild the index using the settings above. Rebuilding with
+different split sizes, overlap, source PDFs, or embedding model can change
+retrieval behavior and make accuracy results non-comparable.
+
 ## `[preprocess]`
 
 - **mode**: Set to `"UPDATE"` to update the database with new data.  Use `"SETUP"` to build the database from scratch.
