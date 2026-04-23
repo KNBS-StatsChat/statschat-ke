@@ -99,6 +99,10 @@ different retrieval tooling. The local API still keeps its legacy response shape
 (`references` is a single URL string), while cloud returns a list of reference
 objects.
 
+For the detailed engineering change log behind these retrieval changes, see:
+
+- `docs/architecture/2026-04-accuracy-architecture-changes.md`
+
 ## What Changed In April 2026
 
 The main accuracy gains came from two different sources, and it is useful to

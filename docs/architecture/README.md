@@ -39,6 +39,8 @@ These documents detail the journey of data from the KNBS website to the user's s
 #### Cross-cutting
 -   **[Input/Output (I/O) Overview](pipeline-input-output.md)**
     -   *Scope*: What goes in (PDFs, chunks, questions) and what comes out (answers, references) across both the pipeline and query-time API.
+-   **[April 2026 Accuracy-Driven Architecture Changes](2026-04-accuracy-architecture-changes.md)**
+    -   *Scope*: Exact retrieval, routing, guardrail, and local/cloud parity changes made during the April 2026 accuracy work, including where they were inserted in code and which benchmark examples they affected.
 
 
 ### 2. Configuration & Operations
