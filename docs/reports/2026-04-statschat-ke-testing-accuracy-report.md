@@ -453,6 +453,16 @@ The two full cloud runs had identical retrieval metrics:
 
 Retrieval metrics are identical across both models, confirming that document retrieval quality is model-independent. The difference in overall accuracy is driven entirely by generation: GPT produces more accurate synthesised answers from the same retrieved contexts. Both models achieve perfect guardrail compliance on unanswerable questions.
 
+The recorded answer-scoring methods also help interpret these results. Fuzzy text matching is not the dominant source of correct rows on the audited benchmark. On the best GPT run, most correct answerable rows were recorded as `numeric_match`, not as fuzzy text matches. On the clean Mistral comparison run, the same pattern holds, although Mistral produced fewer numeric matches and more misses.
+
+| Recorded scoring method on correct answerable rows | GPT-5.4-mini | Mistral Small 3.1 |
+|---|---:|---:|
+| Numeric match | 52 | 40 |
+| Exact match | 0 | 7 |
+| Text match | 5 | 3 |
+
+This table should be read carefully. The `scoring_method` column records the first successful rule in evaluator order. For non-numeric rows, `text_match` is checked before token F1 and semantic similarity, so some rows recorded as `text_match` may also have passed those later thresholds. Even with that caveat, the benchmark is clearly dominated by exact or numeric grounding rather than by fuzzy matching.
+
 This also clarifies how to interpret the overall improvement from the earlier system state. Retrieval and routing changes raised the quality of the evidence delivered to the generator, while GPT-5.4-mini provided a stronger synthesis layer than Mistral on top of that evidence. This supports the recommendation that KNBS can rely on the system primarily as a document retrieval tool — retrieval performance is strong and stable regardless of which generation model is configured.
 
 ## 9. Error Analysis
