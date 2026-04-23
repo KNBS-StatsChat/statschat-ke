@@ -99,6 +99,87 @@ different retrieval tooling. The local API still keeps its legacy response shape
 (`references` is a single URL string), while cloud returns a list of reference
 objects.
 
+## What Changed In April 2026
+
+The main accuracy gains came from two different sources, and it is useful to
+separate them:
+
+- retrieval and routing architecture improvements
+- generator model quality
+
+The architectural changes included:
+
+- report-family routing
+- temporal candidate widening
+- more precise month / quarter / year edition selection
+- cross-encoder reranking
+- page-aware generation-context selection
+- out-of-scope guardrail policy
+- shared retrieval behavior between local and cloud APIs
+
+The project did not start from a strong measured baseline. The earliest
+exploratory cloud smoke runs on 3-row and 10-row slices scored between:
+
+- `0.000`
+- `0.500`
+
+Those runs are useful context, but they are too small to serve as a formal
+benchmark.
+
+The first full audited 37-row cloud baseline was:
+
+- answerable accuracy: `22/37 = 0.595`
+- pipeline doc hit@8: `31/37 = 0.838`
+
+The later comparable measured cloud baseline on the original audited 37-row
+set was:
+
+- answerable accuracy: `30/37 = 0.811`
+- pipeline doc hit@8: `34/37 = 0.919`
+
+The `22/37 = 0.595` run is the clearest formal picture of the early system on
+the audited benchmark. The later `30/37 = 0.811` run is the closest measured
+approximation of the system immediately before the April 2026 retrieval,
+routing, and guardrail improvements. It is still only a partial baseline
+because the benchmark was smaller and did not yet include unanswerable rows.
+
+On the expanded 74-row benchmark, the first run after adding new answerable rows
+fell to:
+
+- answerable accuracy: `48/61 = 0.787`
+- pipeline doc hit@8: `50/61 = 0.820`
+
+This exposed weaknesses in the retrieval architecture that the original 37-row
+set had not revealed clearly enough.
+
+After the retrieval and routing improvements, the best GPT-5.4-mini cloud run
+reached:
+
+- answerable accuracy: `57/61 = 0.934`
+- unanswerable accuracy: `13/13 = 1.000`
+- overall accuracy: `70/74 = 0.946`
+- pipeline doc hit@8: `56/61 = 0.918`
+
+The clean Mistral Small 3.1 OpenRouter comparison run used the same retrieval
+pipeline and the same benchmark, but a different cloud generation model. It
+reached:
+
+- answerable accuracy: `50/61 = 0.820`
+- unanswerable accuracy: `13/13 = 1.000`
+- overall accuracy: `63/74 = 0.851`
+- pipeline doc hit@8: `56/61 = 0.918`
+
+The key interpretation is:
+
+- retrieval improvements materially improved the benchmark results
+- GPT-5.4-mini still outperformed Mistral on answer synthesis
+- the final headline improvement is therefore a combination of stronger
+  retrieval architecture and stronger answer generation
+
+The local Mistral smoke run (`12/15 = 0.800`) is useful as a parity check, but
+it was only run on a 15-row subset and should not be treated as directly
+comparable to the full 74-row cloud runs.
+
 ## Run Commands
 
 ### 1. Generate QA With A Local Model

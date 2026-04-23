@@ -25,11 +25,13 @@ The headline result from the best full benchmark run is:
 | Pipeline Doc Hit@8 | 56/61 = 0.918 |
 | Any Reference Page Hit | 39/61 = 0.639 |
 
-The benchmark expansion was especially important. On the original 37 answerable rows, the system reached roughly 0.919 accuracy. When 24 new answerable rows from under-tested report families were added, answerable accuracy initially fell to 48/61 = 0.787. This confirmed that the original 37-row set was not representative enough. Subsequent retrieval and routing improvements recovered performance to 57/61 = 0.934 answerable accuracy on the expanded benchmark.
+The benchmark expansion was especially important. The project did not start from a strong or stable measured baseline. Very early exploratory cloud runs on tiny subsets scored as low as 0.000 to 0.500, the first full 37-row audited cloud run scored 22/37 = 0.595, and only later did the smaller 37-row benchmark reach 0.919 after repeated tuning. When 24 new answerable rows from under-tested report families were added, answerable accuracy immediately fell to 48/61 = 0.787. This confirmed that the original 37-row set was not representative enough. Subsequent retrieval and routing improvements recovered performance to 57/61 = 0.934 answerable accuracy on the expanded benchmark.
 
 The main technical conclusion is that retrieval architecture is now significantly stronger and more consistent. The cloud API and local API now share the same retrieval pipeline: temporal filtering, report-family routing, cross-encoder reranking, and page-aware generation-context selection. This means local/cloud comparisons can focus more directly on the generator model rather than on different retrieval implementations.
 
 We also ran a model comparison using Mistral Small 3.1 (24B) through OpenRouter. It produced 50/61 = 0.820 answerable accuracy and 13/13 = 1.000 unanswerable accuracy, with identical retrieval metrics to the GPT-5.4-mini run. This confirms that the accuracy gap between the two models is driven entirely by answer synthesis quality rather than retrieval. The evaluator recorded the live API model directly from the `/health` endpoint, making model provenance fully auditable.
+
+It is therefore important not to attribute the final results to a single factor. The measured improvement came from a combination of stronger retrieval architecture and stronger answer generation. Architecture changes improved retrieval and grounding quality across the benchmark, especially on the expanded 74-row set. Model choice still mattered on top of that: with the same retrieval metrics, GPT-5.4-mini outperformed Mistral Small 3.1 on answer synthesis.
 
 Based on the current evidence, the tool appears healthy and suitable for a controlled production or pilot deployment, especially as a retrieval-first assistant that helps users find the relevant KNBS publication, page, and supporting context. The answer accuracy measured on the current audited sample is high, and guardrail behavior is strong. This should not be treated as a one-time permanent certification: the benchmark has 74 rows, no independent held-out split, and observed row-level LLM nondeterminism of roughly one to two rows between repeated runs. In practice, there is no single universally correct sample size that proves a statistical assistant is "done"; production confidence should come from continued benchmark expansion, monitoring, user feedback, and KNBS maintenance over time.
 
@@ -74,6 +76,10 @@ The early benchmark runs showed that a single overall accuracy number was not en
 - The model initially answered some out-of-scope questions instead of refusing.
 
 This led to a decision to treat answer quality and retrieval quality as separate measurement problems.
+
+The earliest exploratory measurements underline how immature the initial measured state was. On 7 April 2026, the first tiny cloud smoke runs on 3-row and 10-row slices produced overall accuracies between 0.000 and 0.500. Those runs were too small to serve as a formal benchmark, but they are still useful context: the system was not starting from a high-confidence or high-performing measured baseline.
+
+The first full audited 37-row cloud baseline on 8 April 2026 scored 22/37 = 0.595 answerable accuracy, with Pipeline Doc Hit@8 at 31/37 = 0.838. The later 30/37 = 0.811 result on the same 37-row set is better understood as a pre-expansion plateau after initial iteration, not as the true starting point. Both baselines matter. The 0.595 run is the clearest formal picture of the early system on the audited benchmark, while the 0.811 run is the closest measured approximation of the system state immediately before the April 2026 retrieval, routing, and guardrail improvements that followed. Even that later 0.811 baseline remains only a partial baseline: at that stage the benchmark was smaller, under-tested report families were not yet represented, and unanswerable rows were not yet included.
 
 ### 3.2 Retrieval And Reranking Improvements
 
@@ -126,12 +132,14 @@ Local API = shared retrieval + local Hugging Face generation
 
 This is retrieval parity, not full response-shape parity. The local API still returns `references` as a single URL string, while the cloud API returns a list of reference objects.
 
+This distinction matters when interpreting improvements. The architectural work made local/cloud retrieval behavior substantially more comparable, but the headline production numbers in this report still reflect a combination of retrieval improvements and the cloud generator used for final answer synthesis. The local Mistral smoke run is useful as a parity check, but it was only run on 15 rows and should not be treated as directly comparable to the full 74-row cloud results.
+
 ## 4. Testing Infrastructure
 
 The architecture changes were supported by automated tests across unit, integration, and end-to-end layers. The latest full test run completed with:
 
 ```text
-231 passed
+232 passed
 ```
 
 Warnings remain, mainly FastAPI `on_event` deprecation warnings and some dependency/runtime warnings, but no test failures were present at the time this report was drafted.
@@ -277,7 +285,17 @@ The evaluator uses deterministic answer matching. For answerable rows, it comput
 - Token F1.
 - Semantic similarity.
 
-For numeric-gold rows, `is_correct` is dominated by exact match or numeric match. Text similarity, token F1, and semantic similarity remain useful diagnostics but do not override numeric mismatch on numeric rows.
+The final row-level `is_correct` decision uses an explicit OR rule, but the rule has two branches:
+
+- If the audited golden answer is primarily numeric, the row is correct only if `exact_match == 1` or `numeric_match == True`.
+- If the audited golden answer is not primarily numeric, the row is correct if any of the following is true:
+  - `exact_match == 1`
+  - `numeric_match == True`
+  - RapidFuzz token-set ratio `>= 85.0`
+  - token F1 `>= 0.80`
+  - semantic similarity `>= 0.90`
+
+This matters because fuzzy text similarity can create false positives on statistical values. A wrong number can still look textually similar to the right answer, especially when the wording around the number is similar. For that reason, numeric-gold rows deliberately ignore fuzzy/semantic signals when deciding correctness. Those extra signals are still recorded for diagnostics, but they do not override numeric mismatch on numeric rows.
 
 The numeric matcher uses:
 
@@ -289,6 +307,12 @@ relative tolerance = 0.01
 This supports common statistical formatting differences such as percentages, scaled values, and rounded figures.
 
 The numeric parser also handles scaled units such as `thousand`, `million`, `billion`, and `trillion`, and treats `('000)`-style table unit markers as a multiplier of 1,000. This was important for KNBS tables where values are often shown in thousands without repeating the word "thousand" in every cell.
+
+Examples:
+
+- Gold: `6.3 per cent`; predicted: `Inflation was 6.3%`. This is correct because numeric matching succeeds even though the wording is different.
+- Gold: `KSh 5,774,645 million`; predicted: `5,774,645`. This can fail deterministic answer correctness if the unit/currency wording is omitted, even though the underlying number is right. That is why the report treats some residual cases as evaluator edge cases rather than pure retrieval failures.
+- If the gold answer is a short text label without critical numbers, such as a county name or a report family name, correctness can come from exact match, fuzzy similarity, token overlap, or semantic similarity depending on the wording.
 
 ### 6.5 Answer Coverage And Missing Answers
 
@@ -322,7 +346,20 @@ The main metrics are:
 | Doc Hit@k | Whether any top-k document is gold |
 | Page Hit | Whether the returned page matches audited evidence pages |
 
-On the current benchmark, most rows have one gold document. In that situation, `Recall@k` and `Doc Hit@k` converge numerically. They are not the same metric in general: multi-gold rows would make them diverge.
+For document metrics, the evaluator first normalises document IDs, removes duplicates, and then scores the unique top-k ranking against the audited `relevant_doc_ids`. Retrieval correctness is therefore not a single OR condition in the same way as answer correctness. Instead, the evaluator reports several complementary ranking metrics so it is possible to distinguish:
+
+- whether the right document was present at all,
+- whether it appeared near the top of the ranking,
+- and whether the correct evidence page was also returned.
+
+On the current benchmark, most rows have one gold document. In that situation, `Recall@k` and `Doc Hit@k` often converge numerically. They are not the same metric in general: multi-gold rows would make them diverge.
+
+Examples:
+
+- If the gold document appears at rank 3 in the top 8 results, then `Doc Hit@8 = 1`, `Doc Hit@1 = 0`, and `MRR = 1/3 = 0.333`.
+- If there is only one gold document and it appears anywhere in the top 8, then `Recall@8 = 1.0`. If it is absent, `Recall@8 = 0.0`.
+- If the correct document is returned but the cited page does not match the audited evidence page, document retrieval can still score as a hit while page-level retrieval scores as a miss. This is why page metrics are reported separately from document metrics.
+- Pipeline page metrics compare returned `(document, page)` pairs against audited evidence-page pairs. For example, if the API cites the right report but page 17 instead of audited page 22, `Doc Hit@k` may be 1 while page hit remains 0.
 
 ### 6.7 FAISS Proxy Metrics vs Pipeline Metrics
 
@@ -351,6 +388,8 @@ This prevents stale cached scores from surviving after workbook edits or evaluat
 
 | Stage | Run folder | Rows | Answerable accuracy | Unanswerable accuracy | Overall accuracy | Pipeline Doc Hit@8 |
 |---|---|---:|---:|---:|---:|---:|
+| Exploratory tiny-slice runs | `2026-04-07_173551` to `2026-04-07_182241` | 3 to 10 | 0.000 to 0.500 | N/A | 0.000 to 0.500 | 0.667 to 0.800 |
+| First full 37-row audited cloud baseline | `2026-04-08_114523` | 37 | 22/37 = 0.595 | N/A | 0.595 | 31/37 = 0.838 |
 | Early 37-row cloud run | `2026-04-09_162741` | 37 | 30/37 = 0.811 | N/A | 0.811 | 34/37 = 0.919 |
 | Page/context improvement on 37 rows | `2026-04-13_142946` | 37 | 33/37 = 0.892 | N/A | 0.892 | 34/37 = 0.919 |
 | Guardrail benchmark with 50 rows | `2026-04-14_182404` | 50 | 34/37 = 0.919 | 13/13 = 1.000 | 0.940 | 35/37 = 0.946 |
@@ -359,7 +398,7 @@ This prevents stale cached scores from surviving after workbook edits or evaluat
 | Family-routing expanded run | `2026-04-16_171338` | 74 | 56/61 = 0.918 | 13/13 = 1.000 | 0.932 | 54/61 = 0.885 |
 | Best GPT-5.4-mini run | `2026-04-16_175219` | 74 | 57/61 = 0.934 | 13/13 = 1.000 | 0.946 | 56/61 = 0.918 |
 
-The key result is not only that final accuracy improved. The important engineering signal is that the expanded benchmark initially exposed a much lower score, and targeted family-routing and temporal-edition work recovered the score without sacrificing guardrail behavior.
+The key result is not only that final accuracy improved. The important engineering signal is that the measured starting point was weak, the first full audited benchmark was only moderate, the expanded benchmark then exposed a much lower score than the team might otherwise have believed, and targeted family-routing and temporal-edition work recovered the score without sacrificing guardrail behavior.
 
 ### 7.2 Best GPT-5.4-mini Run
 
@@ -414,7 +453,7 @@ The two full cloud runs had identical retrieval metrics:
 
 Retrieval metrics are identical across both models, confirming that document retrieval quality is model-independent. The difference in overall accuracy is driven entirely by generation: GPT produces more accurate synthesised answers from the same retrieved contexts. Both models achieve perfect guardrail compliance on unanswerable questions.
 
-This supports the recommendation that KNBS can rely on the system primarily as a document retrieval tool — retrieval performance is strong and stable regardless of which generation model is configured.
+This also clarifies how to interpret the overall improvement from the earlier system state. Retrieval and routing changes raised the quality of the evidence delivered to the generator, while GPT-5.4-mini provided a stronger synthesis layer than Mistral on top of that evidence. This supports the recommendation that KNBS can rely on the system primarily as a document retrieval tool — retrieval performance is strong and stable regardless of which generation model is configured.
 
 ## 9. Error Analysis
 

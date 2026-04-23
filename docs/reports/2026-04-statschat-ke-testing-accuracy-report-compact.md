@@ -12,6 +12,8 @@ The system should be viewed as healthy and suitable for a controlled production 
 
 The benchmark is not a permanent certification. It is a strong evidence base for cautious deployment and continued maintenance. KNBS should continue expanding the benchmark, monitoring real usage, and adding new test cases as the corpus and user needs evolve.
 
+The final result should not be attributed to one factor alone. The improvement came from both architecture changes and model choice. Retrieval and routing improvements made the evidence pipeline stronger and more stable, while GPT-5.4-mini produced more accurate answers than Mistral Small 3.1 from the same retrieved contexts.
+
 | Headline Metric | Result |
 |---|---:|
 | Total benchmark questions | 74 |
@@ -29,6 +31,8 @@ The benchmark is not a permanent certification. It is a strong evidence base for
 StatsChat-KE uses a retrieval-and-generation architecture. It indexes KNBS publications, retrieves relevant content for a user question, and asks a language model to produce an answer grounded in that retrieved context.
 
 Before this work, the system could answer questions, but it was difficult to say how reliable it was. The project did not have a mature automated test suite for the RAG behavior, and it did not have an audited benchmark that could support a defensible accuracy claim. Local and cloud modes also used different retrieval behavior. That made it hard to know whether errors came from retrieval, the language model, the evidence data, or the evaluator.
+
+The project did not start from a strong measured baseline. The earliest exploratory cloud smoke runs on tiny 3-row and 10-row slices scored between 0.000 and 0.500. The first full audited 37-row cloud benchmark then scored 22/37 = 0.595. A later 37-row plateau of 30/37 = 0.811 is the clearest approximation of the system immediately before the main April 2026 retrieval, routing, and guardrail improvements, although it still came from a smaller benchmark with no unanswerable rows.
 
 The work described in this report had three practical objectives. First, build automated tests so the system could be changed safely. Second, create a reliable audited accuracy benchmark with both answerable and unanswerable questions. Third, improve the retrieval and guardrail behavior until the measured performance was strong enough to support a controlled rollout.
 
@@ -52,7 +56,7 @@ The local and cloud APIs now share the same retrieval behavior. The intended dif
 
 ## Testing Infrastructure
 
-Automated tests were added across unit, integration, and end-to-end layers. This was a major part of the work: the test suite was built to give the team confidence that retrieval changes, API changes, evaluator changes, and pipeline changes could be made without silently breaking existing behavior. The latest full test run completed successfully with 231 tests passing.
+Automated tests were added across unit, integration, and end-to-end layers. This was a major part of the work: the test suite was built to give the team confidence that retrieval changes, API changes, evaluator changes, and pipeline changes could be made without silently breaking existing behavior. The latest full test run completed successfully with 232 tests passing.
 
 The tests cover retrieval helpers, temporal parsing, report-family recognition, API endpoints, guardrails, evaluator logic, feedback endpoints, health checks, and end-to-end search flows. This test coverage made the retrieval refactors safer and allowed the team to reject changes that improved one metric while damaging another.
 
@@ -61,6 +65,23 @@ The tests cover retrieval helpers, temporal parsing, report-family recognition, 
 The evaluator measures answer quality, retrieval quality, and refusal quality. This distinction is central to interpreting the results because a RAG system can fail in different ways: it can retrieve the wrong evidence, retrieve the right evidence but synthesize the wrong answer, or answer when it should refuse.
 
 Accuracy is measured row by row against the audited benchmark. For answerable questions, a row is correct when the predicted answer matches the audited golden answer. For unanswerable questions, a row is correct when the system refuses or returns no substantive answer. The report therefore separates answerable accuracy, unanswerable accuracy, overall accuracy, answer coverage, and false answer rate.
+
+For answerable rows, correctness is not judged by one string test alone. The evaluator computes exact match, numeric match, RapidFuzz similarity, token F1, and semantic similarity. The final rule is an OR rule, but it depends on the type of gold answer:
+
+- if the gold answer is primarily numeric, the row is correct only if exact match or numeric match succeeds;
+- if the gold answer is not primarily numeric, the row is correct if exact match, numeric match, RapidFuzz similarity, token F1, or semantic similarity passes its threshold.
+
+The default thresholds are:
+
+- RapidFuzz token-set ratio: `85.0`
+- token F1: `0.80`
+- semantic similarity: `0.90`
+- numeric absolute tolerance: `0.1`
+- numeric relative tolerance: `0.01`
+
+This design is deliberate. A wrong number can still look textually similar to the right answer, so fuzzy and semantic signals are not allowed to overrule numeric mismatch when the gold answer is numeric.
+
+Example: if the gold answer is `6.3 per cent` and the model answers `Inflation was 6.3%`, the row is correct because numeric matching succeeds. If the gold answer is `KSh 5,774,645 million` and the model returns only `5,774,645`, deterministic scoring may still mark it wrong because the unit and currency wording were omitted.
 
 Retrieval metrics measure whether the system returned the right document and page before answer generation. The report distinguishes raw FAISS proxy retrieval from the final API pipeline, because the production pipeline includes reranking, temporal handling, report-family routing, and page selection. The detailed formulas and scoring rules used for these metrics are included in Appendix 2.
 
@@ -72,6 +93,8 @@ After targeted retrieval improvements, performance recovered on the expanded ben
 
 | Stage | Rows | Answerable Accuracy | Unanswerable Accuracy | Overall Accuracy | Correct Document In Top 8 |
 |---|---:|---:|---:|---:|---:|
+| Exploratory tiny-slice runs | 3 to 10 | 0.000 to 0.500 | N/A | 0.000 to 0.500 | 0.667 to 0.800 |
+| First full 37-row audited cloud baseline | 37 | 22/37 = 0.595 | N/A | 0.595 | 31/37 = 0.838 |
 | Early 37-row cloud run | 37 | 30/37 = 0.811 | N/A | 0.811 | 34/37 = 0.919 |
 | Improved 37-row run | 37 | 33/37 = 0.892 | N/A | 0.892 | 34/37 = 0.919 |
 | Guardrail benchmark | 50 | 34/37 = 0.919 | 13/13 = 1.000 | 0.940 | 35/37 = 0.946 |
@@ -79,7 +102,7 @@ After targeted retrieval improvements, performance recovered on the expanded ben
 | Family-routing expanded run | 74 | 56/61 = 0.918 | 13/13 = 1.000 | 0.932 | 54/61 = 0.885 |
 | Best GPT-5.4-mini run | 74 | 57/61 = 0.934 | 13/13 = 1.000 | 0.946 | 56/61 = 0.918 |
 
-The most important lesson is not just that the final score improved. The expanded benchmark exposed a real weakness, and the subsequent retrieval improvements recovered performance without sacrificing guardrail behavior.
+The most important lesson is not just that the final score improved. The early measured system state was weak, the first full audited benchmark was only moderate, the expanded benchmark then exposed a real weakness, and the subsequent retrieval improvements recovered performance without sacrificing guardrail behavior.
 
 The results also show why both testing and benchmark work were needed. Without the expanded audited benchmark, the team might have concluded too early that the system was already performing near its final level. Without the automated tests, the architecture changes required to recover performance on the expanded benchmark would have been riskier to make.
 
@@ -224,6 +247,14 @@ Retrieval metrics measure whether the right source material was returned before 
 | MRR | 1 / rank of the first relevant result, or 0 if none is found |
 | nDCG | Discounted gain of the returned ranking divided by the ideal discounted gain |
 | Page Hit | 1 if a returned reference page matches an audited evidence page, otherwise 0 |
+
+For document metrics, document IDs are normalised, duplicates are removed, and then the unique top-k ranking is compared against the audited `relevant_doc_ids`. Retrieval correctness is therefore described by a family of metrics, not by one yes/no rule.
+
+Examples:
+
+- If the right document appears third in the ranking, then `Doc Hit@8 = 1`, `Doc Hit@1 = 0`, and `MRR = 1/3`.
+- If there is one gold document and it appears anywhere in the top 8, then `Recall@8 = 1.0`.
+- If the right document is returned but the wrong page is cited, document retrieval can still be correct while page hit remains 0.
 
 On the current benchmark, most answerable rows have one gold document. In that single-gold setting, Recall@k and Doc Hit@k often converge numerically because finding the one gold document means recall is 1 and missing it means recall is 0. They are not the same metric in general. If a future row has multiple relevant documents, Recall@k can take fractional values while Doc Hit@k remains a binary "any hit" signal.
 
