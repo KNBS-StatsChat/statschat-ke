@@ -22,7 +22,11 @@ k_docs = 8
 k_contexts = 5
 similarity_threshold = 2.0     # Threshold score below which a document is returned in a search
 llm_temperature = 0.0
-llm_max_tokens = 1024
+llm_max_tokens = 1024       # shared fallback if mode-specific caps are absent
+llm_max_tokens_cloud = 1024 # cloud-specific output cap; for Mistral Small 3.1 comparisons use 2048+ if JSON responses truncate
+# Optional Mistral comparison override:
+# llm_max_tokens_cloud = 2048
+llm_max_tokens_local = 1024 # local generation output cap
 answer_threshold = 1.1
 document_threshold = 0.9 # Threshold score below which a document is returned in a search
 provider = "openrouter"  # or "openai", "huggingface_inference"

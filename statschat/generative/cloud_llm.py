@@ -782,6 +782,7 @@ class Inquirer:
         logger: logging.Logger = None,
         llm_temperature: float = 0.0,
         llm_max_tokens: int = 1024,
+        llm_max_tokens_cloud: int | None = None,
         verbose: bool = False,
         answer_threshold: float = 0.5,
         document_threshold: float = 0.9,
@@ -825,7 +826,8 @@ class Inquirer:
         self.extractive_prompt = EXTRACTIVE_PROMPT_PYDANTIC
         self.stuff_document_prompt = STUFF_DOCUMENT_PROMPT
         self.llm_temperature = llm_temperature
-        self.llm_max_tokens = llm_max_tokens
+        effective_llm_max_tokens = int(llm_max_tokens_cloud or llm_max_tokens)
+        self.llm_max_tokens = effective_llm_max_tokens
         self.provider = provider
         # Keep the cloud path compatible with the shared search config used by
         # the local path, and align ranking behaviour where practical.
@@ -882,7 +884,7 @@ class Inquirer:
             self.llm = ChatOpenAI(
                 model=generative_model_name,
                 temperature=llm_temperature,
-                max_tokens=llm_max_tokens,
+                max_tokens=effective_llm_max_tokens,
                 api_key=sec_key,
             )
 
@@ -892,7 +894,7 @@ class Inquirer:
             self.llm = ChatOpenAI(
                 model=generative_model_name,
                 temperature=llm_temperature,
-                max_tokens=llm_max_tokens,
+                max_tokens=effective_llm_max_tokens,
                 openai_api_key=sec_key,
                 openai_api_base=api_base,
             )
@@ -901,7 +903,7 @@ class Inquirer:
             sec_key = os.getenv("HF_TOKEN")
             self.llm = HuggingFaceEndpoint(
                 repo_id=generative_model_name,
-                model_kwargs={"max_length": llm_max_tokens},
+                model_kwargs={"max_length": effective_llm_max_tokens},
                 temperature=llm_temperature,
                 token=sec_key,
             )

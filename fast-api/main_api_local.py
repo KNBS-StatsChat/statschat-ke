@@ -277,7 +277,12 @@ async def search(
     )
     user_input = _core_prompt + specific_prompt + _format_instructions
 
-    max_new_tokens = int(CONFIG.get("search", {}).get("llm_max_tokens", 512))
+    max_new_tokens = int(
+        CONFIG.get("search", {}).get(
+            "llm_max_tokens_local",
+            CONFIG.get("search", {}).get("llm_max_tokens", 512),
+        )
+    )
     # Keep generation bounds reasonable for local runtime.
     max_new_tokens = max(64, min(max_new_tokens, 800))
     raw_response = generate_response(

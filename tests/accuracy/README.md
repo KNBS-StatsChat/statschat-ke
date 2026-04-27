@@ -231,6 +231,12 @@ The cloud API itself needs the configured provider key in its environment, for e
 - `OPENAI_API_KEY`
 - `HF_TOKEN`
 
+For cloud model comparisons, note that `llm_max_tokens_cloud` may need to be
+raised for more verbose models. GPT-5.4-mini has fit comfortably under the
+default `1024` cap in the audited runs, but Mistral Small 3.1 may require
+`2048` or higher to complete the expected structured JSON output without
+truncation.
+
 ### 5. Evaluate Against The API
 
 ```bash
