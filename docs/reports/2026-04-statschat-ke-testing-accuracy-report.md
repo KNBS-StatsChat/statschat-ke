@@ -2,6 +2,8 @@
 
 April 2026
 
+Author: Damian Ejlli
+
 ## 1. Executive Summary
 
 StatsChat-KE is an experimental retrieval-augmented generation (RAG) system for answering questions from Kenya National Bureau of Statistics (KNBS) publications. The wider project began in mid-October 2025. This report summarises the testing, retrieval, guardrail, and accuracy-evaluation work completed by mid-April 2026, with particular focus on the April 2026 `test_infra` branch work that made the system measurable and safer to change.

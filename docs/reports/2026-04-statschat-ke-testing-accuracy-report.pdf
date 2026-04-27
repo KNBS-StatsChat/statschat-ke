@@ -7,67 +7,68 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
 endobj
 3 0 obj
-<< /Length 4563 >>
+<< /Length 4621 >>
 stream
 BT /F2 18 Tf 54.00 734.00 Td (StatsChat-KE Testing, Retrieval, and Accuracy) Tj ET
 BT /F2 18 Tf 54.00 712.00 Td (Evaluation Report) Tj ET
 BT /F1 10 Tf 54.00 678.00 Td (April 2026) Tj ET
-BT /F2 14 Tf 54.00 652.00 Td (Executive Summary) Tj ET
-BT /F1 10 Tf 54.00 628.00 Td (StatsChat-KE is an experimental retrieval-augmented generation system designed to answer) Tj ET
-BT /F1 10 Tf 54.00 615.00 Td (questions from Kenya National Bureau of Statistics publications. The project began in mid-) Tj ET
-BT /F1 10 Tf 54.00 602.00 Td (October 2025, and this report summarises the testing, architecture, and accuracy-evaluation work) Tj ET
-BT /F1 10 Tf 54.00 589.00 Td (completed by mid-April 2026.) Tj ET
-BT /F1 10 Tf 54.00 573.00 Td (The main finding is positive. On the current audited benchmark of 74 questions, the best cloud) Tj ET
-BT /F1 10 Tf 54.00 560.00 Td (run achieved 70 correct outcomes out of 74, giving an overall accuracy of 0.946. On answerable) Tj ET
-BT /F1 10 Tf 54.00 547.00 Td (questions, the tool answered 57 out of 61 correctly. On unanswerable questions, it correctly) Tj ET
-BT /F1 10 Tf 54.00 534.00 Td (refused all 13 and produced no false answers.) Tj ET
-BT /F1 10 Tf 54.00 518.00 Td (The system should be viewed as healthy and suitable for a controlled production or pilot) Tj ET
-BT /F1 10 Tf 54.00 505.00 Td (deployment, especially as a retrieval-first assistant. Its strongest production use case is) Tj ET
-BT /F1 10 Tf 54.00 492.00 Td (helping users find the relevant KNBS publication, page, and supporting context. The generated) Tj ET
-BT /F1 10 Tf 54.00 479.00 Td (answer layer is also performing strongly, but users should still be encouraged to inspect the) Tj ET
-BT /F1 10 Tf 54.00 466.00 Td (cited source when the answer is operationally important.) Tj ET
-BT /F1 10 Tf 54.00 450.00 Td (The benchmark is not a permanent certification. It is a strong evidence base for cautious) Tj ET
-BT /F1 10 Tf 54.00 437.00 Td (deployment and continued maintenance. KNBS should continue expanding the benchmark, monitoring) Tj ET
-BT /F1 10 Tf 54.00 424.00 Td (real usage, and adding new test cases as the corpus and user needs evolve.) Tj ET
-BT /F1 10 Tf 54.00 408.00 Td (The final result should not be attributed to one factor alone. The improvement came from both) Tj ET
-BT /F1 10 Tf 54.00 395.00 Td (architecture changes and model choice. Retrieval and routing improvements made the evidence) Tj ET
-BT /F1 10 Tf 54.00 382.00 Td (pipeline stronger and more stable, while GPT-5.4-mini produced more accurate answers than) Tj ET
-BT /F1 10 Tf 54.00 369.00 Td (Mistral Small 3.1 from the same retrieved contexts.) Tj ET
-54.00 355.00 m 558.00 355.00 l S
-BT /F2 8.2 Tf 57.00 343.50 Td (Headline Metric) Tj ET
-BT /F2 8.2 Tf 309.00 343.50 Td (Result) Tj ET
-54.00 338.50 m 558.00 338.50 l S
-BT /F1 8.2 Tf 57.00 327.00 Td (Total benchmark questions) Tj ET
-BT /F1 8.2 Tf 309.00 327.00 Td (74) Tj ET
-54.00 322.00 m 558.00 322.00 l S
-BT /F1 8.2 Tf 57.00 310.50 Td (Answerable questions) Tj ET
-BT /F1 8.2 Tf 309.00 310.50 Td (61) Tj ET
-54.00 305.50 m 558.00 305.50 l S
-BT /F1 8.2 Tf 57.00 294.00 Td (Unanswerable questions) Tj ET
-BT /F1 8.2 Tf 309.00 294.00 Td (13) Tj ET
-54.00 289.00 m 558.00 289.00 l S
-BT /F1 8.2 Tf 57.00 277.50 Td (Answerable accuracy) Tj ET
-BT /F1 8.2 Tf 309.00 277.50 Td (57/61 = 0.934) Tj ET
-54.00 272.50 m 558.00 272.50 l S
-BT /F1 8.2 Tf 57.00 261.00 Td (Unanswerable accuracy) Tj ET
-BT /F1 8.2 Tf 309.00 261.00 Td (13/13 = 1.000) Tj ET
-54.00 256.00 m 558.00 256.00 l S
-BT /F1 8.2 Tf 57.00 244.50 Td (Overall accuracy) Tj ET
-BT /F1 8.2 Tf 309.00 244.50 Td (70/74 = 0.946) Tj ET
-54.00 239.50 m 558.00 239.50 l S
-BT /F1 8.2 Tf 57.00 228.00 Td (False answer rate on unanswerable questions) Tj ET
-BT /F1 8.2 Tf 309.00 228.00 Td (0/13 = 0.000) Tj ET
-54.00 223.00 m 558.00 223.00 l S
-BT /F1 8.2 Tf 57.00 211.50 Td (Correct document in top 8 references) Tj ET
-BT /F1 8.2 Tf 309.00 211.50 Td (56/61 = 0.918) Tj ET
-54.00 206.50 m 558.00 206.50 l S
-BT /F1 8.2 Tf 57.00 195.00 Td (Correct evidence page found in references) Tj ET
-BT /F1 8.2 Tf 309.00 195.00 Td (39/61 = 0.639) Tj ET
-54.00 192.00 m 558.00 192.00 l S
-BT /F2 14 Tf 54.00 170.00 Td (Background And Objectives) Tj ET
-BT /F1 10 Tf 54.00 146.00 Td (StatsChat-KE uses a retrieval-and-generation architecture. It indexes KNBS publications,) Tj ET
-BT /F1 10 Tf 54.00 133.00 Td (retrieves relevant content for a user question, and asks a language model to produce an answer) Tj ET
-BT /F1 10 Tf 54.00 120.00 Td (grounded in that retrieved context.) Tj ET
+BT /F1 10 Tf 54.00 662.00 Td (Author: Damian Ejlli) Tj ET
+BT /F2 14 Tf 54.00 636.00 Td (Executive Summary) Tj ET
+BT /F1 10 Tf 54.00 612.00 Td (StatsChat-KE is an experimental retrieval-augmented generation system designed to answer) Tj ET
+BT /F1 10 Tf 54.00 599.00 Td (questions from Kenya National Bureau of Statistics publications. The project began in mid-) Tj ET
+BT /F1 10 Tf 54.00 586.00 Td (October 2025, and this report summarises the testing, architecture, and accuracy-evaluation work) Tj ET
+BT /F1 10 Tf 54.00 573.00 Td (completed by mid-April 2026.) Tj ET
+BT /F1 10 Tf 54.00 557.00 Td (The main finding is positive. On the current audited benchmark of 74 questions, the best cloud) Tj ET
+BT /F1 10 Tf 54.00 544.00 Td (run achieved 70 correct outcomes out of 74, giving an overall accuracy of 0.946. On answerable) Tj ET
+BT /F1 10 Tf 54.00 531.00 Td (questions, the tool answered 57 out of 61 correctly. On unanswerable questions, it correctly) Tj ET
+BT /F1 10 Tf 54.00 518.00 Td (refused all 13 and produced no false answers.) Tj ET
+BT /F1 10 Tf 54.00 502.00 Td (The system should be viewed as healthy and suitable for a controlled production or pilot) Tj ET
+BT /F1 10 Tf 54.00 489.00 Td (deployment, especially as a retrieval-first assistant. Its strongest production use case is) Tj ET
+BT /F1 10 Tf 54.00 476.00 Td (helping users find the relevant KNBS publication, page, and supporting context. The generated) Tj ET
+BT /F1 10 Tf 54.00 463.00 Td (answer layer is also performing strongly, but users should still be encouraged to inspect the) Tj ET
+BT /F1 10 Tf 54.00 450.00 Td (cited source when the answer is operationally important.) Tj ET
+BT /F1 10 Tf 54.00 434.00 Td (The benchmark is not a permanent certification. It is a strong evidence base for cautious) Tj ET
+BT /F1 10 Tf 54.00 421.00 Td (deployment and continued maintenance. KNBS should continue expanding the benchmark, monitoring) Tj ET
+BT /F1 10 Tf 54.00 408.00 Td (real usage, and adding new test cases as the corpus and user needs evolve.) Tj ET
+BT /F1 10 Tf 54.00 392.00 Td (The final result should not be attributed to one factor alone. The improvement came from both) Tj ET
+BT /F1 10 Tf 54.00 379.00 Td (architecture changes and model choice. Retrieval and routing improvements made the evidence) Tj ET
+BT /F1 10 Tf 54.00 366.00 Td (pipeline stronger and more stable, while GPT-5.4-mini produced more accurate answers than) Tj ET
+BT /F1 10 Tf 54.00 353.00 Td (Mistral Small 3.1 from the same retrieved contexts.) Tj ET
+54.00 339.00 m 558.00 339.00 l S
+BT /F2 8.2 Tf 57.00 327.50 Td (Headline Metric) Tj ET
+BT /F2 8.2 Tf 309.00 327.50 Td (Result) Tj ET
+54.00 322.50 m 558.00 322.50 l S
+BT /F1 8.2 Tf 57.00 311.00 Td (Total benchmark questions) Tj ET
+BT /F1 8.2 Tf 309.00 311.00 Td (74) Tj ET
+54.00 306.00 m 558.00 306.00 l S
+BT /F1 8.2 Tf 57.00 294.50 Td (Answerable questions) Tj ET
+BT /F1 8.2 Tf 309.00 294.50 Td (61) Tj ET
+54.00 289.50 m 558.00 289.50 l S
+BT /F1 8.2 Tf 57.00 278.00 Td (Unanswerable questions) Tj ET
+BT /F1 8.2 Tf 309.00 278.00 Td (13) Tj ET
+54.00 273.00 m 558.00 273.00 l S
+BT /F1 8.2 Tf 57.00 261.50 Td (Answerable accuracy) Tj ET
+BT /F1 8.2 Tf 309.00 261.50 Td (57/61 = 0.934) Tj ET
+54.00 256.50 m 558.00 256.50 l S
+BT /F1 8.2 Tf 57.00 245.00 Td (Unanswerable accuracy) Tj ET
+BT /F1 8.2 Tf 309.00 245.00 Td (13/13 = 1.000) Tj ET
+54.00 240.00 m 558.00 240.00 l S
+BT /F1 8.2 Tf 57.00 228.50 Td (Overall accuracy) Tj ET
+BT /F1 8.2 Tf 309.00 228.50 Td (70/74 = 0.946) Tj ET
+54.00 223.50 m 558.00 223.50 l S
+BT /F1 8.2 Tf 57.00 212.00 Td (False answer rate on unanswerable questions) Tj ET
+BT /F1 8.2 Tf 309.00 212.00 Td (0/13 = 0.000) Tj ET
+54.00 207.00 m 558.00 207.00 l S
+BT /F1 8.2 Tf 57.00 195.50 Td (Correct document in top 8 references) Tj ET
+BT /F1 8.2 Tf 309.00 195.50 Td (56/61 = 0.918) Tj ET
+54.00 190.50 m 558.00 190.50 l S
+BT /F1 8.2 Tf 57.00 179.00 Td (Correct evidence page found in references) Tj ET
+BT /F1 8.2 Tf 309.00 179.00 Td (39/61 = 0.639) Tj ET
+54.00 176.00 m 558.00 176.00 l S
+BT /F2 14 Tf 54.00 154.00 Td (Background And Objectives) Tj ET
+BT /F1 10 Tf 54.00 130.00 Td (StatsChat-KE uses a retrieval-and-generation architecture. It indexes KNBS publications,) Tj ET
+BT /F1 10 Tf 54.00 117.00 Td (retrieves relevant content for a user question, and asks a language model to produce an answer) Tj ET
+BT /F1 10 Tf 54.00 104.00 Td (grounded in that retrieved context.) Tj ET
 BT /F1 8 Tf 288.00 28 Td (Page 1) Tj ET
 endstream
 endobj
@@ -704,27 +705,27 @@ xref
 0000000015 00000 n 
 0000000085 00000 n 
 0000000160 00000 n 
-0000004775 00000 n 
-0000010043 00000 n 
-0000014759 00000 n 
-0000021701 00000 n 
-0000027648 00000 n 
-0000032946 00000 n 
-0000038617 00000 n 
-0000044377 00000 n 
-0000048329 00000 n 
-0000048467 00000 n 
-0000048605 00000 n 
-0000048743 00000 n 
-0000048881 00000 n 
-0000049019 00000 n 
-0000049157 00000 n 
-0000049295 00000 n 
-0000049434 00000 n 
-0000049573 00000 n 
-0000049688 00000 n 
+0000004833 00000 n 
+0000010101 00000 n 
+0000014817 00000 n 
+0000021759 00000 n 
+0000027706 00000 n 
+0000033004 00000 n 
+0000038675 00000 n 
+0000044435 00000 n 
+0000048387 00000 n 
+0000048525 00000 n 
+0000048663 00000 n 
+0000048801 00000 n 
+0000048939 00000 n 
+0000049077 00000 n 
+0000049215 00000 n 
+0000049353 00000 n 
+0000049492 00000 n 
+0000049631 00000 n 
+0000049746 00000 n 
 trailer
 << /Size 23 /Root 22 0 R >>
 startxref
-49739
+49797
 %%EOF

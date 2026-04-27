@@ -2,6 +2,8 @@
 
 April 2026
 
+Author: Damian Ejlli
+
 ## Executive Summary
 
 StatsChat-KE is an experimental retrieval-augmented generation system designed to answer questions from Kenya National Bureau of Statistics publications. The project began in mid-October 2025, and this report summarises the testing, architecture, and accuracy-evaluation work completed by mid-April 2026.
