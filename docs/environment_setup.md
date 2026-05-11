@@ -67,7 +67,7 @@ provider = "openrouter"  # Options: "openrouter", "openai", "huggingface_inferen
 
 Change the `provider` value to match your chosen LLM provider and ensure the corresponding API key is set in your `.env` file.
 
-When using OpenRouter, choose a model that is currently routable through the API. A model page can still exist on the OpenRouter site even when no live API endpoints are available for it. For free experimentation, the current default is `mistralai/mistral-small-3.1-24b-instruct:free`, though free models may be temporarily rate-limited. When you move to paid usage, `mistralai/mistral-nemo` is a good low-cost option to evaluate.
+When using OpenRouter, choose a model that is currently routable through the API. A model page can still exist on the OpenRouter site even when no live API endpoints are available for it. Also note that model availability is not the same as model reliability for structured-output tasks. The historical April 2026 benchmark used `mistralai/mistral-small-3.1-24b-instruct`, but replication probes in May 2026 showed that the same OpenRouter route had become unstable for StatsChat's structured JSON responses. For current Mistral-family comparisons, prefer `mistralai/mistral-small-24b-instruct-2501` or `mistralai/mistral-small-3.2-24b-instruct`. When you move to paid usage, `mistralai/mistral-nemo` is also a reasonable low-cost option to evaluate.
 
 If you want to keep the repository default on the free model but use a paid model locally, set `STATSCHAT_GENERATIVE_MODEL` in your `.env` file. This overrides the model from `statschat/config/main.toml` without changing shared project config. If `STATSCHAT_GENERATIVE_MODEL` is not set, StatsChat uses the repository default from `statschat/config/main.toml`.
 

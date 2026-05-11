@@ -173,6 +173,17 @@ reached:
 - overall accuracy: `63/74 = 0.851`
 - pipeline doc hit@8: `56/61 = 0.918`
 
+That April 20, 2026 Mistral Small 3.1 run remains a valid historical benchmark
+result. However, by May 2026 the same OpenRouter model route became unstable
+for this structured JSON task during replication attempts. A 5-row probe on
+`mistralai/mistral-small-3.1-24b-instruct` returned `0/5` answer coverage even
+after raising `llm_max_tokens_cloud` to `2048`, while retrieval still remained
+perfect. A follow-up probe using `mistralai/mistral-small-24b-instruct-2501`
+returned valid structured answers and scored `4/5 = 0.800` on the same slice.
+For future Mistral-family comparisons, prefer `mistralai/mistral-small-24b-instruct-2501`
+or `mistralai/mistral-small-3.2-24b-instruct` rather than relying on Small 3.1
+to stay reproducible on OpenRouter.
+
 The key interpretation is:
 
 - retrieval improvements materially improved the benchmark results
@@ -233,9 +244,11 @@ The cloud API itself needs the configured provider key in its environment, for e
 
 For cloud model comparisons, note that `llm_max_tokens_cloud` may need to be
 raised for more verbose models. GPT-5.4-mini has fit comfortably under the
-default `1024` cap in the audited runs, but Mistral Small 3.1 may require
-`2048` or higher to complete the expected structured JSON output without
-truncation.
+default `1024` cap in the audited runs. Historically, Mistral Small 3.1 needed
+`2048` or higher to avoid truncation, but the May 2026 replication probes
+showed a deeper provider-side instability on OpenRouter even at that higher
+cap. For live Mistral-family comparisons, prefer `mistralai/mistral-small-24b-instruct-2501`
+or `mistralai/mistral-small-3.2-24b-instruct`.
 
 ### 5. Evaluate Against The API
 

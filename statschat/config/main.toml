@@ -17,13 +17,13 @@ generative_model_name = "mistralai/Mistral-7B-Instruct-v0.3"  # Legacy fallback 
 generative_model_name_local = "mistralai/Mistral-7B-Instruct-v0.3"
 generative_model_name_cloud = "openai/gpt-5.4-mini"
 # Optional OpenRouter Mistral comparison model:
-# generative_model_name_cloud = "mistralai/mistral-small-3.1-24b-instruct"
+# generative_model_name_cloud = "mistralai/mistral-small-24b-instruct-2501"
 k_docs = 8
 k_contexts = 5
 similarity_threshold = 2.0     # Threshold score below which a document is returned in a search
 llm_temperature = 0.0
 llm_max_tokens = 1024       # shared fallback if mode-specific caps are absent
-llm_max_tokens_cloud = 1024 # cloud-specific output cap; for Mistral Small 3.1 comparisons use 2048+ if JSON responses truncate
+llm_max_tokens_cloud = 1024 # standard cloud-specific output cap
 # Optional Mistral comparison override:
 # llm_max_tokens_cloud = 2048
 llm_max_tokens_local = 1024 # local generation output cap
