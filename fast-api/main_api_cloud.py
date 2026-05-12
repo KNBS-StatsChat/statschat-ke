@@ -18,7 +18,11 @@ from statschat.api_common import (
     configure_request_logging,
     protected_endpoint_dependencies,
 )
-from statschat.generative.cloud_llm import Inquirer, has_temporal_constraint
+from statschat.generative.cloud_llm import (
+    Inquirer,
+    has_temporal_constraint,
+    resolve_mode_specific_search_config,
+)
 from statschat.embedding.latest_flag_helpers import get_latest_flag
 
 # %%
@@ -35,11 +39,8 @@ CONFIG = load_config(name="main")
 # %%
 
 # initiate Statschat AI and start the app
-SEARCH_CONFIG = dict(CONFIG.get("search", {}))
-SEARCH_CONFIG["generative_model_name"] = str(
-    SEARCH_CONFIG.get("generative_model_name_cloud")
-    or SEARCH_CONFIG.get("generative_model_name")
-    or "mistralai/mistral-small-3.1-24b-instruct:free"
+SEARCH_CONFIG = resolve_mode_specific_search_config(
+    CONFIG.get("search", {}), mode="cloud"
 )
 # Keep cloud runtime model selection anchored to main.toml.
 # The shared Inquirer still reads STATSCHAT_GENERATIVE_MODEL from the

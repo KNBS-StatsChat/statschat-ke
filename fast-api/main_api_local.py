@@ -19,7 +19,10 @@ from statschat.api_common import (
     protected_endpoint_dependencies,
 )
 from statschat.embedding.latest_flag_helpers import get_latest_flag
-from statschat.generative.cloud_llm import Inquirer as SharedRetrievalInquirer
+from statschat.generative.cloud_llm import (
+    Inquirer as SharedRetrievalInquirer,
+    resolve_mode_specific_search_config,
+)
 from statschat.generative.query_policy import (
     guardrail_refusal_reason,
     has_temporal_constraint,
@@ -36,7 +39,7 @@ from statschat.generative.prompts_local import (
 
 # Config file to load
 CONFIG = load_config(name="main")
-SEARCH_CONFIG = CONFIG.get("search", {})
+SEARCH_CONFIG = dict(CONFIG.get("search", {}))
 
 # define session_id that will be used for log file and feedback
 SESSION_NAME = f"statschat_api_{format(datetime.now(), '%Y_%m_%d_%H:%M')}"
@@ -69,9 +72,9 @@ configure_request_logging(app, logger, api_mode="local")
 
 # Model configuration (loaded once at startup from shared config)
 MODEL_ID = str(
-    SEARCH_CONFIG.get("generative_model_name_local")
-    or SEARCH_CONFIG.get("generative_model_name")
-    or "mistralai/Mistral-7B-Instruct-v0.3"
+    resolve_mode_specific_search_config(SEARCH_CONFIG, mode="local").get(
+        "generative_model_name"
+    )
 )
 MODEL: Optional[AutoModelForCausalLM] = None
 TOKENIZER: Optional[AutoTokenizer] = None
@@ -85,12 +88,7 @@ def get_retriever() -> SharedRetrievalInquirer:
     if RETRIEVER is not None:
         return RETRIEVER
 
-    retrieval_config = dict(SEARCH_CONFIG)
-    retrieval_config["generative_model_name"] = str(
-        retrieval_config.get("generative_model_name_cloud")
-        or retrieval_config.get("generative_model_name")
-        or "mistralai/mistral-small-3.1-24b-instruct:free"
-    )
+    retrieval_config = resolve_mode_specific_search_config(SEARCH_CONFIG, mode="cloud")
     RETRIEVER = SharedRetrievalInquirer(
         **CONFIG["db"],
         **retrieval_config,

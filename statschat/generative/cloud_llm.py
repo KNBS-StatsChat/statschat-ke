@@ -704,6 +704,38 @@ def _apply_recency_bias(
     return results
 
 
+def resolve_mode_specific_search_config(
+    search_config: dict, mode: str
+) -> dict[str, object]:
+    """Resolve cloud/local model defaults from shared search config.
+
+    `main.toml` keeps a legacy `generative_model_name` key for fallback
+    compatibility, but runtime entrypoints should prefer the explicit
+    mode-specific keys so direct scripts behave the same way as the APIs.
+    """
+
+    resolved = dict(search_config or {})
+    if mode == "cloud":
+        resolved["generative_model_name"] = str(
+            resolved.get("generative_model_name_cloud")
+            or resolved.get("generative_model_name")
+            or "mistralai/mistral-small-24b-instruct-2501"
+        )
+    elif mode == "local":
+        resolved["generative_model_name"] = str(
+            resolved.get("generative_model_name_local")
+            or resolved.get("generative_model_name")
+            or "mistralai/Mistral-7B-Instruct-v0.3"
+        )
+    else:
+        resolved["generative_model_name"] = str(
+            resolved.get("generative_model_name")
+            or "mistralai/mistral-small-24b-instruct-2501"
+        )
+
+    return resolved
+
+
 def select_generation_contexts(
     results: list[dict],
     k_contexts: int,
@@ -935,8 +967,10 @@ class Inquirer:
                 f"'{self.generative_model_name}'. This can happen even if the "
                 "model still has a page on openrouter.ai. Update "
                 "statschat/config/main.toml to a currently served model, such as "
-                "'mistralai/mistral-small-3.1-24b-instruct:free' for no-cost "
-                "testing or 'mistralai/mistral-nemo' for a low-cost paid option."
+                "'openai/gpt-5.4-mini' for the current cloud default, "
+                "'mistralai/mistral-small-24b-instruct-2501' for a current "
+                "Mistral-family comparison model, or 'mistralai/mistral-nemo' "
+                "for a low-cost paid option."
             )
         else:
             message = (
@@ -1802,8 +1836,11 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     # Config file to load
     CONFIG = load_config(name="main")
+    SEARCH_CONFIG = resolve_mode_specific_search_config(
+        CONFIG.get("search", {}), mode="cloud"
+    )
     # initiate Statschat AI and start the app
-    inquirer = Inquirer(**CONFIG["db"], **CONFIG["search"], logger=logger)
+    inquirer = Inquirer(**CONFIG["db"], **SEARCH_CONFIG, logger=logger)
 
     # question = "Where can I find the registered births by age of mother and county?"
     # question = "What is the sample size of the Real Estate Survey?"

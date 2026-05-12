@@ -27,6 +27,7 @@ from statschat.generative.cloud_llm import (
     has_temporal_constraint,
     infer_query_report_families,
     parse_temporal_tokens,
+    resolve_mode_specific_search_config,
 )
 from statschat.generative.response_model import LlmResponse
 
@@ -122,6 +123,30 @@ def test_inquirer_can_initialize_retrieval_without_llm(monkeypatch):
 
     assert inq.llm is None
     assert loaded_roots == ["data/db", "data/db_latest"]
+
+
+def test_resolve_mode_specific_search_config_prefers_cloud_model():
+    resolved = resolve_mode_specific_search_config(
+        {
+            "generative_model_name": "mistralai/Mistral-7B-Instruct-v0.3",
+            "generative_model_name_cloud": "openai/gpt-5.4-mini",
+        },
+        mode="cloud",
+    )
+
+    assert resolved["generative_model_name"] == "openai/gpt-5.4-mini"
+
+
+def test_resolve_mode_specific_search_config_prefers_local_model():
+    resolved = resolve_mode_specific_search_config(
+        {
+            "generative_model_name": "openai/gpt-5.4-mini",
+            "generative_model_name_local": "mistralai/Mistral-7B-Instruct-v0.3",
+        },
+        mode="local",
+    )
+
+    assert resolved["generative_model_name"] == "mistralai/Mistral-7B-Instruct-v0.3"
 
 
 def test_query_texts_parses_chain_response(monkeypatch):
