@@ -1,0 +1,142 @@
+{% extends 'ons_layout.html' %}
+
+{% block results %}
+
+{% if results %}
+
+<section class="search__summary" role="contentinfo" aria-label="Search summary" style = "display:inline;">
+    <div class="secondary-nav " style = "display:inline;justify-content:right;">
+        <i class="glyphicon glyphicon-thumbs-up feedback-up" style="font-size:24px;color:grey;" id="thumbs-up-ico"></i>
+        <i class="glyphicon glyphicon-thumbs-down feedback-down" style="font-size:24px;color:grey;" id="thumbs-down-ico"></i>
+        <input type="text"  placeholder="Enter feedback comment." style="display:none;" id="feedback-send-input">
+        <span class="feedback-send" style="display:none;" id="feedback-send-icon"> Send</span>
+        <script src="https://code.jquery.com/jquery-3.6.0.js" integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk=" crossorigin="anonymous"></script>
+        <script src="{{ url_for('static',filename='js/rating.js') }}"></script>
+        </div>
+    <div aria-live="polite">
+        Your question:
+    <h4 class="ons-u-fs-xxl">  {{question}} </h4>
+</div>
+</section>
+<section role="contentinfo" aria-label="Search results">
+        <div
+            class="search__sort"
+            id="answer_static"
+            style="background:#f3f8fb;border-left:6px solid #206095;padding:18px 20px;margin:10px 0 24px 0;"
+        >
+            <div style="font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#206095;margin-bottom:8px;">
+                Answer
+            </div>
+            <div style="font-size:31px;line-height:1.45;color:#222;">
+                {{results.get('display_answer', results['answer'])}}
+            </div>
+            {% if results.get('exact_cited_source') %}
+            <div style="margin-top:14px;padding-top:12px;border-top:1px solid #c9d6df;font-size:14px;color:#444;">
+                <b>Exact cited source:</b>
+                {% if results.get('exact_cited_source', {}).get('url') %}
+                <a href="{{ results.get('exact_cited_source', {}).get('url') }}">
+                    {{ results.get('exact_cited_source', {}).get('label') }}
+                </a>
+                {% else %}
+                {{ results.get('exact_cited_source', {}).get('label') }}
+                {% endif %}
+            </div>
+            {% elif results.get('generation_context_sources') %}
+            <div style="margin-top:14px;padding-top:12px;border-top:1px solid #c9d6df;font-size:14px;color:#444;">
+                <div style="font-weight:700;color:#206095;margin-bottom:4px;">
+                    Generation context source{% if results.get('generation_context_sources')|length > 1 %}s{% endif %}
+                </div>
+                {% for source in results.get('generation_context_sources', [])[:3] %}
+                    {% if not loop.first %}; {% endif %}
+                    {% if source.get('url') %}
+                    <a href="{{ source.get('url') }}">{{ source.get('label') }}</a>
+                    {% else %}
+                    {{ source.get('label') }}
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if results.get('request_duration_seconds') is not none %}
+            <div style="margin-top:12px;font-size:14px;color:#555;">
+                {{ results.get('request_duration_label', 'Response time') }}:
+                {{ results.get('request_duration_seconds') }} seconds
+            </div>
+            {% endif %}
+        </div>
+    {% if results['references']|length > 0 %}
+        <p class="search__results__summary font-size--16">
+        Most relevant publication(s):
+        </p>
+
+    <ul class="flush--padding">
+      {% for row in results['references'] %}
+        <li class="search__results__item">
+            {% set ref_url = row.get('page_url') or row.get('url') or '#' %}
+            {% set ref_title = row.get('title') or row.get('reference_doc_id') or 'Reference' %}
+            <h3> <a href="{{ ref_url }}">{{ ref_title }}</a> </h3>
+            <p class="search__results__meta font-size--16">
+            {% if row.get('date') %}
+            <b>Released on:</b> {{ row.get('date') }}  &nbsp;  | &nbsp;
+            {% endif %}
+            {% if row.get('page_number') %}
+            <b>Page:</b> {{ row.get('page_number') }}  &nbsp;  | &nbsp;
+            {% endif %}
+            {% if row.get('score') is not none %}
+            <b>Semantic distance:</b> {{ row.get('score') }}
+            {% endif %}
+            </p>
+        <p class="search__results__summary font-size--16">
+            <b>Context preview:</b> {{ row.get('context_preview', '') }}
+            </p>
+            {% if ref_url != '#' %}
+            <p class="search__results__meta font-size--16">
+                <a href="{{ ref_url }}">Open source page</a>
+            </p>
+            {% endif %}
+            {% for image in row.get('figures', []) %}
+                {% if image['figure_type']=='interactive' %}
+                <iframe height="300px" width="100%" src="{{image['figure_url']}}"></iframe>
+                {% else %}
+                <img src="{{image['figure_url']}}" alt="{{image['figure_title']}}"  style="height:300px">
+                {% endif %}
+            {% endfor %}
+        </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+        <p class="search__results__summary font-size--16">
+        {% if results.get('is_demo_refusal') %}
+        No supporting KNBS publication was returned for this question.
+        {% else %}
+        No relevant publications found.
+        {% endif %}
+        </p>
+
+    {% endif %}
+
+</section>
+
+
+{% else %}
+
+    <p class="search__results__meta font-size--16">
+        <br> This is an experimental app for semantic search of KNBS publications.
+        <br> <br>
+        <h3> Please, type your question in the search field.  </h3>
+        Select whether to search only recent bulletins or all publications.
+        <br>
+    </p>
+        <p class="search__results__meta font-size--16">
+        <br> Read more in
+            <a href = "https://github.com/KNBS-StatsChat/statschat-ke">
+                the code repository
+            </a>.
+        <br> API available via the configured StatsChat backend endpoint.
+        <br>
+        <br>
+    </p>
+
+{% endif %}
+
+
+{% endblock %}
