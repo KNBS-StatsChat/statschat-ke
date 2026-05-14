@@ -78,8 +78,10 @@
             {% if row.get('date') %}
             <b>Released on:</b> {{ row.get('date') }}  &nbsp;  | &nbsp;
             {% endif %}
-            {% if row.get('page_number') %}
-            <b>Page:</b> {{ row.get('page_number') }}  &nbsp;  | &nbsp;
+            {% if row.get('page_display') %}
+            <b>Page:</b> {{ row.get('page_display') }}  &nbsp;  | &nbsp;
+            {% elif row.get('page_number') %}
+            <b>Page:</b> PDF page {{ row.get('page_number') }}  &nbsp;  | &nbsp;
             {% endif %}
             {% if row.get('score') is not none %}
             <b>Semantic distance:</b> {{ row.get('score') }}

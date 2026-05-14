@@ -10,6 +10,7 @@ benchmark/evaluator path:
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -33,6 +34,7 @@ def test_infer_exact_cited_source_prefers_visible_reference_over_backend_citatio
             "page_number": 61,
             "page_url": "https://example.com/vital-2023.pdf#page=61",
             "page_content": (
+                "Kenya Vital Statistics Report 2023\n36\nEvery human Life Counts\n"
                 "Kenya between 2019 and 2023. The expected births in 2023 were "
                 "1,547,260. The registered number of births during the same year "
                 "was 1,192,884, representing a coverage of 77.1 percent."
@@ -68,7 +70,42 @@ def test_infer_exact_cited_source_prefers_visible_reference_over_backend_citatio
     source = flask_app.infer_exact_cited_source(references, payload)
 
     assert source is not None
-    assert source["label"] == "2023 Kenya Vital Statistics Report, page 61"
+    assert (
+        source["label"]
+        == "2023 Kenya Vital Statistics Report, report page 36 (PDF page 61)"
+    )
+
+
+def test_reference_page_display_uses_json_conversion_when_chunk_lacks_header(tmp_path):
+    flask_app = _load_flask_app_module()
+    flask_app.JSON_CONVERSIONS_DIR = tmp_path
+    flask_app.printed_page_from_json_conversion.cache_clear()
+    (tmp_path / "Demo-Report.json").write_text(
+        json.dumps(
+            {
+                "title": "Demo Report",
+                "url": "https://example.com/Demo-Report.pdf",
+                "content": [
+                    {
+                        "page_number": 10,
+                        "page_url": "#page=10",
+                        "page_text": "Demo Report\n3\nThe answer appears here.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    reference = {
+        "title": "Demo Report",
+        "page_number": 10,
+        "page_url": "https://example.com/Demo-Report.pdf#page=10",
+        "page_content": "The answer appears here.",
+    }
+
+    page_display = flask_app.reference_page_display(reference)
+
+    assert page_display == "Report page 3 (PDF page 10)"
 
 
 def test_infer_exact_cited_source_falls_back_to_backend_when_visible_reference_is_weak():
