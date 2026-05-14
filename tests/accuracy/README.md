@@ -30,9 +30,17 @@ What it does:
 Important behavior:
 
 - it does **not** compute accuracy metrics
+- it is **not** required for reproducing the audited April 2026 benchmark
 - it uses strict grounding filters by default
 - it can restrict generation to PDFs that are present in the current FAISS index via `--align-with-index`
 - for local generation, it loads the Hugging Face model once and reuses it for all generated rows
+
+Operational note:
+
+- the default mode is `--provider local`
+- local generation loads `mistralai/Mistral-7B-Instruct-v0.3` through Hugging Face
+- this can exhaust GPU memory on smaller cards and is expected to be much heavier than the audited evaluator path
+- if you only need to replicate the audited benchmark, skip this script entirely and run `evaluate_accuracy.py`
 
 This is a silver dataset, not a human-reviewed gold set.
 
@@ -72,6 +80,12 @@ Important behavior:
 3. Validate the QA sheet.
 4. Start the StatsChat API.
 5. Run the evaluation.
+
+Important distinction:
+
+- the workflow above is the full authoring + evaluation workflow
+- if you are reproducing the audited April 2026 benchmark, you do **not** need to generate a QA sheet
+- for audited replication, start from `tests/accuracy/StatsChat_QA_Verified_Audited.xlsx` and run `evaluate_accuracy.py`
 
 If QA was generated from the full corpus in `data/json_conversions`, evaluate with `--content-type all`.
 
@@ -223,6 +237,8 @@ python tests/accuracy/evaluate_accuracy.py \
   --excel tests/accuracy/StatsChat_QA_Verified_Audited.xlsx \
   --validate-only
 ```
+
+If your goal is to reproduce the audited April 2026 results, this audited workbook is the correct starting point. You do not need to run `generate_qa_with_refs.py`.
 
 ### 3. Start The Local API
 
