@@ -141,3 +141,101 @@ def test_search_route_renders_demo_refusal_message(monkeypatch):
 
     assert flask_app.DEMO_UNSUPPORTED_MESSAGE in response
     assert "No supporting KNBS publication was returned for this question." in response
+
+
+def test_search_route_sends_raw_question_and_defaults_to_all_publications(monkeypatch):
+    flask_app = _load_flask_app_module()
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        ok = True
+
+        @staticmethod
+        def json():
+            return {
+                "answer": "5.9 per cent",
+                "references": [],
+                "debug_response": {},
+            }
+
+    def fake_get(*args, **kwargs):
+        captured["params"] = kwargs["params"]
+        return FakeResponse()
+
+    monkeypatch.setattr(flask_app.requests, "get", fake_get)
+    monkeypatch.setattr(
+        flask_app,
+        "render_template",
+        lambda template_name, **context: context["results"],
+    )
+
+    with flask_app.app.test_request_context(
+        "/search",
+        query_string={"q": "What was Kenya's GDP growth rate in Quarter 3 of 2023?"},
+    ):
+        results = flask_app.search()
+
+    assert (
+        captured["params"]["q"]
+        == "What was Kenya's GDP growth rate in Quarter 3 of 2023?"
+    )
+    assert captured["params"]["content_type"] == "all"
+    assert results["display_answer"] == "5.9 per cent"
+
+
+def test_search_route_hides_citations_and_references_for_demo_refusal(monkeypatch):
+    flask_app = _load_flask_app_module()
+
+    class FakeResponse:
+        ok = True
+
+        @staticmethod
+        def json():
+            return {
+                "answer": "No suitable PDFs found for this question. Please try rephrasing.",
+                "references": [
+                    {
+                        "title": "Kenya Quarterly Gross Domestic Product Third Quarter 2022",
+                        "page_number": 2,
+                        "page_url": "https://example.com/gdp-2022.pdf#page=2",
+                        "page_content": "The country's real GDP expanded by 4.7 per cent.",
+                    }
+                ],
+                "debug_response": {
+                    "exact_cited_source": {
+                        "label": "Kenya Quarterly Gross Domestic Product Third Quarter 2016, page 3",
+                        "page_url": "https://example.com/gdp-2016.pdf#page=3",
+                        "quote": "The country's real GDP expanded...",
+                    },
+                    "generation_context_sources": [
+                        {
+                            "label": "Kenya Quarterly Gross Domestic Product Third Quarter 2016, page 3",
+                            "page_url": "https://example.com/gdp-2016.pdf#page=3",
+                        }
+                    ],
+                },
+                "response_time_seconds": 1.0,
+            }
+
+    monkeypatch.setattr(
+        flask_app.requests,
+        "get",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+    monkeypatch.setattr(
+        flask_app,
+        "render_template",
+        lambda template_name, **context: context["results"],
+    )
+
+    with flask_app.app.test_request_context(
+        "/search",
+        query_string={"q": "What was Kenya's GDP growth rate in Quarter 3 of 2023?"},
+    ):
+        results = flask_app.search()
+
+    assert results["display_answer"] == flask_app.DEMO_UNSUPPORTED_MESSAGE
+    assert results["is_demo_refusal"] is True
+    assert results["references"] == []
+    assert results["exact_cited_source"] is None
+    assert results["generation_context_sources"] == []

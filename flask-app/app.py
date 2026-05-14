@@ -8,7 +8,6 @@ from typing import Any
 import requests
 from flask import Flask, render_template, request, session
 from flask.logging import default_handler
-from markupsafe import escape
 
 # StatsChat API endpoint. Default to the cloud API demo port, but allow
 # overrides so the same frontend can point at either local or cloud mode.
@@ -311,7 +310,7 @@ def normalise_references(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 @app.route("/")
 def home():
-    session["latest_filter"] = request.args.get("latest_filter", "on")
+    session["latest_filter"] = request.args.get("latest_filter", "off")
     return render_template(
         "statschat.html", latest_filter=session["latest_filter"], question=""
     )
@@ -319,8 +318,8 @@ def home():
 
 @app.route("/search", methods=["GET", "POST"])
 def search():
-    session["question"] = escape(request.args.get("q", "")).strip()
-    session["latest_filter"] = request.args.get("latest_filter", "on")
+    session["question"] = request.args.get("q", "").strip()
+    session["latest_filter"] = request.args.get("latest_filter", "off")
     if session["latest_filter"] in ["on", "On", "True", "true", True, "latest"]:
         session["content_type"] = "latest"
     else:
@@ -347,6 +346,14 @@ def search():
                 display_answer = (
                     DEMO_UNSUPPORTED_MESSAGE if is_demo_refusal else session["answer"]
                 )
+                if is_demo_refusal:
+                    # Keep the backend/evaluator semantics unchanged, but do not
+                    # show contradictory citations or noisy retrieved pages in the
+                    # demo UI when the frontend has translated the result into an
+                    # unsupported-question message.
+                    docs = []
+                    exact_cited_source = None
+                    generation_context_sources = []
                 response_time_seconds = payload.get("response_time_seconds")
                 timing_label = (
                     "Backend response time"
