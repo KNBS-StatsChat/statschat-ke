@@ -227,14 +227,15 @@ The API returned HTTP 200 for all requests but Mistral generated truncated/malfo
 **Retrieval metrics (independent of generation):**
 `Pipeline Doc Hit@8: 49/61 = 0.803` — identical to GPT run. This confirms the key architecture claim: retrieval is shared and stable across models.
 
-**Root cause of generation failure:** `llm_max_tokens = 1024` is insufficient for Mistral Small 3.1 to complete the required structured JSON response schema. Mistral wraps output in markdown code blocks (`\`\`\`json`) and uses verbose formatting, consuming the token budget before completing the first field value. Example truncations observed in `log/api_cloud_mistral_20260424.log`:
-```
-response: {'output_text': '```json\n{\n  "answer_provided":'}
-response: {'output_text': '```json\n{\n  "answer_provided":,\n  "most_likely_answer": null,\n  "highlighting'}
-```
-GPT-5.4-mini generates more compact JSON and fits comfortably within the same 1024-token budget.
+**Root cause of generation failure (updated May 2026):** Initially suspected to be a token-budget issue with `llm_max_tokens = 1024`. Subsequent investigation in May 2026 (with `llm_max_tokens = 2048` and direct OpenRouter API testing) confirmed the real cause is an **OpenRouter serving bug** affecting `mistralai/mistral-small-3.1-24b-instruct`. The model returns `finish_reason: None` after exactly 9 completion tokens (`\`\`\`json\n{\n  "answer_provided":`) regardless of the `max_tokens` setting. This behaviour is independent of LangChain and was reproducible with a raw HTTP POST to the OpenRouter API. The model was broken on OpenRouter as of May 2026.
 
-This is a token-budget/formatting compatibility issue between `llm_max_tokens = 1024` and the Mistral model’s output style. It explains why the generation accuracy is 0% while retrieval metrics are intact.
+Example truncation observed identically at both 1024 and 2048 max_tokens:
+```
+finish_reason: None
+response: '```json\n{\n  "answer_provided":'
+```
+
+See Section 6 for the May 2026 re-run using the working substitute model `mistral-small-24b-instruct-2501`.
 
 ### Run folder
 
@@ -251,19 +252,108 @@ Confirmed artefacts:
 
 ---
 
-## 6. Config Restored
+## 6. Run 3 — Mistral Small 24B 2501 Cloud Evaluation (May 2026 Re-run)
 
-After Mistral run, `main.toml` restored to GPT default:
+**Context:** Following the confirmed OpenRouter serving bug on `mistral-small-3.1-24b-instruct` (Section 5), the closest available substitute on OpenRouter was identified as `mistralai/mistral-small-24b-instruct-2501` — the January 2025 text-only release of the same 24B parameter Mistral Small family. This model was confirmed working via direct API test (`finish_reason: stop`, correct JSON output). The re-run uses `llm_max_tokens = 2048`.
+
+### Config change
+
+In `statschat/config/main.toml`, changed cloud model to:
 
 ```toml
 generative_model_name_cloud = "openai/gpt-5.4-mini"
-# Optional OpenRouter Mistral comparison model:
-# generative_model_name_cloud = "mistralai/mistral-small-3.1-24b-instruct"
+# Note: mistral-small-3.1-24b-instruct is broken on OpenRouter as of May 2026
+# (returns finish_reason=None after 9 tokens regardless of max_tokens).
+# Use mistral-small-24b-instruct-2501 as substitute:
+# generative_model_name_cloud = "mistralai/mistral-small-24b-instruct-2501"
+```
+
+_(During the run, the active line was `mistralai/mistral-small-24b-instruct-2501`; GPT was commented out. Config was restored to GPT default after the run completed.)_
+
+### Health check (`curl http://127.0.0.1:8001/health`)
+
+```json
+{
+    "status": "ok",
+    "api_mode": "cloud",
+    "model": "mistralai/mistral-small-24b-instruct-2501",
+    "provider": "openrouter",
+    "model_loaded": true,
+    "faiss": {
+        "faiss_db_root": {
+            "path": "data/db_langchain_rebuild_v1",
+            "exists": true
+        }
+    }
+}
+```
+
+### Benchmark command
+
+```bash
+python tests/accuracy/evaluate_accuracy.py \
+  --excel tests/accuracy/StatsChat_QA_Verified_Audited.xlsx \
+  --host http://127.0.0.1:8001 \
+  --api-mode cloud \
+  --content-type all \
+  --retrieval-k 8 \
+  --timeout 420
+```
+
+### Results
+
+| Metric | Mistral 3.1 expected (report) | Actual (2501 substitute) | Notes |
+|---|---|---|---|
+| Total evaluated | 74 | 71 | 3 timeout errors |
+| Answerable base | 61 | 58 | 3 answerable had errors |
+| Unanswerable base | 13 | 13 | all evaluated |
+| Answerable accuracy | 50/61 = 0.820 | 45/58 = **0.776** | see deviations |
+| Unanswerable accuracy | 13/13 = 1.000 | 13/13 = 1.000 | ✅ |
+| Overall accuracy | 63/74 = 0.851 | 58/71 = **0.817** | |
+| Answer Coverage | — | 47/58 = 0.810 | model declined 11 answerable |
+| Any Reference Doc Match (Pipeline Doc Hit@8) | 56/61 = 0.918 | 46/58 = **0.793** | see retrieval note |
+| Pipeline Doc Hit@1 | 49/61 = 0.803 | 37/58 = 0.638 | |
+| Any Reference Page Hit | 39/61 = 0.639 | 36/58 = 0.621 | |
+| Correct Refusal Rate | 13/13 = 1.000 | 13/13 = 1.000 | ✅ |
+| False Answer Rate | 0/13 = 0.000 | 0/13 = 0.000 | ✅ |
+| Errors | 0 | 3 | timeout errors |
+
+### Run folder
+
+```
+tests/accuracy/runs/cloud/2026-05-06_145706/
+```
+
+Copied to:
+```
+docs/saved_runs/2026-05-06_145706/
+```
+
+Confirmed artefacts:
+- [x] `api_health.json`
+- [x] `run_metadata.txt`
+- [x] `summary_metrics.csv`
+- [x] `accuracy_results.csv`
+- [x] `run_report.md`
+- [x] `qa_data_issues.csv`
+
+---
+
+## 7. Config Restored
+
+After Mistral 2501 run, `main.toml` restored to GPT default:
+
+```toml
+generative_model_name_cloud = "openai/gpt-5.4-mini"
+# Note: mistral-small-3.1-24b-instruct is broken on OpenRouter as of May 2026
+# (returns finish_reason=None after 9 tokens regardless of max_tokens).
+# Use mistral-small-24b-instruct-2501 as substitute:
+# generative_model_name_cloud = "mistralai/mistral-small-24b-instruct-2501"
 ```
 
 ---
 
-## 7. Deviations And Notes
+## 8. Deviations And Notes
 
 ### GPT-5.4-mini deviations
 
@@ -281,11 +371,11 @@ generative_model_name_cloud = "openai/gpt-5.4-mini"
 
 3. **Unanswerable accuracy: 13/13 = 1.000 as expected.** Refusals do not require completing the JSON schema and were handled correctly.
 
-4. **Recommended fix:** Increase `llm_max_tokens` to at least 2048 (or 4096) for Mistral, or instruct the model not to wrap output in markdown code blocks. This should be investigated in a follow-up before Mistral comparison results can be validly compared against the report.
+4. **Recommended fix (updated):** Root cause confirmed as OpenRouter serving bug, not token budget. Use `mistral-small-24b-instruct-2501` as substitute. See Section 6 for re-run results.
 
 ---
 
-## 8. Summary Metrics
+## 9. Summary Metrics
 
 ### GPT-5.4-mini
 
@@ -299,14 +389,30 @@ false_answer_rate       =  0.000  (0/13)
 error_count             =  0
 ```
 
-### Mistral Small 3.1
+### Mistral Small 3.1 (April 2026 — generation failed)
 
 ```
-answerable_accuracy     =  0.000  (0/61)  — generation failed, see deviations
+answerable_accuracy     =  0.000  (0/61)  — OpenRouter serving bug, see deviations
 unanswerable_accuracy   =  1.000  (13/13)
 overall_accuracy        =  0.176  (13/74)
 pipeline_doc_hit_at_k_rate =  0.803  (49/61)  — retrieval intact, identical to GPT
 any_reference_page_hit_rate =  0.639  (39/61)  — matches expected
 false_answer_rate       =  0.000  (0/13)
 error_count             =  0
+```
+
+### Mistral Small 24B 2501 (May 2026 — substitute model)
+
+```
+answerable_accuracy     =  0.776  (45/58)  — note: 3 timeout errors excluded
+unanswerable_accuracy   =  1.000  (13/13)
+overall_accuracy        =  0.817  (58/71)
+answer_coverage         =  0.810  (47/58)
+pipeline_doc_hit_at_8   =  0.793  (46/58)  [Any Reference Doc Match]
+pipeline_doc_hit_at_1   =  0.638  (37/58)  [First Reference Doc Match]
+any_reference_page_hit  =  0.621  (36/58)
+correct_refusal_rate    =  1.000  (13/13)
+false_answer_rate       =  0.000  (0/13)
+error_count             =  3  (timeout)
+model                   =  mistralai/mistral-small-24b-instruct-2501
 ```
