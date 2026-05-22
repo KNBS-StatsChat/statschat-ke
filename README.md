@@ -101,6 +101,17 @@ The answer, context and response will be output in the terminal.
 This main module statschat can be either called directly or deployed as an API (using fastapi).
 A lightweight flask front end is implemented separately in a subfolder and relies on the API running.
 
+If you want the browser-based demo UI, use:
+
+- [`docs/guides/flask_demo_frontend.md`](docs/guides/flask_demo_frontend.md)
+
+That guide covers:
+
+- what the Flask app is for
+- how to run it against local or cloud API mode
+- demo-only behavior such as refusal messaging and answer-card citations
+- the focused tests for the restored frontend
+
 
 In order to run the interactive Statschat API you will need to make sure you have:
 

@@ -601,6 +601,132 @@ def _doc_group_key(doc: dict) -> str:
     return f"{title}::{date}"
 
 
+def _plain_text(text: str) -> str:
+    """Strip lightweight markup and collapse whitespace for matching."""
+    without_tags = re.sub(r"<[^>]+>", " ", str(text or ""))
+    return re.sub(r"\s+", " ", without_tags).strip()
+
+
+def _normalized_match_text(text: str) -> str:
+    """Return lowercase plain text for substring matching."""
+    return _plain_text(text).lower()
+
+
+def _response_highlight_phrases(validated_response: LlmResponse) -> list[str]:
+    """Return answer/highlight phrases ordered by citation strength.
+
+    The final answer itself should be checked first across every selected page,
+    especially for numeric benchmarks where a later context page may contain the
+    exact fact while an earlier page only contains a generic topic phrase.
+    """
+    answer_phrase = _plain_text(str(validated_response.most_likely_answer or ""))
+    phrases: list[str] = []
+    if answer_phrase:
+        phrases.append(answer_phrase)
+    for key in ("highlighting1", "highlighting2", "highlighting3"):
+        values = getattr(validated_response, key, []) or []
+        if isinstance(values, list):
+            phrases.extend(
+                _plain_text(str(item)) for item in values if _plain_text(str(item))
+            )
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for phrase in phrases:
+        normalized = _normalized_match_text(phrase)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(phrase)
+
+    if not deduped:
+        return []
+
+    prioritized = [deduped[0]]
+    prioritized.extend(
+        sorted(
+            deduped[1:],
+            key=lambda phrase: (bool(re.search(r"\d", phrase)), len(phrase)),
+            reverse=True,
+        )
+    )
+    return prioritized
+
+
+def _infer_exact_cited_source_from_selected_docs(
+    selected_docs: list[dict], validated_response: LlmResponse
+) -> dict[str, str] | None:
+    """Infer the most likely exact cited page from selected generation contexts."""
+    phrases = _response_highlight_phrases(validated_response)
+    if not selected_docs or not phrases:
+        return None
+
+    prepared_docs = [
+        (
+            index,
+            doc,
+            _normalized_match_text(str(doc.get("page_content", ""))),
+        )
+        for index, doc in enumerate(selected_docs, start=1)
+    ]
+
+    for phrase in phrases:
+        normalized_phrase = _normalized_match_text(phrase)
+        if not normalized_phrase:
+            continue
+
+        for index, doc, lowered_page_content in prepared_docs:
+            if normalized_phrase not in lowered_page_content:
+                continue
+
+            title = str(doc.get("title", "")).strip() or "Reference"
+            page_number = str(doc.get("page_number", "")).strip()
+            label = title
+            if page_number:
+                label = f"{title}, page {page_number}"
+
+            return {
+                "label": label,
+                "page_url": str(doc.get("page_url", "")).strip(),
+                "page_number": page_number,
+                "title": title,
+                "context_index": str(index),
+                "quote": phrase,
+            }
+
+    return None
+
+
+def _selected_doc_source_metadata(selected_docs: list[dict]) -> list[dict[str, str]]:
+    """Return deduplicated source metadata for the selected generation contexts."""
+    sources: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for index, doc in enumerate(selected_docs, start=1):
+        title = str(doc.get("title", "")).strip() or "Reference"
+        page_number = str(doc.get("page_number", "")).strip()
+        page_url = str(doc.get("page_url", "")).strip()
+        label = title
+        if page_number:
+            label = f"{title}, page {page_number}"
+
+        signature = (title.lower(), page_number, page_url.lower())
+        if signature in seen:
+            continue
+        seen.add(signature)
+        sources.append(
+            {
+                "label": label,
+                "page_url": page_url,
+                "page_number": page_number,
+                "title": title,
+                "context_index": str(index),
+            }
+        )
+
+    return sources
+
+
 def _build_reranker_passage(doc: dict) -> str:
     """Build a structured passage for the cross-encoder reranker."""
     title = str(doc.get("title", "")).strip()
@@ -1607,9 +1733,13 @@ class Inquirer:
     ) -> list[dict]:
         """Select and refine generation contexts from retrieved documents."""
 
+        k_contexts = getattr(self, "k_contexts", None)
+        if k_contexts is None:
+            k_contexts = getattr(self, "k_docs", len(docs)) or len(docs) or 3
+
         selected_docs = select_generation_contexts(
             docs,
-            self.k_contexts,
+            k_contexts,
             max_chunks_per_doc=getattr(self, "max_chunks_per_doc", 3),
             per_doc_penalty=getattr(self, "per_doc_penalty", 0.2),
         )
@@ -1625,6 +1755,7 @@ class Inquirer:
         docs: list[dict],
         *,
         latest_filter_enabled: bool | None = None,
+        selected_docs: list[dict] | None = None,
     ) -> LlmResponse:
         """
         Generates an answer to the query based on relationship
@@ -1647,9 +1778,10 @@ class Inquirer:
                 highlighting3=[],
             )
 
-        selected_docs = self.select_generation_documents(
-            query, docs, latest_filter_enabled=latest_filter_enabled
-        )
+        if selected_docs is None:
+            selected_docs = self.select_generation_documents(
+                query, docs, latest_filter_enabled=latest_filter_enabled
+            )
 
         # reshape Document object structure
         top_matches = [
@@ -1703,6 +1835,31 @@ class Inquirer:
                 highlighting3=[],
                 reasoning=f"Cannot parse response: {e} /n/n  response: {response}",
             )
+
+        generation_context_sources = _selected_doc_source_metadata(selected_docs)
+        if generation_context_sources:
+            validated_answer.__dict__["generation_context_sources"] = (
+                generation_context_sources
+            )
+
+        exact_cited_source = _infer_exact_cited_source_from_selected_docs(
+            selected_docs, validated_answer
+        )
+        if exact_cited_source:
+            validated_answer.__dict__["exact_cited_source"] = exact_cited_source
+            validated_answer.__dict__["where_context_from"] = (
+                f"Context {exact_cited_source['context_index']}"
+            )
+            validated_answer.__dict__["context_reference"] = exact_cited_source[
+                "page_url"
+            ]
+        elif generation_context_sources:
+            validated_answer.__dict__["where_context_from"] = (
+                f"Context {generation_context_sources[0]['context_index']}"
+            )
+            validated_answer.__dict__["context_reference"] = generation_context_sources[
+                0
+            ]["page_url"]
 
         return validated_answer
 
@@ -1765,8 +1922,14 @@ class Inquirer:
             + f" with top distance {best_distance if docs else 'Inf'}"
         )
 
-        validated_response = self.query_texts(
+        selected_docs = self.select_generation_documents(
             question, docs, latest_filter_enabled=latest_filter_enabled
+        )
+        validated_response = self.query_texts(
+            question,
+            docs,
+            latest_filter_enabled=latest_filter_enabled,
+            selected_docs=selected_docs,
         )
         self.logger.info(f"QAPAIR - Question: {question}, Answer: {validated_response}")
 

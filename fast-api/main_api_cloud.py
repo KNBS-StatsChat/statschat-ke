@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 import logging
 import os
+import time
 from datetime import datetime
 from markupsafe import escape
 
@@ -140,6 +141,7 @@ async def search(
         logger.warning('Unknown content type. Fallback to "latest".')
         content_type = "latest"
     latest_weight = get_latest_flag({"q": question}, CONFIG["app"]["latest_max"])
+    search_started = time.perf_counter()
 
     # Safeguard: when the question carries an explicit year/month/quarter,
     # force a search across the full corpus regardless of the requested
@@ -159,11 +161,13 @@ async def search(
         latest_filter=effective_latest_filter,
         latest_weight=latest_weight,
     )
+    response_time_seconds = round(time.perf_counter() - search_started, 2)
     results = {
         "question": question,
         "content_type": content_type,
         "answer": answer,
         "references": docs,
+        "response_time_seconds": response_time_seconds,
     }
     if debug:
         results["debug_response"] = response.__dict__

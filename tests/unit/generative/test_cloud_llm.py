@@ -22,6 +22,7 @@ from statschat.generative.cloud_llm import (
     _extract_quarters,
     _extract_years,
     _guardrail_refusal_reason,
+    _infer_exact_cited_source_from_selected_docs,
     _select_lagged_year_subset,
     _select_precise_temporal_subset,
     has_temporal_constraint,
@@ -854,6 +855,51 @@ def test_query_texts_refines_pages_within_existing_doc_allocation(monkeypatch):
         "The area under food crops increased from 4,935.3 thousand hectares in 2022 to 5,371.7 thousand hectares in 2023.",
         "other report evidence",
     ]
+
+
+def test_infer_exact_cited_source_prefers_answer_bearing_page_over_generic_highlight():
+    agriculture_url = "https://example.com/agriculture.pdf"
+    selected_docs = [
+        {
+            "page_content": (
+                "The area under food crops increased in 2023 due to favourable rainfall "
+                "and expanded cultivation."
+            ),
+            "title": "National Agriculture Production Report 2024",
+            "page_number": 24,
+            "page_url": f"{agriculture_url}#page=24",
+            "url": agriculture_url,
+        },
+        {
+            "page_content": (
+                "The area under food crops increased from 4,935.3 thousand hectares "
+                "in 2022 to 5,371.7 thousand hectares in 2023."
+            ),
+            "title": "National Agriculture Production Report 2024",
+            "page_number": 14,
+            "page_url": f"{agriculture_url}#page=14",
+            "url": agriculture_url,
+        },
+    ]
+    validated_response = LlmResponse(
+        answer_provided=True,
+        most_likely_answer="5,371.7 thousand hectares",
+        highlighting1=["The area under food crops increased"],
+        highlighting2=[],
+        highlighting3=[],
+        reasoning="r",
+    )
+
+    exact_source = _infer_exact_cited_source_from_selected_docs(
+        selected_docs, validated_response
+    )
+
+    assert exact_source is not None
+    assert exact_source["page_number"] == "14"
+    assert exact_source["label"] == (
+        "National Agriculture Production Report 2024, page 14"
+    )
+    assert exact_source["quote"] == "5,371.7 thousand hectares"
 
 
 def test_apply_recency_bias_skips_explicit_year_queries():

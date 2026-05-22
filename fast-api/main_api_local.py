@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 import logging
 import re
+import time
 import torch
 from datetime import datetime
 from markupsafe import escape
@@ -181,6 +182,8 @@ async def search(
         logger.warning('Unknown content type. Fallback to "latest".')
         content_type = "latest"
 
+    search_started = time.perf_counter()
+
     guardrail_reason = guardrail_refusal_reason(question)
     if guardrail_reason:
         logger.info("Guardrail refusal: %s", guardrail_reason)
@@ -193,6 +196,7 @@ async def search(
             "context_reference": "",
             "relevant_publication_one": "",
             "relevant_publication_two": "",
+            "response_time_seconds": round(time.perf_counter() - search_started, 2),
         }
 
     answer_threshold = float(CONFIG.get("search", {}).get("answer_threshold", 0.5))
@@ -231,6 +235,7 @@ async def search(
             "context_reference": "",
             "relevant_publication_one": "",
             "relevant_publication_two": "",
+            "response_time_seconds": round(time.perf_counter() - search_started, 2),
         }
         logger.info(f"Sending following response: {results}")
         return results
@@ -246,6 +251,7 @@ async def search(
             "context_reference": "",
             "relevant_publication_one": "",
             "relevant_publication_two": "",
+            "response_time_seconds": round(time.perf_counter() - search_started, 2),
         }
         logger.info(f"Sending following response: {results}")
         return results
@@ -330,6 +336,7 @@ async def search(
         "context_reference": formatted_response.get("context_reference", ""),
         "relevant_publication_one": pub_one,
         "relevant_publication_two": pub_two,
+        "response_time_seconds": round(time.perf_counter() - search_started, 2),
     }
 
     logger.info(f"Sending following response: {results}")
