@@ -1,4 +1,23 @@
+
+<div style="text-align:center;">
+
+**OFFICIAL**
+
+</div>
+
+
+
+
 # StatsChat-KE Testing, Retrieval, and Accuracy Evaluation Report
+
+<div style="text-align:left;">
+<img src="assets/download.png" alt="download" style="width:25%;">
+
+</div>
+
+
+
+
 
 April 2026
 

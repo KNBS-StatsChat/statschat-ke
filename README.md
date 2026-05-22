@@ -103,7 +103,7 @@ A lightweight flask front end is implemented separately in a subfolder and relie
 
 If you want the browser-based demo UI, use:
 
-- [`docs/guides/flask_demo_frontend.md`](/Users/EjlliD/Developer/statschat-ke/docs/guides/flask_demo_frontend.md)
+- [`docs/guides/flask_demo_frontend.md`](docs/guides/flask_demo_frontend.md)
 
 That guide covers:
 

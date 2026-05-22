@@ -5,7 +5,7 @@ how to interpret what it shows.
 
 ## Purpose
 
-The Flask app in [`flask-app/`](/Users/EjlliD/Developer/statschat-ke/flask-app)
+The Flask app in [`flask-app/`](../../flask-app)
 is a lightweight browser frontend for demoing StatsChat-KE.
 
 It is useful when you want:
@@ -17,8 +17,8 @@ It is useful when you want:
 It is **not** the benchmark source of truth. Accuracy evaluation still comes
 from:
 
-- the audited workbook in [`tests/accuracy/`](/Users/EjlliD/Developer/statschat-ke/tests/accuracy)
-- the evaluator in [`tests/accuracy/evaluate_accuracy.py`](/Users/EjlliD/Developer/statschat-ke/tests/accuracy/evaluate_accuracy.py)
+- the audited workbook in [`tests/accuracy/`](../../tests/accuracy)
+- the evaluator in [`tests/accuracy/evaluate_accuracy.py`](../../tests/accuracy/evaluate_accuracy.py)
 
 ## What The Frontend Does
 
@@ -56,8 +56,8 @@ Before starting the Flask app, make sure:
 
 Environment setup is documented in:
 
-- [`docs/environment_setup.md`](/Users/EjlliD/Developer/statschat-ke/docs/environment_setup.md)
-- [`docs/setup_guide.md`](/Users/EjlliD/Developer/statschat-ke/docs/setup_guide.md)
+- [`docs/environment_setup.md`](../environment_setup.md)
+- [`docs/setup_guide.md`](../setup_guide.md)
 
 ## Run The Backend
 
@@ -115,6 +115,14 @@ The Flask app will then be available at:
 http://127.0.0.1:5000
 ```
 
+> **macOS note:** If port 5000 is already in use (commonly by AirPlay Receiver),
+> either disable AirPlay Receiver in **System Settings → General → AirDrop & Handoff**,
+> or start the app on a different port:
+>
+> ```bash
+> STATSCHAT_FRONTEND_API_URL=http://127.0.0.1:8001 FLASK_RUN_PORT=5001 .venv/bin/python flask-app/app.py
+> ```
+
 ## Environment Variables
 
 The frontend supports these runtime variables:
@@ -124,6 +132,8 @@ The frontend supports these runtime variables:
 | `STATSCHAT_FRONTEND_API_URL` | Backend API base URL, for example `http://127.0.0.1:8001` |
 | `STATSCHAT_API_KEY` | Optional API key forwarded as `X-API-Key` |
 | `STATSCHAT_FRONTEND_TIMEOUT` | Optional request timeout in seconds |
+| `FLASK_SECRET_KEY` | Flask session signing key; set to a long random string in any shared or deployed environment |
+| `FLASK_RUN_PORT` | Override the default port (5000); useful when AirPlay Receiver is active on macOS |
 
 ## How To Read The Page
 
@@ -195,8 +205,8 @@ Focused tests for the demo frontend and its citation logic:
 
 ## Related Files
 
-- [`flask-app/app.py`](/Users/EjlliD/Developer/statschat-ke/flask-app/app.py)
-- [`flask-app/templates/statschat.html`](/Users/EjlliD/Developer/statschat-ke/flask-app/templates/statschat.html)
-- [`fast-api/main_api_cloud.py`](/Users/EjlliD/Developer/statschat-ke/fast-api/main_api_cloud.py)
-- [`fast-api/main_api_local.py`](/Users/EjlliD/Developer/statschat-ke/fast-api/main_api_local.py)
-- [`statschat/generative/cloud_llm.py`](/Users/EjlliD/Developer/statschat-ke/statschat/generative/cloud_llm.py)
+- [`flask-app/app.py`](../../flask-app/app.py)
+- [`flask-app/templates/statschat.html`](../../flask-app/templates/statschat.html)
+- [`fast-api/main_api_cloud.py`](../../fast-api/main_api_cloud.py)
+- [`fast-api/main_api_local.py`](../../fast-api/main_api_local.py)
+- [`statschat/generative/cloud_llm.py`](../../statschat/generative/cloud_llm.py)

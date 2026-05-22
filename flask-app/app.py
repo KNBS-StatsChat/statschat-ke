@@ -40,7 +40,7 @@ logging.basicConfig(
 logger.addHandler(default_handler)
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "secret!"
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY") or os.urandom(24)
 
 DEMO_UNSUPPORTED_MESSAGE = (
     "I can only answer questions grounded in KNBS publications. "
@@ -503,10 +503,12 @@ def search():
                     else None
                 )
                 logger.info(
-                    f"""QAPAIR: {
-                    {"question": session["question"],
-            "content_type": session["content_type"],
-            "response": payload}}"""
+                    "QAPAIR: %s",
+                    {
+                        "question": session["question"],
+                        "content_type": session["content_type"],
+                        "response": payload,
+                    },
                 )
             else:
                 session["answer"] = f"Connection to API failed: {response.status_code}"
@@ -518,10 +520,12 @@ def search():
                 response_time_seconds = None
                 timing_label = None
                 logger.warning(
-                    f"""API-FAIL: {
-                    {"question": session["question"],
-            "content_type": session["content_type"],
-            "response": response.status_code}}"""
+                    "API-FAIL: %s",
+                    {
+                        "question": session["question"],
+                        "content_type": session["content_type"],
+                        "response": response.status_code,
+                    },
                 )
         except requests.exceptions.RequestException as e:
             session["answer"] = f"Connection to API failed: {e}"
@@ -533,10 +537,12 @@ def search():
             response_time_seconds = None
             timing_label = None
             logger.warning(
-                f"""API-FAIL: {
-                {"question": session["question"],
-                 "content_type": session["content_type"],
-                 "response": e}}"""
+                "API-FAIL: %s",
+                {
+                    "question": session["question"],
+                    "content_type": session["content_type"],
+                    "response": e,
+                },
             )
         results = {
             "answer": session["answer"],
@@ -570,15 +576,19 @@ def record_rating():
         "content_type": session["content_type"],
         "answer": session["answer"],
     }
-    requests.post(
-        ENDPOINT.rstrip("/") + "/feedback",
-        json=last_answer,
-        headers=api_headers(),
-        timeout=REQUEST_TIMEOUT,
-    )
+    try:
+        requests.post(
+            ENDPOINT.rstrip("/") + "/feedback",
+            json=last_answer,
+            headers=api_headers(),
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.exceptions.RequestException as e:
+        logger.warning("FEEDBACK-FAIL: %s", e)
     logger.info(f"FEEDBACK: {last_answer}")
     return "", 204  # Return empty response with status code 204
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("FLASK_RUN_PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

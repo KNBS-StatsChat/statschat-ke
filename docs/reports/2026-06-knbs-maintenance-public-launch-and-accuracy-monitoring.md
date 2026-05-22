@@ -6,7 +6,7 @@ Date: May 2026
 
 ## Purpose
 
-This note sets out how KNBS can maintain and develop StatsChat-KE after ONS exits the project, while preserving the accuracy discipline established during the April 2026 testing work. It should be read alongside the [April 2026 accuracy report](/Users/EjlliD/Developer/statschat-ke/docs/reports/2026-04-statschat-ke-testing-accuracy-report.md), the [April 2026 architecture change record](/Users/EjlliD/Developer/statschat-ke/docs/architecture/2026-04-accuracy-architecture-changes.md), and the [accuracy workflow documentation](/Users/EjlliD/Developer/statschat-ke/tests/accuracy/README.md).
+This note sets out how KNBS can maintain and develop StatsChat-KE after ONS exits the project, while preserving the accuracy discipline established during the April 2026 testing work. It should be read alongside the [April 2026 accuracy report](2026-04-statschat-ke-testing-accuracy-report.md), the [April 2026 architecture change record](../architecture/2026-04-accuracy-architecture-changes.md), and the [accuracy workflow documentation](../../tests/accuracy/README.md).
 
 The central recommendation is simple: KNBS should treat StatsChat-KE as an operated statistical service, not only as a codebase. The project now has a measurable quality baseline. That baseline should become the control point for future maintenance, model changes, corpus updates, and any decision about public launch.
 
@@ -24,7 +24,7 @@ For KNBS to maintain the tool safely, three responsibilities need to be explicit
 
 The product owner decides who the tool is for, whether it is internal-only, pilot, or public-facing, and what scope boundaries apply. This role owns release go/no-go decisions and prioritises improvements.
 
-The technical maintainer owns deployment, API uptime, secrets, environment configuration, model/provider configuration in [main.toml](/Users/EjlliD/Developer/statschat-ke/statschat/config/main.toml), corpus update jobs, incident response, benchmark execution, and artifact retention.
+The technical maintainer owns deployment, API uptime, secrets, environment configuration, model/provider configuration in [main.toml](../../statschat/config/main.toml), corpus update jobs, incident response, benchmark execution, and artifact retention.
 
 The statistical or domain reviewer owns benchmark quality. This includes reviewing source text, auditing new benchmark rows, classifying real user failures, and deciding whether a wrong answer is a model failure, retrieval failure, benchmark issue, or source-data issue.
 
@@ -48,9 +48,9 @@ The release gate should be conservative. KNBS should not accept a drop in unansw
 
 Accuracy monitoring should have two parts: offline benchmark monitoring and live usage monitoring. Offline benchmarking catches regressions before release. Live monitoring catches new failure modes that the benchmark does not yet cover.
 
-The controlled benchmark asset is [StatsChat_QA_Verified_Audited.xlsx](/Users/EjlliD/Developer/statschat-ke/tests/accuracy/StatsChat_QA_Verified_Audited.xlsx). KNBS should not edit it casually in place. If benchmark rows are added or corrected, that should be recorded as a benchmark revision so that future changes in accuracy can be interpreted correctly.
+The controlled benchmark asset is [StatsChat_QA_Verified_Audited.xlsx](../../tests/accuracy/StatsChat_QA_Verified_Audited.xlsx). KNBS should not edit it casually in place. If benchmark rows are added or corrected, that should be recorded as a benchmark revision so that future changes in accuracy can be interpreted correctly.
 
-The benchmark runner is [evaluate_accuracy.py](/Users/EjlliD/Developer/statschat-ke/tests/accuracy/evaluate_accuracy.py). The standard cloud benchmark command is:
+The benchmark runner is [evaluate_accuracy.py](../../tests/accuracy/evaluate_accuracy.py). The standard cloud benchmark command is:
 
 ```bash
 python tests/accuracy/evaluate_accuracy.py \
@@ -78,7 +78,7 @@ Live review should include regular sampling of real questions. A technical maint
 
 ## Corpus and Benchmark Governance
 
-StatsChat quality depends heavily on the indexed KNBS corpus. KNBS should operate the ingestion and update pipeline with discipline: update PDFs from approved KNBS sources, process them to JSON, rebuild or incrementally update the FAISS store, and run benchmark checks after material updates. Operational references include the [Operating Manual](/Users/EjlliD/Developer/statschat-ke/docs/OPERATING_MANUAL.md) and [server deployment documentation](/Users/EjlliD/Developer/statschat-ke/docs/server_deployment.md).
+StatsChat quality depends heavily on the indexed KNBS corpus. KNBS should operate the ingestion and update pipeline with discipline: update PDFs from approved KNBS sources, process them to JSON, rebuild or incrementally update the FAISS store, and run benchmark checks after material updates. Operational references include the [Operating Manual](../OPERATING_MANUAL.md) and [server deployment documentation](../server_deployment.md).
 
 If a public-facing service is planned, KNBS should maintain separate staging and production indexes. Staging should be used to validate corpus updates before promotion to production.
 
