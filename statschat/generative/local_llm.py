@@ -331,7 +331,7 @@ def similarity_search(
         )
 
     # filter to document matches with similarity scores less than...
-    # i.e. closest cosine distances to query
+    # i.e. closest L2 distances to query (unit-norm vectors make this equivalent to cosine similarity)
     top_matches = [x for x in top_matches if x[-1] <= similarity_threshold]
 
     if return_dicts:

@@ -84,6 +84,23 @@ Once the documents are ranked, the system prepares them for the LLM.
     <Doc1 published_date=2023-05-01 title=Economic Survey> ...content... </Doc1>
     ```
 
+## FAISS Index Properties
+
+The following was confirmed by directly inspecting the production index at `data/db_langchain/` (May 2026).
+
+| Property | Value |
+|---|---|
+| Index class | `IndexFlatL2` |
+| Metric | L2 (Euclidean) distance |
+| Vectors | 182,050 |
+| Dimension | 768 |
+| Approximate-nearest-neighbour structure | None (exact brute-force search) |
+| Embeddings unit-normalised | Yes (norm = 1.0 for all sampled vectors) |
+
+**Index type**: LangChain's `FAISS.from_documents()` creates an `IndexFlatL2` by default. No IVF, HNSW, or other ANN structure is used, so every query performs an exact scan over all vectors.
+
+**Metric equivalence**: Because all stored vectors are unit-normalised (a property of the `sentence-transformers/all-mpnet-base-v2` model), L2 distance and cosine similarity are mathematically equivalent: $d_{L2}^2 = 2(1 - \cos\theta)$. The index therefore behaves as cosine-similarity search in practice, even though it is configured as L2. Scores returned by `similarity_search_with_score` are L2 distances (lower = more similar).
+
 ## Output
 
 The output of this pipeline is a **Context String** containing the most relevant, up-to-date information available in the database. This string is then passed to the [Generation Pipeline](pipeline-generation.md).
