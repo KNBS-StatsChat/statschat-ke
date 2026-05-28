@@ -99,7 +99,15 @@ The following was confirmed by directly inspecting the production index at `data
 
 **Index type**: LangChain's `FAISS.from_documents()` creates an `IndexFlatL2` by default. No IVF, HNSW, or other ANN structure is used, so every query performs an exact scan over all vectors.
 
-**Metric equivalence**: Because all stored vectors are unit-normalised (a property of the `sentence-transformers/all-mpnet-base-v2` model), L2 distance and cosine similarity are mathematically equivalent: $d_{L2}^2 = 2(1 - \cos\theta)$. The index therefore behaves as cosine-similarity search in practice, even though it is configured as L2. Scores returned by `similarity_search_with_score` are L2 distances (lower = more similar).
+**L2 vs. cosine — the general case**: L2 (Euclidean) distance is a geometric measure: it is the straight-line distance between two points in the embedding space. It is sensitive to both the *angle* and the *magnitude* of the vectors. A document with a large embedding magnitude can therefore appear further away than a shorter vector pointing in a nearly identical direction — purely because of scale, not semantic content. Cosine similarity, by contrast, measures only the angle between vectors and ignores magnitude entirely, making it more robust for comparing text embeddings.
+
+**Why it does not matter here**: `sentence-transformers/all-mpnet-base-v2` normalises its output to unit length (confirmed above: all sampled norms = 1.0). When all vectors lie on the unit hypersphere, magnitude differences disappear and the two metrics become algebraically equivalent:
+
+$$d_{L2}^2 = 2(1 - \cos\theta)$$
+
+Ranking by smallest L2 distance is therefore identical to ranking by largest cosine similarity. The index behaves as cosine-similarity search in practice, even though it is configured as L2. Scores returned by `similarity_search_with_score` are L2 distances (lower = more similar, range 0–2).
+
+**If embeddings were not normalised**: the L2 metric would be unreliable for semantic search — a semantically close document could rank poorly simply because its embedding has a smaller magnitude. In that case the index would need to be rebuilt as `IndexFlatIP` with explicit pre-normalisation, or replaced with a cosine-native index.
 
 ## Output
 
