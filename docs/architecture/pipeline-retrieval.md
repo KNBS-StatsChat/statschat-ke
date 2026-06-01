@@ -4,7 +4,9 @@ This document details the third stage of the StatsChat-KE pipeline: retrieving r
 
 ## Conceptual Overview
 
-Before an AI model can answer a question, the system must find the relevant facts. The Retrieval pipeline is responsible for:
+Before an AI model can answer a question, the system must find the relevant facts. The Retrieval pipeline is responsible for scoring and filtering document chunks; for how those scores are then used to gate the answer and document output, see [Answer & Document Thresholds](threshold-guide.md).
+
+The pipeline is responsible for:
 1.  **Semantic Search**: Converting the user's question into a vector and finding similar content in the FAISS index (populated by the [Embedding Pipeline](pipeline-embedding.md)).
 2.  **Reranking**: Adjusting the search results to favor more recent publications (Time Decay).
 3.  **Context Selection**: Filtering and formatting the best results into a "prompt" context.

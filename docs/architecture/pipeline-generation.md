@@ -2,7 +2,7 @@
 
 This document details the final stage of the StatsChat-KE pipeline: using a Large Language Model (LLM) to synthesize a human-readable answer from the retrieved context.
 
-For an end-to-end view of what goes into StatsChat (PDFs, chunks, queries) and what comes out (answers and references), see [Input/Output (I/O) Overview](pipeline-input-output.md).
+For an end-to-end view of what goes into StatsChat (PDFs, chunks, queries) and what comes out (answers and references), see [Input/Output (I/O) Overview](pipeline-input-output.md). For how the `answer_threshold` and `document_threshold` config values control what gets returned, see [Answer & Document Thresholds](threshold-guide.md).
 
 ## Conceptual Overview
 
