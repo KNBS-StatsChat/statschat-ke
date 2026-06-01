@@ -99,6 +99,11 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# Quarto generated output
+*_files/
+/.quarto/
+*.html
+
 # PyBuilder
 .pybuilder/
 target/

@@ -147,7 +147,7 @@ response should be optimized for safe rendering and user readability.
 - `answer` is **plain text** (no embedded HTML).
 - `references` is always a **list of chunk objects** (or an empty list). It should
   never be a string, and it should never contain placeholder strings.
-- Threshold behavior stays consistent with current intent:
+- Threshold behavior stays consistent with current intent (see [Answer & Document Thresholds](threshold-guide.md) for full details):
   - If the best score is worse than `answer_threshold`, return a fallback answer
     but still include `references` if documents were retrieved.
   - If the best score is worse than `document_threshold`, return a “no PDFs found”
