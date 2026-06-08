@@ -50,6 +50,9 @@ retrieval behavior and make accuracy results non-comparable.
 - **k_contexts**: Number of context passages to use.
 - **similarity_threshold**: Minimum similarity score for a document to be considered relevant.
 - **llm_temperature**: Temperature parameter for the language model (controls randomness).
+- **llm_max_tokens**: Shared fallback output-token cap if mode-specific caps are not set.
+- **llm_max_tokens_cloud**: Cloud-generation output-token cap. Keep this high enough for structured JSON responses. GPT-5.4-mini has fit comfortably under `1024` in audited runs. Historically, Mistral Small 3.1 needed `2048+` to avoid truncation, but by May 2026 the OpenRouter route for `mistralai/mistral-small-3.1-24b-instruct` appeared unstable for structured JSON even at that higher cap. For current Mistral-family comparisons, prefer `mistralai/mistral-small-24b-instruct-2501` or `mistralai/mistral-small-3.2-24b-instruct`.
+- **llm_max_tokens_local**: Local-generation output-token cap for the Hugging Face path.
 - **answer_threshold**: Minimum score for an answer to be returned.
 - **document_threshold**: Minimum score for a document to be included in results.
 

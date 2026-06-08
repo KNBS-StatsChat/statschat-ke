@@ -30,9 +30,17 @@ What it does:
 Important behavior:
 
 - it does **not** compute accuracy metrics
+- it is **not** required for reproducing the audited April 2026 benchmark
 - it uses strict grounding filters by default
 - it can restrict generation to PDFs that are present in the current FAISS index via `--align-with-index`
 - for local generation, it loads the Hugging Face model once and reuses it for all generated rows
+
+Operational note:
+
+- the default mode is `--provider local`
+- local generation loads `mistralai/Mistral-7B-Instruct-v0.3` through Hugging Face
+- this can exhaust GPU memory on smaller cards and is expected to be much heavier than the audited evaluator path
+- if you only need to replicate the audited benchmark, skip this script entirely and run `evaluate_accuracy.py`
 
 This is a silver dataset, not a human-reviewed gold set.
 
@@ -72,6 +80,12 @@ Important behavior:
 3. Validate the QA sheet.
 4. Start the StatsChat API.
 5. Run the evaluation.
+
+Important distinction:
+
+- the workflow above is the full authoring + evaluation workflow
+- if you are reproducing the audited April 2026 benchmark, you do **not** need to generate a QA sheet
+- for audited replication, start from `tests/accuracy/StatsChat_QA_Verified_Audited.xlsx` and run `evaluate_accuracy.py`
 
 If QA was generated from the full corpus in `data/json_conversions`, evaluate with `--content-type all`.
 
@@ -173,6 +187,17 @@ reached:
 - overall accuracy: `63/74 = 0.851`
 - pipeline doc hit@8: `56/61 = 0.918`
 
+That April 20, 2026 Mistral Small 3.1 run remains a valid historical benchmark
+result. However, by May 2026 the same OpenRouter model route became unstable
+for this structured JSON task during replication attempts. A 5-row probe on
+`mistralai/mistral-small-3.1-24b-instruct` returned `0/5` answer coverage even
+after raising `llm_max_tokens_cloud` to `2048`, while retrieval still remained
+perfect. A follow-up probe using `mistralai/mistral-small-24b-instruct-2501`
+returned valid structured answers and scored `4/5 = 0.800` on the same slice.
+For future Mistral-family comparisons, prefer `mistralai/mistral-small-24b-instruct-2501`
+or `mistralai/mistral-small-3.2-24b-instruct` rather than relying on Small 3.1
+to stay reproducible on OpenRouter.
+
 The key interpretation is:
 
 - retrieval improvements materially improved the benchmark results
@@ -213,6 +238,8 @@ python tests/accuracy/evaluate_accuracy.py \
   --validate-only
 ```
 
+If your goal is to reproduce the audited April 2026 results, this audited workbook is the correct starting point. You do not need to run `generate_qa_with_refs.py`.
+
 ### 3. Start The Local API
 
 ```bash
@@ -230,6 +257,14 @@ The cloud API itself needs the configured provider key in its environment, for e
 - `OPENROUTER_API_KEY`
 - `OPENAI_API_KEY`
 - `HF_TOKEN`
+
+For cloud model comparisons, note that `llm_max_tokens_cloud` may need to be
+raised for more verbose models. GPT-5.4-mini has fit comfortably under the
+default `1024` cap in the audited runs. Historically, Mistral Small 3.1 needed
+`2048` or higher to avoid truncation, but the May 2026 replication probes
+showed a deeper provider-side instability on OpenRouter even at that higher
+cap. For live Mistral-family comparisons, prefer `mistralai/mistral-small-24b-instruct-2501`
+or `mistralai/mistral-small-3.2-24b-instruct`.
 
 ### 5. Evaluate Against The API
 

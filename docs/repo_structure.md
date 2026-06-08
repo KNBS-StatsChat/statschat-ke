@@ -7,6 +7,7 @@ Successful running of the scripts assumes a certain structure in how where data 
  ┣ 📂data
  ┣ 📂docs
  ┣ 📂fast-api
+ ┣ 📂flask-app
  ┣ 📂log
  ┣ 📂notebooks
  ┣ 📂statschat
@@ -56,6 +57,10 @@ Successful running of the scripts assumes a certain structure in how where data 
  ┃ ┃ ┣ 📜merge_database_files.py
  ┃ ┃ ┣ 📜pdf_downloader.py
  ┃ ┗ ┗ 📜pdf_to_json.py
+ ┣ 📂flask-app
+ ┃ ┣ 📜app.py
+ ┃ ┣ 📂templates
+ ┃ ┗ 📂static
  ┗ 📜pdf_runner.py
 
 ```

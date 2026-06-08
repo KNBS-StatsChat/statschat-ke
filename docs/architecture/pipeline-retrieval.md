@@ -4,7 +4,9 @@ This document details the third stage of the StatsChat-KE pipeline: retrieving r
 
 ## Conceptual Overview
 
-Before an AI model can answer a question, the system must find the relevant facts. The Retrieval pipeline is responsible for:
+Before an AI model can answer a question, the system must find the relevant facts. The Retrieval pipeline is responsible for scoring and filtering document chunks; for how those scores are then used to gate the answer and document output, see [Answer & Document Thresholds](threshold-guide.md).
+
+The pipeline is responsible for:
 1.  **Semantic Search**: Converting the user's question into a vector and finding similar content in the FAISS index (populated by the [Embedding Pipeline](pipeline-embedding.md)).
 2.  **Reranking**: Adjusting the search results to favor more recent publications (Time Decay).
 3.  **Context Selection**: Filtering and formatting the best results into a "prompt" context.
@@ -83,6 +85,31 @@ Once the documents are ranked, the system prepares them for the LLM.
     ```xml
     <Doc1 published_date=2023-05-01 title=Economic Survey> ...content... </Doc1>
     ```
+
+## FAISS Index Properties
+
+The following was confirmed by directly inspecting the production index at `data/db_langchain/` (May 2026).
+
+| Property | Value |
+|---|---|
+| Index class | `IndexFlatL2` |
+| Metric | L2 (Euclidean) distance |
+| Vectors | 182,050 |
+| Dimension | 768 |
+| Approximate-nearest-neighbour structure | None (exact brute-force search) |
+| Embeddings unit-normalised | Yes (norm = 1.0 for all sampled vectors) |
+
+**Index type**: LangChain's `FAISS.from_documents()` creates an `IndexFlatL2` by default. No IVF, HNSW, or other ANN structure is used, so every query performs an exact scan over all vectors.
+
+**L2 vs. cosine — the general case**: L2 (Euclidean) distance is a geometric measure: it is the straight-line distance between two points in the embedding space. It is sensitive to both the *angle* and the *magnitude* of the vectors. A document with a large embedding magnitude can therefore appear further away than a shorter vector pointing in a nearly identical direction — purely because of scale, not semantic content. Cosine similarity, by contrast, measures only the angle between vectors and ignores magnitude entirely, making it more robust for comparing text embeddings.
+
+**Why it does not matter here**: `sentence-transformers/all-mpnet-base-v2` normalises its output to unit length (confirmed above: all sampled norms = 1.0). When all vectors lie on the unit hypersphere, magnitude differences disappear and the two metrics become algebraically equivalent:
+
+$$d_{L2}^2 = 2(1 - \cos\theta)$$
+
+Ranking by smallest L2 distance is therefore identical to ranking by largest cosine similarity. The index behaves as cosine-similarity search in practice, even though it is configured as L2. Scores returned by `similarity_search_with_score` are L2 distances (lower = more similar, range 0–2).
+
+**If embeddings were not normalised**: the L2 metric would be unreliable for semantic search — a semantically close document could rank poorly simply because its embedding has a smaller magnitude. In that case the index would need to be rebuilt as `IndexFlatIP` with explicit pre-normalisation, or replaced with a cosine-native index.
 
 ## Output
 

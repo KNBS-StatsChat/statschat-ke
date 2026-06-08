@@ -45,6 +45,8 @@ These documents detail the journey of data from the KNBS website to the user's s
 
 ### 2. Configuration & Operations
 
+-   **[Answer & Document Thresholds](threshold-guide.md)**
+    -   *Scope*: How `answer_threshold` and `document_threshold` work, the three-zone response behaviour, FAISS score ranges, and a note on the current inverted-threshold configuration.
 -   **[Token Usage & Cost Guide](token-usage-guide.md)**
     -   Explains how tokens are calculated, how to estimate costs, and how to tune configuration parameters (`k_docs`, `chunk_size`) to balance performance and budget.
 

@@ -10,4 +10,4 @@ answer.  The current values are initial guesses:
 | k_docs | 10 | Maximum number of search results to return |
 | answer_threshold | 0.5 | Threshold score below which a answer is returned in a search |
 | document_threshold| 0.9 | Threshold score below which a document is returned in a search |
-| similarity_threshold | 2.0 | Cosine distance, a searched document is only returned if it is at least this similar (EQUAL or LOWER) |
+| similarity_threshold | 2.0 | L2 distance threshold; a searched document is only returned if its score is at most this value (EQUAL or LOWER). Because embeddings are unit-normalised, L2 distance is equivalent to cosine similarity in practice. |
