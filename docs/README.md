@@ -64,6 +64,12 @@ Read these in order for a complete onboarding:
 | [architecture/token-usage-guide.md](./architecture/token-usage-guide.md) | Token calculation and configuration tuning |
 | [reference/repo_structure.md](./reference/repo_structure.md) | Directory layout and data folder structure |
 
+### API Reference
+
+| File | Description |
+|---|---|
+| [reference/api-reference.md](./reference/api-reference.md) | All HTTP endpoints (`/health`, `/search`, `/feedback`), parameters, response fields, auth, rate limiting, cloud vs local differences |
+
 ### Configuration
 
 | File | Description |
