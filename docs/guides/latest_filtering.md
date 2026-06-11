@@ -22,7 +22,7 @@ A **binary gate** that restricts which documents are searched at all.
 
 Every JSON document has a `"latest": true | false` field.
 
-- **New documents** are ingested with `"latest": true` ([pdf_to_json.py](../architecture/pipeline-retrieval.md)).
+- **New documents** are ingested with `"latest": true` ([pdf_to_json.py](../architecture/pipeline-pdf-ingestion.md)).
 - **When a newer edition arrives** (`mode = "UPDATE"`), `latest_updates.py` fuzzy-matches filenames to detect superseded publications and sets their flag to `false`.
 - **At embedding time**, a separate FAISS index (`db_langchain_latest`) is built containing only flagged documents.
 - **At query time**, `similarity_search()` chooses which index to query:

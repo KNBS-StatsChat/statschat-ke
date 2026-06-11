@@ -206,6 +206,5 @@ print(f"  {buckets[-1]:4d}+   : {count:5d} ({count/len(token_counts)*100:5.1f}%)
 
 ## See Also
 
-- [`docs/cost.md`](../cost.md) - Deployment options and pricing estimates
-- [`docs/config_guide.md`](../reference/config_guide.md) - Full configuration reference
-- [`docs/search_config_paramaters.md`](../reference/search_config_paramaters.md) - Search tuning parameters
+- [`docs/decisions/cost.md`](../decisions/cost.md) - Deployment options and pricing estimates
+- [`docs/reference/config_guide.md`](../reference/config_guide.md) - Full configuration reference

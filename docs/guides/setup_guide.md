@@ -45,7 +45,7 @@ trusted-host = pypi.org
 EOF
 ```
 
-For more details, see [SSL Fix Report](./ssl_fix_report.md) and [pyenv Python Installation Guide](./pyenv_python_installation_guide.md).
+For more details see the [Setup Guide](./setup_guide.md) SSL troubleshooting section above.
 
 **setuptools Build Errors**
 
@@ -184,19 +184,18 @@ helping to maintain a clean and consistent codebase.
 
 ## Setup Vector Store
 
-To web scrape the source documents run **`pdf_runner.py`**. Ensure that the **`MODE`** (in `main.toml`) is set to the desired option **"SETUP"**.
+To web scrape the source documents run **`pdf_runner.py`**. Ensure that the `mode` key under `[preprocess]` (in `statschat/config/main.toml`) is set to **"SETUP"**.
 
-    ```shell
-    python statschat/pdf_runner.py
-    ```
+```shell
+python statschat/pdf_runner.py
+```
 
-This script will webscrape PDF documents from the KNBS website, convert them to JSON files and either append or replace the vector store - based on the **PDF_FILES_MODE** parameter.
+This script will scrape PDF documents from the KNBS website, convert them to JSON files and populate the vector store.
 
-**PDF_FILES_MODE** = **"SETUP"** -> Will scrape all pdf files from the KNBS website and reset the vector store, creating a new one from the PDF documents that are scraped and processed into JSON files.
+`mode = "SETUP"` — Scrapes all PDFs and builds the vector store from scratch.
 
 > [!NOTE]
-> YOU WILL ONLY NEED TO DO THE VECTOR STORE SETUP ONCE
-> AFTERWARDS IT WILL ONLY NEED TO BE UPDATED
+> You will only need to run SETUP once. Afterwards use UPDATE mode to add new publications.
 
 > [!IMPORTANT]
 > The current application configuration expects the April 2026 rebuilt index

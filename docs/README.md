@@ -154,5 +154,4 @@ are not intended to be kept current, but are preserved for context.
 
 ## Known Issues & Maintenance Notes
 
-- **`repo_structure.md`** contains stale data directory paths and a stale code tree. An updated version is planned.
 - **`docs/archive/`** contains `LINTING_TODO.md` and `LINTING_CHANGELOG.md` from the previous team's Dec 2025 linting refactor work. The open items in `LINTING_TODO.md` have not been resolved; they should be triaged before being formally closed or discarded.

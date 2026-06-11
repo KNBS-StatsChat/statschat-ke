@@ -89,4 +89,4 @@ The table below shows the current values from `statschat/config/main.toml` and w
 | `latest_max` | `2` | Number of publications treated as "latest" for `content_type=latest` queries. |
 | `page_start` / `page_end` | `1` / `5` | KNBS website page range to scrape. |
 
-> **Note on thresholds**: `answer_threshold` and `document_threshold` are applied to the cross-encoder reranker score. These scores are not probabilities; their absolute range depends on the reranker model. See [docs/architecture/threshold-guide.md](./architecture/threshold-guide.md) for detail on how the three-zone response behaviour works.
+> **Note on thresholds**: `answer_threshold` and `document_threshold` are applied to the cross-encoder reranker score. These scores are not probabilities; their absolute range depends on the reranker model. See [docs/architecture/threshold-guide.md](../architecture/threshold-guide.md) for detail on how the three-zone response behaviour works.
