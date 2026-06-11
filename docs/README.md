@@ -9,16 +9,23 @@ starting point.
 
 Read these in order for a complete onboarding:
 
-1. [Root README](../README.md) — project overview, architecture diagram, quick-start commands
-2. [setup_guide.md](./setup_guide.md) — Python environment and dependency installation
-3. [environment_setup.md](./environment_setup.md) — `.env` file, API keys, provider configuration
-4. [OPERATING_MANUAL.md](./OPERATING_MANUAL.md) — running the data pipeline and the API
-5. [architecture/README.md](./architecture/README.md) — how the pipeline components fit together
-6. [CONTRIBUTING.md](./CONTRIBUTING.md) — branching, PR workflow, code style, pre-commit hooks
+1. [SPECIFICATION.md](./SPECIFICATION.md) — what the project is, its guiding principles, current status, known limitations, and recommended next steps
+2. [Root README](../README.md) — architecture diagram and quick-start commands
+3. [setup_guide.md](./setup_guide.md) — Python environment and dependency installation
+4. [environment_setup.md](./environment_setup.md) — `.env` file, API keys, provider configuration
+5. [OPERATING_MANUAL.md](./OPERATING_MANUAL.md) — running the data pipeline and the API
+6. [architecture/README.md](./architecture/README.md) — how the pipeline components fit together (technical depth)
+7. [CONTRIBUTING.md](./CONTRIBUTING.md) — branching, PR workflow, code style, pre-commit hooks
 
 ---
 
 ## Document Index
+
+### Project Context and Vision
+
+| File | Description |
+|---|---|
+| [SPECIFICATION.md](./SPECIFICATION.md) | What StatsChat-KE is, its guiding principles, current status, known limitations, recommended next steps, and future directions |
 
 ### Setup & Onboarding
 
@@ -55,7 +62,6 @@ Read these in order for a complete onboarding:
 | [architecture/pipeline-generation.md](./architecture/pipeline-generation.md) | LLM interaction and response parsing |
 | [architecture/pipeline-input-output.md](./architecture/pipeline-input-output.md) | API request/response contract |
 | [architecture/token-usage-guide.md](./architecture/token-usage-guide.md) | Token calculation and configuration tuning |
-| [SPECIFICATION.md](./SPECIFICATION.md) | Original project requirements and functional specification |
 | [repo_structure.md](./repo_structure.md) | Directory layout and data folder structure |
 
 ### Configuration

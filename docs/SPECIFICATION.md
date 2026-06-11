@@ -1,33 +1,199 @@
 # Project Specification: StatsChat-KE
 
-## 1. Executive Summary
-StatsChat-KE is a semantic search engine and chatbot designed to unlock the data trapped in PDF reports published by the Kenya National Bureau of Statistics (KNBS). It allows users (researchers, policy makers, public) to ask natural language questions and receive sourced answers derived directly from official government documents.
+## Purpose of This Document
 
-## 2. Core Functionality
+This document provides a conceptual overview of the StatsChat-KE project: what it
+is, what it is designed to do, what has been built, and how it should evolve. It
+is intended as a starting point for anyone joining or taking over the project, and
+as the reference for decisions about scope, direction, and acceptable quality.
 
-### 2.1 Data Ingestion (The ETL Pipeline)
-The system must autonomously build its own knowledge base:
-1.  **Crawl**: Iterate through the KNBS website to discover Economic Surveys and Statistical Abstracts.
-2.  **Download**: Securely download PDF files to local storage.
-3.  **Extract**: Convert unstructured PDF content into structured JSON, preserving:
-    *   Text content (per page).
-    *   Metadata (Publication Date, Theme, Title).
-    *   Page-level granular citation links.
-4.  **Embed**: Transform text chunks into vector embeddings using `sentence-transformers`.
-5.  **Index**: Store vectors in a FAISS index for efficient similarity search.
+For technical implementation detail, see the [architecture documentation](./architecture/README.md).
+For operational instructions, see the [Operating Manual](./OPERATING_MANUAL.md).
 
-### 2.2 Search & Retrieval
-1.  **Semantics over Keywords**: The system uses vector similarity to find *meanings*, not just matching words.
-2.  **Time-Aware**: (Planned/Experimental) The system should prioritize more recent data or understand temporal contexts (e.g., "in 2020").
+---
 
-### 2.3 Answer Generation (RAG)
-1.  **Context Construction**: Retrieve the top $K$ most relevant document chunks based on the user's query.
-2.  **Synthesis**: Pass these chunks to a Large Language Model (LLM) with a strict prompt: "Answer the user using *only* this context."
-3.  **Citation**: The final answer must implicitly or explicitly reference the source document.
+## 1. What Is StatsChat-KE?
 
+StatsChat-KE is a retrieval-augmented generation (RAG) tool that helps users find
+relevant evidence in official statistical publications. A user asks a
+natural-language question — for example, "What was Kenya's inflation rate in
+December 2023?" — and the system searches the KNBS publication corpus, retrieves
+the most relevant pages and extracts, and uses a large language model to produce
+a grounded answer with references back to the source material.
 
-## 3. System Constraints & Assumptions
-*   **Data Source**: Limited strictly to KNBS documents to maintain authority.
-*   **Deployment**: Originally designed for macOS/Local runtime but includes FastAPI for cloud deployment.
-*   **Connectivity**: Requires internet access for the initial scrape and for calling cloud-based LLM APIs (if configured).
-*   **Accuracy**: As an experimental AI system, 100% accuracy is not guaranteed. Hallucinations are a known risk.
+**The primary use case** is not to replace expert judgement, but to speed up the
+existing process of searching through PDFs. Staff who currently spend time
+manually scanning dozens of reports to find the right figure, table, or paragraph
+can use StatsChat to locate the relevant document, page, and extract much faster
+— and then inspect the source before relying on the answer.
+
+### Guiding Principles
+
+**Retrieval-first.** The answer is only as good as the documents retrieved.
+Citations matter. Every answer should be traceable to a source page in the corpus.
+
+**Grounded generation.** The LLM is instructed to answer using only the retrieved
+context, not its general training knowledge. Questions that cannot be grounded in
+the corpus should be refused rather than fabricated.
+
+**Accuracy discipline.** Changes to the system — model, retrieval configuration,
+corpus, or code — should be validated against the audited benchmark before being
+accepted. See [Section 5](#5-automated-evaluation-the-feedback-loop).
+
+---
+
+## 2. Project History and Current Status
+
+StatsChat began as an ONS prototype in 2023. It was adapted for the Kenya National
+Bureau of Statistics in 2025. The early KNBS version was a working prototype but
+lacked rigorous testing or a stable evaluation framework.
+
+In the 2025–2026 development phase, the system was substantially improved:
+
+- Automated unit and integration tests were added.
+- An audited benchmark workbook was created and reviewed (74 questions with known
+  correct answers drawn directly from KNBS publications).
+- Retrieval was redesigned: report-family routing, temporal candidate widening,
+  cross-encoder reranking, and page-aware context selection were added.
+- The local and cloud API paths were aligned to share the same retrieval
+  architecture.
+- An out-of-scope guardrail policy was added so the system correctly refuses
+  questions it cannot answer from the corpus.
+
+On the audited 74-question benchmark, the best cloud configuration
+(GPT-5.4-mini) achieved:
+
+| Metric | Result |
+|---|---|
+| Answerable accuracy | 57 / 61 = **93.4%** |
+| Unanswerable accuracy | 13 / 13 = **100%** |
+| Overall accuracy | 70 / 74 = **94.6%** |
+| Pipeline document hit@8 | 56 / 61 = **91.8%** |
+
+The system is now in a strong position for controlled internal testing.
+
+---
+
+## 3. Intended Scope and Constraints
+
+- **Data source**: strictly KNBS publications. The system is not designed to
+  answer general knowledge questions or draw on sources outside the indexed
+  corpus.
+- **Language**: English. KNBS reports are primarily in English; the system has
+  not been tested on Swahili or other languages.
+- **Accuracy**: this is an experimental AI system. The benchmark shows high
+  accuracy on the audited question set, but real user questions will vary, and
+  hallucinations remain a known risk — particularly for questions where the answer
+  is not clearly present in the corpus.
+- **Deployment**: designed for macOS-local development and cloud API deployment.
+  The local inference path is slower and resource-intensive (~16 GB RAM); the
+  cloud path via OpenRouter is recommended for general use.
+- **Corpus currency**: the indexed corpus is a snapshot. New KNBS publications
+  are not automatically ingested; an operator must run the update pipeline to keep
+  the corpus current.
+
+---
+
+## 4. Known Limitations
+
+**PDF processing quality** is the largest remaining bottleneck. Some publications
+convert well; others — especially scanned documents or PDFs with complex table
+layouts — are not processed reliably. This directly affects retrieval and answer
+quality, because the system can only answer questions about text it has
+successfully extracted. Improving PDF processing would have a large downstream
+impact on accuracy.
+
+**Evaluation coverage** is still limited. The current 74-question benchmark covers
+a range of topics and publication types, but it cannot represent the full range
+of questions real users will ask. The benchmark should be expanded over time,
+particularly with questions that arise from real usage.
+
+**External API dependency.** The cloud path depends on OpenRouter and the
+configured LLM provider. Provider instability (model availability, response
+quality changes) has caused evaluation failures in the past. The active model
+configuration should be reviewed periodically and monitored for provider changes.
+
+---
+
+## 5. Automated Evaluation: The Feedback Loop
+
+The evaluation system is not a passive test suite. It is the mechanism by which
+any change to the system is validated against a known quality baseline.
+
+The workflow is:
+
+1. A curated benchmark workbook (`StatsChat_QA_Verified_Audited.xlsx`) contains
+   questions with known correct answers, sourced and reviewed from actual KNBS
+   publications.
+2. The evaluator runs those questions against the live API and scores responses.
+3. Results are archived with a timestamp, and a cross-run ledger tracks accuracy
+   across models, configurations, and time.
+4. Any drop in accuracy signals a regression. Any claimed improvement must be
+   confirmed by the evaluator before being accepted.
+
+**The rule**: before changing the model, the retrieval configuration, the FAISS
+index, or deploying a new version, run the evaluator and compare against the
+current baseline.
+
+See [tests/accuracy/README.md](../tests/accuracy/README.md) for the full
+technical workflow, and the
+[maintenance and accuracy monitoring plan](./reports/2026-06-knbs-maintenance-public-launch-and-accuracy-monitoring.md)
+for the recommended ongoing monitoring model.
+
+---
+
+## 6. Recommended Next Steps
+
+**Internal pilot.** The most important next step is a controlled internal
+deployment within KNBS. This would allow staff to test the tool in realistic
+workflows, give feedback, and identify where it helps most. The tool should be
+positioned as a retrieval-first assistant at this stage: it helps users find
+relevant publications and extracts faster, while users still inspect the cited
+sources before relying on an answer.
+
+**Corpus maintenance.** Establish a routine update cadence (e.g. monthly) to
+ingest new KNBS publications. Each corpus update should be followed by a
+benchmark run to confirm no accuracy regression.
+
+**Benchmark expansion.** As real usage generates new questions and failures,
+those cases should be converted into new benchmark rows. This grows evaluation
+coverage over time and makes the benchmark more representative of real use.
+
+**User feedback loop.** Capture real user questions and outcomes. Failures or
+low-confidence answers should be reviewed and used to improve the benchmark, the
+retrieval configuration, or the PDF processing pipeline.
+
+---
+
+## 7. Future Development Directions
+
+The following are not committed but are the most likely candidates for future
+development work, roughly in priority order:
+
+- **Better PDF processing**: improved handling of scanned documents, complex
+  tables, and non-standard layouts. This is the highest-priority improvement
+  because it affects the entire pipeline downstream.
+- **Expanded evaluation data**: more question types, more publication types, and
+  questions drawn from real user sessions.
+- **Improved page-level grounding**: more precise citation to the exact page or
+  table that grounds each answer.
+- **Multi-format ingestion**: extending beyond PDFs to include HTML, Word, Excel,
+  or API-served data sources.
+- **Adaptation to other contexts**: the architecture is not KNBS-specific. The
+  same approach could be applied to other national statistics offices or similar
+  document-heavy institutional settings.
+
+For a fuller list of candidate improvements by pipeline stage, see
+[docs/future-development/](./future-development/).
+
+---
+
+## 8. Technical Reference
+
+| Document | Purpose |
+|---|---|
+| [architecture/README.md](./architecture/README.md) | Technical overview of the four pipeline stages and evaluation feedback loop |
+| [OPERATING_MANUAL.md](./OPERATING_MANUAL.md) | Running the data pipeline and API; configuration and troubleshooting |
+| [tests/accuracy/README.md](../tests/accuracy/README.md) | Evaluation workflow, benchmark documentation, metric definitions |
+| [config_guide.md](./config_guide.md) | Full `main.toml` configuration reference |
+| [reports/](./reports/) | Accuracy evaluation reports and accuracy monitoring recommendations |
