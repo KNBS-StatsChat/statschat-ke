@@ -123,5 +123,5 @@ surviving score. So the pipeline is:
   thresholds and formats the final response.
 - [Input/Output Overview](pipeline-input-output.md) — full API response contract
   and threshold behaviour specification.
-- [`docs/search_config_paramaters.md`](../search_config_paramaters.md) — parameter
+- [`docs/search_config_paramaters.md`](../reference/search_config_paramaters.md) — parameter
   reference table.

@@ -60,7 +60,7 @@ This installs:
 
 Before running the application, you must set up your API credentials:
 
-**See the [Environment Setup Guide](./environment_setup.md) for detailed instructions** on:
+**See the [Environment Setup Guide](./guides/environment_setup.md) for detailed instructions** on:
 - Creating the `.env` file
 - Getting API keys (OpenRouter, OpenAI, or HuggingFace)
 - Configuring your chosen LLM provider
@@ -114,8 +114,8 @@ For Mac users using pyenv, see the comprehensive [pyenv Installation Guide](./do
 
 ### Additional Resources
 
-- [Setup Guide](./setup_guide.md) - Detailed installation for Mac and Windows
-- [Environment Setup Guide](./environment_setup.md) - Configure API credentials and `.env` file
+- [Setup Guide](./guides/setup_guide.md) - Detailed installation for Mac and Windows
+- [Environment Setup Guide](./guides/environment_setup.md) - Configure API credentials and `.env` file
 - [SSL Fix Report](./ssl_fix_report.md) - Complete SSL troubleshooting documentation
 
 ## Running the Application
@@ -125,7 +125,7 @@ For Mac users using pyenv, see the comprehensive [pyenv Installation Guide](./do
 Before running the application, ensure you have:
 - Created and activated your virtual environment
 - Installed all dependencies
-- **[Set up your `.env` file with API credentials](./environment_setup.md)**
+- **[Set up your `.env` file with API credentials](./guides/environment_setup.md)**
 
 Then create the vector store:
 
@@ -249,7 +249,7 @@ statschat-ke/
 
 - **Documentation:** Check the [docs/](./docs/) folder
 - **Issues:** Search or create [GitHub Issues](https://github.com/KNBS-StatsChat/statschat-ke/issues)
-- **Setup Problems:** See [Setup Guide](./docs/setup_guide.md)
+- **Setup Problems:** See [Setup Guide](./guides/setup_guide.md)
 
 ## License
 

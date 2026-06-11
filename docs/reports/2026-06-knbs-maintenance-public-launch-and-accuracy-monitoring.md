@@ -78,7 +78,7 @@ Live review should include regular sampling of real questions. A technical maint
 
 ## Corpus and Benchmark Governance
 
-StatsChat quality depends heavily on the indexed KNBS corpus. KNBS should operate the ingestion and update pipeline with discipline: update PDFs from approved KNBS sources, process them to JSON, rebuild or incrementally update the FAISS store, and run benchmark checks after material updates. Operational references include the [Operating Manual](../OPERATING_MANUAL.md) and [server deployment documentation](../server_deployment.md).
+StatsChat quality depends heavily on the indexed KNBS corpus. KNBS should operate the ingestion and update pipeline with discipline: update PDFs from approved KNBS sources, process them to JSON, rebuild or incrementally update the FAISS store, and run benchmark checks after material updates. Operational references include the [Operating Manual](../guides/OPERATING_MANUAL.md) and [server deployment documentation](../guides/server_deployment.md).
 
 If a public-facing service is planned, KNBS should maintain separate staging and production indexes. Staging should be used to validate corpus updates before promotion to production.
 

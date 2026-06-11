@@ -20,7 +20,7 @@
 ## Introduction
 
 This is an experimental application for semantic search of KNBS [statistical publications](https://www.knbs.or.ke/all-reports/).
-It uses LangChain to implement a fairly simple Retriaval Augmented Generation (RAG) using embedding search
+It uses LangChain to implement a fairly simple Retrieval Augmented Generation (RAG) using embedding search
 and QA information retrieval process.
 
 Upon receiving a query, documents are returned as search results
@@ -29,10 +29,7 @@ Next, the relevant text is passed to a Large Language Model (LLM),
 which is prompted to write an answer to the original question, if it can,
 using only the information contained within the documents.
 
-For this prototype, relevant web pages with PDF's are scraped and the data stored in `data/pdf_downloads`,
-the docstore / embedding store that is created is likewise and stored in `data/db_langchain` after SETUP and then
-also in `data/db_langchain_latest` after UPDATE. The LLM is either run locally with `local_llm.py` or an
-API with `main_api_local.py` (both backend).
+PDFs are scraped from the KNBS website and stored locally. Text is extracted, chunked, and embedded into a FAISS vector store (paths configured in `statschat/config/main.toml`). The LLM is either run locally with `local_llm.py` or through the FastAPI backend (`main_api_local.py` or `main_api_cloud.py`).
 
 ## Overview
 <img width="1661" height="580" alt="image" src="https://github.com/user-attachments/assets/34eb5fbd-0965-48f8-acd3-bcc7ee945de2" />
@@ -41,35 +38,31 @@ API with `main_api_local.py` (both backend).
 ## Step 1: Environment Configuration
 > [!IMPORTANT]
 > **Before running the application, you must:**
-> 1. **[Create a virtual or conda environment](./docs/setup_guide.md)**
-> 2. **[Set up your `.env` file with API credentials](./docs/environment_setup.md)**
+> 1. **[Create a virtual or conda environment](./docs/guides/setup_guide.md)**
+> 2. **[Set up your `.env` file with API credentials](./docs/guides/environment_setup.md)**
 
 ## Step 2: Vector store
 > [!NOTE]
 > **Ensure the environment has been configured before setting up or updating the vector store.**
 
-Before running `pdf_runner.py` in an integrated development environment (IDE) ensure that the PDF_FILES_MODE (in `main.toml`)
-is set to the desired option. It can also be run in the command line as below.
+Before running `pdf_runner.py`, ensure the `mode` key under `[preprocess]` in `statschat/config/main.toml` is set to the desired option. It can also be run from the command line:
 
-    ```shell
-    python3 statschat/pdf_runner.py
-    ```
+```shell
+python statschat/pdf_runner.py
+```
 
-> [!NOTE]
-> If the above doesn't work then use `python statschat/pdf_runner.py`
+This script scrapes PDF documents from the KNBS website, converts them to JSON files, and either populates or updates the vector store — depending on the `mode` setting.
 
-This script will webscrape PDF documents from the KNBS website, convert them to JSON files and either append or replace the vector store - based on the `PDF_FILES_MODE` parameter.
+`mode = "SETUP"` — Scrapes all PDFs from the KNBS website and builds the vector store from scratch. Only needed once for initial setup or a full rebuild.
 
-`PDF_FILES_MODE = "SETUP"` -> Will scrape all pdf files from the KNBS website and reset the vector store, creating a new one from the PDF documents that are scraped and processed into JSON files. This will only need to be done `once` as afterwards it will just need updating.
-
-`PDF_FILES_MODE = "UPDATE"` -> Will only scrape the latest 5 pages of PDF files from the KNBS website, compare existing PDF files in the vector store with those downloaded and only process new files - appending these to the database and "flushing" the latest data folders ready for a new run. This will need to be done as new PDFs are added to the KNBS website.
+`mode = "UPDATE"` — Scrapes only the latest pages of PDFs, compares them against existing files, and appends only new documents to the vector store. Use this for routine data refreshes when new reports are published.
 
 ## Step 3: Usage
 
 #### Run the sample questions manually (backend)
 
-This assumes the [vector store](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md) has already been created otherwise this will need to be done before.
-Make sure that you're terminal is running from **`statschat-ke`**. Then use the **`cloud_llm.py`**
+This assumes the [vector store](./docs/guides/setup_guide.md) has already been created — see Step 2 if not.
+Make sure your terminal is running from **`statschat-ke`**. Then use the **`cloud_llm.py`**
 (requires configured cloud API credentials) or **`local_llm.py`** script and change the **question** parameter
 with the desired question:
 
@@ -98,8 +91,7 @@ python statschat/generative/local_llm.py
 The answer, context and response will be output in the terminal.
 
 #### Run interactive Statschat API
-This main module statschat can be either called directly or deployed as an API (using fastapi).
-A lightweight flask front end is implemented separately in a subfolder and relies on the API running.
+The `statschat` module can be deployed as a FastAPI backend. `fastapi` and `uvicorn` are included in the dev dependencies (`pip install -e ".[dev]"`). Ensure your terminal is in the **`statschat-ke`** folder, then start the server:
 
 If you want the browser-based demo UI, use:
 
@@ -112,21 +104,6 @@ That guide covers:
 - demo-only behavior such as refusal messaging and answer-card citations
 - the focused tests for the restored frontend
 
-
-In order to run the interactive Statschat API you will need to make sure you have:
-
-**`uvicorn`**: This is a bit of software to locally replicate a server
-
-**`fastapi`**: This is a Python library to generate the API functionality
-
-To get these in your machine simply run:
-
-```
-pip install fastapi uvicorn
-```
-
-Then you will need to make sure your terminal is on the **`statschat-ke`** folder.
-From there, you can generate the synthetic "server" locally from your terminal:
 
 ```shell
 uvicorn fast-api.main_api_local:app --reload
@@ -152,8 +129,7 @@ When `STATSCHAT_API_KEY` is set, `/search` and `/feedback` require either an
 `X-API-Key` header or an `Authorization: Bearer ...` header. `/health` remains
 public and returns non-secret runtime status for monitoring.
 
-The fastapi is set to respond to http requests on a particular port.
-You will see this in your terminal line, something like:
+The API listens on a local port. You will see the address in your terminal:
 
  ```shell
  Uvicorn running on http://127.0.0.1:8000

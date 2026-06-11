@@ -8,7 +8,7 @@ is intended as a starting point for anyone joining or taking over the project, a
 as the reference for decisions about scope, direction, and acceptable quality.
 
 For technical implementation detail, see the [architecture documentation](./architecture/README.md).
-For operational instructions, see the [Operating Manual](./OPERATING_MANUAL.md).
+For operational instructions, see the [Operating Manual](./guides/OPERATING_MANUAL.md).
 
 ---
 
@@ -193,7 +193,7 @@ For a fuller list of candidate improvements by pipeline stage, see
 | Document | Purpose |
 |---|---|
 | [architecture/README.md](./architecture/README.md) | Technical overview of the four pipeline stages and evaluation feedback loop |
-| [OPERATING_MANUAL.md](./OPERATING_MANUAL.md) | Running the data pipeline and API; configuration and troubleshooting |
+| [guides/OPERATING_MANUAL.md](./guides/OPERATING_MANUAL.md) | Running the data pipeline and API; configuration and troubleshooting |
 | [tests/accuracy/README.md](../tests/accuracy/README.md) | Evaluation workflow, benchmark documentation, metric definitions |
-| [config_guide.md](./config_guide.md) | Full `main.toml` configuration reference |
+| [reference/config_guide.md](./reference/config_guide.md) | Full `main.toml` configuration reference |
 | [reports/](./reports/) | Accuracy evaluation reports and accuracy monitoring recommendations |

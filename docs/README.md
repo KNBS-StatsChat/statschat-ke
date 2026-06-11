@@ -11,9 +11,9 @@ Read these in order for a complete onboarding:
 
 1. [SPECIFICATION.md](./SPECIFICATION.md) — what the project is, its guiding principles, current status, known limitations, and recommended next steps
 2. [Root README](../README.md) — architecture diagram and quick-start commands
-3. [setup_guide.md](./setup_guide.md) — Python environment and dependency installation
-4. [environment_setup.md](./environment_setup.md) — `.env` file, API keys, provider configuration
-5. [OPERATING_MANUAL.md](./OPERATING_MANUAL.md) — running the data pipeline and the API
+3. [guides/setup_guide.md](./guides/setup_guide.md) — Python environment and dependency installation
+4. [guides/environment_setup.md](./guides/environment_setup.md) — `.env` file, API keys, provider configuration
+5. [guides/OPERATING_MANUAL.md](./guides/OPERATING_MANUAL.md) — running the data pipeline and the API
 6. [architecture/README.md](./architecture/README.md) — how the pipeline components fit together (technical depth)
 7. [CONTRIBUTING.md](./CONTRIBUTING.md) — branching, PR workflow, code style, pre-commit hooks
 
@@ -31,17 +31,17 @@ Read these in order for a complete onboarding:
 
 | File | Description |
 |---|---|
-| [setup_guide.md](./setup_guide.md) | Installation on Mac and Windows; virtual environment setup |
-| [environment_setup.md](./environment_setup.md) | `.env` configuration; API key setup for OpenRouter, OpenAI, HuggingFace |
+| [guides/setup_guide.md](./guides/setup_guide.md) | Installation on Mac and Windows; virtual environment setup |
+| [guides/environment_setup.md](./guides/environment_setup.md) | `.env` configuration; API key setup for OpenRouter, OpenAI, HuggingFace |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Developer setup, branching strategy, PR workflow, code quality |
 
 ### Operations
 
 | File | Description |
 |---|---|
-| [OPERATING_MANUAL.md](./OPERATING_MANUAL.md) | Configuring and running the ingestion pipeline and API; query examples; troubleshooting |
-| [update_db.md](./update_db.md) | Quick reference for adding new KNBS publications to the vector store |
-| [set_recurring_server_job.md](./set_recurring_server_job.md) | Setting up a scheduled (cron) job for recurring `UPDATE` runs |
+| [guides/OPERATING_MANUAL.md](./guides/OPERATING_MANUAL.md) | Configuring and running the ingestion pipeline and API; query examples; troubleshooting |
+| [guides/update_db.md](./guides/update_db.md) | Quick reference for adding new KNBS publications to the vector store |
+| [guides/set_recurring_server_job.md](./guides/set_recurring_server_job.md) | Setting up a scheduled (cron) job for recurring `UPDATE` runs |
 
 ### Frontends
 
@@ -62,20 +62,20 @@ Read these in order for a complete onboarding:
 | [architecture/pipeline-generation.md](./architecture/pipeline-generation.md) | LLM interaction and response parsing |
 | [architecture/pipeline-input-output.md](./architecture/pipeline-input-output.md) | API request/response contract |
 | [architecture/token-usage-guide.md](./architecture/token-usage-guide.md) | Token calculation and configuration tuning |
-| [repo_structure.md](./repo_structure.md) | Directory layout and data folder structure |
+| [reference/repo_structure.md](./reference/repo_structure.md) | Directory layout and data folder structure |
 
 ### Configuration
 
 | File | Description |
 |---|---|
-| [config_guide.md](./config_guide.md) | All `main.toml` configuration sections, keys, and current parameter values |
+| [reference/config_guide.md](./reference/config_guide.md) | All `main.toml` configuration sections, keys, and current parameter values |
 
 ### Deployment
 
 | File | Description |
 |---|---|
-| [server_deployment.md](./server_deployment.md) | Docker and production API deployment; runtime environment variables |
-| [server_troubleshooting.md](./server_troubleshooting.md) | Common server and deployment issues |
+| [guides/server_deployment.md](./guides/server_deployment.md) | Docker and production API deployment; runtime environment variables |
+| [guides/server_troubleshooting.md](./guides/server_troubleshooting.md) | Common server and deployment issues |
 
 ### Automated Evaluation
 
