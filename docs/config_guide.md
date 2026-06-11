@@ -63,3 +63,30 @@ retrieval behavior and make accuracy results non-comparable.
 - **page_end**: Sets where to stop looking for downloads. Higher the number the older the publications.
 
 Adjust these settings to fit your data and use case. Save your changes and restart the application for them to take effect.
+
+---
+
+## Current Parameter Values (Reference)
+
+The table below shows the current values from `statschat/config/main.toml` and what each parameter does at runtime. These are the settings that produced the April 2026 audited benchmark results.
+
+| Parameter | Current Value | Notes |
+|---|---|---|
+| `faiss_db_root` | `data/db_langchain_rebuild_v1` | FAISS index built in April 2026. See [Index Artifacts](#index-artifacts-and-team-rebuilds) above. |
+| `embedding_model_name` | `sentence-transformers/all-mpnet-base-v2` | Must match the model used to build the index. Do not change without rebuilding. |
+| `mode` | `SETUP` | Set to `UPDATE` for incremental runs. |
+| `split_length` | `1000` | Characters per chunk. |
+| `split_overlap` | `150` | Overlap between adjacent chunks. |
+| `generative_model_name_cloud` | `openai/gpt-5.4-mini` | Cloud API model. |
+| `generative_model_name_local` | `mistralai/Mistral-7B-Instruct-v0.3` | Local API model (loaded via Hugging Face). |
+| `k_docs` | `8` | Documents retrieved from FAISS per query. |
+| `k_contexts` | `5` | Documents passed to the LLM for answer generation. |
+| `similarity_threshold` | `2.0` | L2 distance cap; lower is stricter. |
+| `llm_temperature` | `0.0` | Deterministic generation. |
+| `llm_max_tokens` | `2048` | Fallback output-token cap. |
+| `answer_threshold` | `1.1` | Minimum reranker score to return an answer. Scores below this return an empty answer. |
+| `document_threshold` | `0.9` | Minimum reranker score to include a document in references. |
+| `latest_max` | `2` | Number of publications treated as "latest" for `content_type=latest` queries. |
+| `page_start` / `page_end` | `1` / `5` | KNBS website page range to scrape. |
+
+> **Note on thresholds**: `answer_threshold` and `document_threshold` are applied to the cross-encoder reranker score. These scores are not probabilities; their absolute range depends on the reranker model. See [docs/architecture/threshold-guide.md](./architecture/threshold-guide.md) for detail on how the three-zone response behaviour works.

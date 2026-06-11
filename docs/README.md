@@ -68,10 +68,7 @@ Read these in order for a complete onboarding:
 
 | File | Description |
 |---|---|
-| [config_guide.md](./config_guide.md) | All `main.toml` configuration sections and keys |
-| [search_config_paramaters.md](./search_config_paramaters.md) | Search and response threshold parameters with current values |
-
-> **Note:** These two files are candidates for consolidation into a single configuration reference.
+| [config_guide.md](./config_guide.md) | All `main.toml` configuration sections, keys, and current parameter values |
 
 ### Deployment
 
@@ -151,6 +148,5 @@ are not intended to be kept current, but are preserved for context.
 
 ## Known Issues & Maintenance Notes
 
-- **`search_config_paramaters.md`** has a typo in its filename. It is a candidate for renaming and merging with `config_guide.md`.
-- **`repo_structure.md`** contains stale data directory paths (references `db_langchain` rather than the current `db_langchain_rebuild_v1`). It needs updating.
-- **`LINTING_TODO.md`** and **`LINTING_CHANGELOG.md`** are carried over from the previous team's linting refactor work. They are candidates for archiving once the outstanding items are resolved or formally deferred.
+- **`repo_structure.md`** contains stale data directory paths and a stale code tree. An updated version is planned.
+- **`docs/archive/`** contains `LINTING_TODO.md` and `LINTING_CHANGELOG.md` from the previous team's Dec 2025 linting refactor work. The open items in `LINTING_TODO.md` have not been resolved; they should be triaged before being formally closed or discarded.
