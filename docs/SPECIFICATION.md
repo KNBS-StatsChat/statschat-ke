@@ -167,24 +167,24 @@ retrieval configuration, or the PDF processing pipeline.
 
 ## 7. Future Development Directions
 
-The following are not committed but are the most likely candidates for future
-development work, roughly in priority order:
+Detailed, prioritised recommendations are in [`docs/future-development/`](./future-development/). Start with the [README](./future-development/README.md) for the recommended reading order.
 
-- **Better PDF processing**: improved handling of scanned documents, complex
-  tables, and non-standard layouts. This is the highest-priority improvement
-  because it affects the entire pipeline downstream.
-- **Expanded evaluation data**: more question types, more publication types, and
-  questions drawn from real user sessions.
-- **Improved page-level grounding**: more precise citation to the exact page or
-  table that grounds each answer.
-- **Multi-format ingestion**: extending beyond PDFs to include HTML, Word, Excel,
-  or API-served data sources.
-- **Adaptation to other contexts**: the architecture is not KNBS-specific. The
-  same approach could be applied to other national statistics offices or similar
-  document-heavy institutional settings.
+The immediate first priority is:
 
-For a fuller list of candidate improvements by pipeline stage, see
-[docs/future-development/](./future-development/).
+> **Trial Docling as a structured PDF-to-JSON/Markdown converter on a representative set of KNBS PDFs, compare it against the current parser, and use the result to decide the next ingestion changes.**
+
+This is the highest-leverage improvement because the current retrieval pipeline is already relatively strong. The clearest remaining bottleneck is earlier: if PDF extraction loses table structure, page references, units or reference periods, retrieval cannot reliably recover them. Better structured ingestion should therefore come before major retrieval rewrites.
+
+After the ingestion trial, the recommended priority order is:
+
+1. **Structured PDF ingestion** — move from page-level plain text toward structured evidence objects with table-aware chunks, stable IDs, and preserved metadata (units, reference periods, page numbers, headings).
+2. **Expanded evaluation data** — grow the benchmark with questions drawn from real usage; add ingestion and retrieval diagnostic metrics so failures can be assigned to the right pipeline stage.
+3. **Targeted retrieval improvements** — using the better evidence objects from structured ingestion, test hybrid search, stronger metadata filtering, and table-aware retrieval as measured experiments against the existing baseline.
+4. **Evidence packaging for generation** — pass the LLM compact, citation-ready evidence packs rather than loosely selected page text.
+5. **Multi-format ingestion** — extending beyond PDFs to HTML, Word, Excel, or API-served data sources (longer-term).
+6. **Adaptation to other contexts** — the architecture is not KNBS-specific and could be applied to other national statistics offices.
+
+For detail on each area see [docs/future-development/](./future-development/).
 
 ---
 

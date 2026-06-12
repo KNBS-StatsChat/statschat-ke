@@ -9,7 +9,7 @@
 
 ## What it is
 
-StatsChat-KE is a retrieval-augmented generation (RAG) tool that helps users find answers in [KNBS statistical publications](https://www.knbs.or.ke/all-reports/). Ask a natural-language question; the system retrieves the most relevant pages from the indexed corpus and uses an LLM to produce a grounded answer with source references.
+StatsChat-KE is a retrieval-augmented generation (RAG) tool that helps users find answers in [KNBS statistical publications](https://www.knbs.or.ke/all-reports/). Users ask a natural-language question, then the system retrieves the most relevant pages from the indexed corpus and uses an LLM to produce a grounded answer with source references.
 
 Its primary use case is speeding up the process of searching through PDFs — helping staff locate the right document, page, and extract faster, while they continue to verify the cited source before relying on the answer.
 

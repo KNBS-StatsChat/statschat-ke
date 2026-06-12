@@ -146,9 +146,15 @@ are not intended to be kept current, but are preserved for context.
 
 | File | Description |
 |---|---|
-| [future-development/phase-1-data-preparation.md](./future-development/phase-1-data-preparation.md) | Candidate improvements to the PDF ingestion stage |
-| [future-development/phase-2-retrieval.md](./future-development/phase-2-retrieval.md) | Candidate improvements to retrieval and reranking |
-| [future-development/phase-3-generation-cloud.md](./future-development/phase-3-generation-cloud.md) | Candidate improvements to the cloud generation pipeline |
+| [future-development/README.md](./future-development/README.md) | Navigation hub and recommended reading order for the future development recommendations |
+| [future-development/00-recommendations-overview.md](./future-development/00-recommendations-overview.md) | Short summary of the recommended direction and priority order |
+| [future-development/repo-assessment-against-recommendations.md](./future-development/repo-assessment-against-recommendations.md) | How the recommendations map onto what the current repo already does well |
+| [future-development/01b-docling-trial-for-ingestion.md](./future-development/01b-docling-trial-for-ingestion.md) | **First action file**: practical plan for trialling Docling as a structured PDF converter |
+| [future-development/01-data-preparation-and-pdf-processing.md](./future-development/01-data-preparation-and-pdf-processing.md) | Full data-preparation and structured evidence recommendations |
+| [future-development/01a-pdf-to-json-markdown-tool-options.md](./future-development/01a-pdf-to-json-markdown-tool-options.md) | Supporting background: PDF-to-JSON/Markdown tool comparison |
+| [future-development/02-retrieval-chunking-and-indexing.md](./future-development/02-retrieval-chunking-and-indexing.md) | Retrieval, chunking and indexing improvements (after ingestion trial) |
+| [future-development/03-generation-and-evidence-packaging.md](./future-development/03-generation-and-evidence-packaging.md) | Generation improvements and evidence packaging |
+| [future-development/04-evaluation-and-monitoring.md](./future-development/04-evaluation-and-monitoring.md) | Evaluation framework and monitoring recommendations |
 
 ---
 
