@@ -36,6 +36,8 @@ KNBS should freeze one supported production configuration before any wider rollo
 
 Ad hoc model swaps should not be allowed in production. Provider and model behaviour changes over time, and the May 2026 OpenRouter instability around `mistralai/mistral-small-3.1-24b-instruct` showed that a route which once worked can later become unreliable. If KNBS wants to evaluate a different model, that should happen in staging and be benchmarked before release.
 
+The current `answer_threshold` and `document_threshold` values should also be treated as part of the validated configuration. Although the threshold guide documents that these values are conceptually inverted relative to the original three-zone design, they should not be changed during final handover unless KNBS reruns the audited benchmark. Threshold tuning should be handled later in a separate branch, with full accuracy comparison before adoption.
+
 ## Release Discipline
 
 KNBS should treat changes as release-impacting when they can change answers, retrieval, safety behaviour, or the API contract. This includes changing the cloud model, provider, prompts, retrieval logic, reranking logic, index/corpus, guardrails, or response schema.
