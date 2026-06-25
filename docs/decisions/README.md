@@ -1,6 +1,6 @@
 # Decisions Folder
 
-This folder contains **Architecture Decision Records (ADRs)** - documents that capture important technical decisions made during development.
+This folder contains **Architecture Decision Records (ADRs)** - documents that capture some important technical decisions made during development. A lot of decisions have not been captured here but are explained in other documents e.g. the spec or in the architecture folder.
 
 ## Purpose
 
@@ -24,4 +24,4 @@ Example: `001-pymupdf-migration.md`
 | ADR | Title | Date |
 |-----|-------|------|
 | 001 | [PyMuPDF Migration](./001-pymupdf-migration.md) | 2025-12-02 |
-| 002 | [OpenRouter Default Model Selection (2026-03-11)](./002-2026-03-11-openrouter-default-model-selection.md) | 2026-03-11 |
+| 002 | [OpenRouter Default Model Selection (2026-03-11)](./002-openrouter-default-model-selection.md) | 2026-03-11 |

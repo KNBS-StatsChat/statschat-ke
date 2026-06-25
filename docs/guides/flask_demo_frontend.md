@@ -56,8 +56,8 @@ Before starting the Flask app, make sure:
 
 Environment setup is documented in:
 
-- [`docs/environment_setup.md`](../environment_setup.md)
-- [`docs/setup_guide.md`](../setup_guide.md)
+- [`docs/environment_setup.md`](./environment_setup.md)
+- [`docs/setup_guide.md`](./setup_guide.md)
 
 ## Run The Backend
 

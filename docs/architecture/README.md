@@ -6,11 +6,14 @@ This directory contains detailed documentation on the architecture and data pipe
 
 StatsChat-KE is a Retrieval-Augmented Generation (RAG) application designed to allow users to query official Kenya National Bureau of Statistics (KNBS) reports using natural language.
 
-The system is built on a four-stage pipeline:
+The system is built on four operational pipeline stages, closed by an evaluation
+feedback loop:
+
 1.  **Ingestion**: Scraping and converting PDFs.
 2.  **Embedding**: Indexing content for search.
-3.  **Retrieval**: Finding relevant context locally.
+3.  **Retrieval**: Finding relevant context.
 4.  **Generation**: Synthesizing answers using an LLM.
+5.  **Evaluation**: Measuring answer accuracy against an audited benchmark and feeding results back to inform changes to any of the stages above.
 
 ## Documentation Map
 
@@ -42,6 +45,25 @@ These documents detail the journey of data from the KNBS website to the user's s
 -   **[April 2026 Accuracy-Driven Architecture Changes](2026-04-accuracy-architecture-changes.md)**
     -   *Scope*: Exact retrieval, routing, guardrail, and local/cloud parity changes made during the April 2026 accuracy work, including where they were inserted in code and which benchmark examples they affected.
 
+#### Phase 4: Evaluation (Feedback Loop)
+
+The evaluation system closes the loop. It is not a passive test suite — it is
+the control point that governs whether any change to the pipeline (retrieval
+architecture, model, configuration, corpus) can be accepted.
+
+The evaluator runs a curated benchmark workbook of questions with known correct
+answers against the live API, scores responses, and writes results to a
+cross-run ledger so that accuracy trends are visible over time.
+
+The current audited reference baseline (April 2026, GPT-5.4-mini, 74 questions)
+achieved overall accuracy of `70/74 = 0.946`. Any change to the system should
+be validated against this baseline before deployment.
+
+-   **[tests/accuracy/README.md](../../tests/accuracy/README.md)**
+    -   *Scope*: Full evaluation workflow, script reference, metric definitions, local/cloud parity notes, and benchmark history.
+-   **[docs/reports/2026-06-knbs-maintenance-public-launch-and-accuracy-monitoring.md](../reports/2026-06-knbs-maintenance-public-launch-and-accuracy-monitoring.md)**
+    -   *Scope*: Recommended ongoing accuracy monitoring model for KNBS maintenance.
+
 
 ### 2. Configuration & Operations
 
@@ -70,6 +92,13 @@ These documents detail the journey of data from the KNBS website to the user's s
             | (Generation Pipeline)
             v
 [User] <-> [API] <-> [LLM]
+            |
+            | (Evaluation)
+            v
+   [Benchmark Score / Ledger]
+            |
+            | (Feedback: informs changes to any stage above)
+            +---------------------------------------------->
 ```
 
 ## Directory Structure
