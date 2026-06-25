@@ -120,7 +120,7 @@ benchmark) is the current reference: `70/74 = 0.946` overall accuracy.
 |---|---|
 | [testing/](./testing/) | Test strategy, test data notes, and evaluation methodology |
 | [guides/latest_filtering.md](./guides/latest_filtering.md) | How latest-only filtering works and when to use `content_type=all` |
-| [text_extraction_summary.md](./text_extraction_summary.md) | Summary of PDF text extraction quality across document types |
+| [reference/text_extraction_summary.md](./reference/text_extraction_summary.md) | Summary of PDF text extraction quality across document types |
 
 ### Design Decisions
 

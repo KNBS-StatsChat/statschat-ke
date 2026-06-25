@@ -907,6 +907,6 @@ Notes:
 - Fuzzy hit uses `RapidFuzz partial_ratio` to tolerate OCR drift and minor chunk noise.
 - On the audited KNBS benchmark, this evaluator is best used as a row-level
   diagnostic rather than a headline KPI. See
-  [Evidence Span Evaluator Limitations](/Users/EjlliD/Developer/statschat-ke/docs/investigations/2026-04-09-evidence-span-evaluator-limitations.md).
+  [Evidence Span Evaluator Limitations](../../docs/investigations/2026-04-09-evidence-span-evaluator-limitations.md).
 - This is a secondary diagnostic layer. It does not replace the main deterministic
   benchmark in `evaluate_accuracy.py`.

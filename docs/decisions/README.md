@@ -1,6 +1,6 @@
 # Decisions Folder
 
-This folder contains **Architecture Decision Records (ADRs)** - documents that capture important technical decisions made during development.
+This folder contains **Architecture Decision Records (ADRs)** - documents that capture some important technical decisions made during development. A lot of decisions have not been captured here but are explained in other documents e.g. the spec or in the architecture folder.
 
 ## Purpose
 

@@ -101,7 +101,7 @@ ingestion pipeline. Directory names are configured in `main.toml`.
  ┗ 📂static              ← CSS, JS, and static assets
 ```
 
-See [docs/guides/flask_demo_frontend.md](./guides/flask_demo_frontend.md) for
+See [docs/guides/flask_demo_frontend.md](../guides/flask_demo_frontend.md) for
 instructions on running the demo frontend.
 
 ### Tests: `tests/`
