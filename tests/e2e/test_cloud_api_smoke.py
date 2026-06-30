@@ -14,12 +14,31 @@ import httpx
 import pytest
 
 
+def _resolve_mode_specific_search_config(search_config, mode):
+    resolved = dict(search_config or {})
+    if mode == "cloud":
+        resolved["generative_model_name"] = (
+            resolved.get("generative_model_name_cloud")
+            or resolved.get("generative_model_name")
+            or "stub-cloud-model"
+        )
+    elif mode == "local":
+        resolved["generative_model_name"] = (
+            resolved.get("generative_model_name_local")
+            or resolved.get("generative_model_name")
+            or "stub-local-model"
+        )
+    return resolved
+
+
 def _load_main_api_cloud(monkeypatch):
     repo_root = Path(__file__).resolve().parents[2]
     api_path = repo_root / "fast-api" / "main_api_cloud.py"
 
     module_name = "fast_api_main_api_cloud_e2e"
     sys.modules.pop(module_name, None)
+    had_cloud_llm = "statschat.generative.cloud_llm" in sys.modules
+    previous_cloud_llm = sys.modules.get("statschat.generative.cloud_llm")
 
     class DummyInquirer:
         def __init__(self, **_kwargs):
@@ -53,6 +72,9 @@ def _load_main_api_cloud(monkeypatch):
     cloud_llm_stub = ModuleType("statschat.generative.cloud_llm")
     cloud_llm_stub.Inquirer = DummyInquirer
     cloud_llm_stub.has_temporal_constraint = lambda question: False
+    cloud_llm_stub.resolve_mode_specific_search_config = (
+        _resolve_mode_specific_search_config
+    )
     sys.modules["statschat.generative.cloud_llm"] = cloud_llm_stub
 
     import statschat
@@ -70,7 +92,13 @@ def _load_main_api_cloud(monkeypatch):
     spec = importlib.util.spec_from_file_location(module_name, api_path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if had_cloud_llm:
+            sys.modules["statschat.generative.cloud_llm"] = previous_cloud_llm
+        else:
+            sys.modules.pop("statschat.generative.cloud_llm", None)
     return module
 
 

@@ -13,12 +13,39 @@ import httpx
 import pytest
 
 
+def _resolve_mode_specific_search_config(search_config, mode):
+    resolved = dict(search_config or {})
+    if mode == "cloud":
+        resolved["generative_model_name"] = (
+            resolved.get("generative_model_name_cloud")
+            or resolved.get("generative_model_name")
+            or "stub-cloud-model"
+        )
+    elif mode == "local":
+        resolved["generative_model_name"] = (
+            resolved.get("generative_model_name_local")
+            or resolved.get("generative_model_name")
+            or "stub-local-model"
+        )
+    return resolved
+
+
 def _load_main_api_local():
     repo_root = Path(__file__).resolve().parents[2]
     api_path = repo_root / "fast-api" / "main_api_local.py"
 
     module_name = "fast_api_main_api_local_e2e"
     sys.modules.pop(module_name, None)
+    module_names_to_restore = (
+        "torch",
+        "transformers",
+        "statschat.generative.cloud_llm",
+        "statschat.generative.local_llm",
+    )
+    previous_modules = {
+        name: (name in sys.modules, sys.modules.get(name))
+        for name in module_names_to_restore
+    }
 
     if "torch" not in sys.modules:
         torch_stub = ModuleType("torch")
@@ -42,10 +69,39 @@ def _load_main_api_local():
         transformers_stub.AutoModelForCausalLM = AutoModelForCausalLM
         sys.modules["transformers"] = transformers_stub
 
+    sys.modules.pop("statschat.generative.cloud_llm", None)
+    cloud_llm_stub = ModuleType("statschat.generative.cloud_llm")
+
+    class DummySharedRetrievalInquirer:
+        pass
+
+    cloud_llm_stub.Inquirer = DummySharedRetrievalInquirer
+    cloud_llm_stub.resolve_mode_specific_search_config = (
+        _resolve_mode_specific_search_config
+    )
+    sys.modules["statschat.generative.cloud_llm"] = cloud_llm_stub
+
+    sys.modules.pop("statschat.generative.local_llm", None)
+    local_llm_stub = ModuleType("statschat.generative.local_llm")
+    local_llm_stub.generate_response = lambda *_a, **_k: {}
+    local_llm_stub.format_response = lambda *_a, **_k: {
+        "most_likely_answer": "Answer",
+        "where_context_from": "context",
+        "context_reference": "ref",
+    }
+    sys.modules["statschat.generative.local_llm"] = local_llm_stub
+
     spec = importlib.util.spec_from_file_location(module_name, api_path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        for name, (had_module, previous_module) in previous_modules.items():
+            if had_module:
+                sys.modules[name] = previous_module
+            else:
+                sys.modules.pop(name, None)
     return module
 
 
