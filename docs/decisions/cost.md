@@ -2,7 +2,7 @@
 
 > **Important:** All costs below are **estimates** based on current public pricing (Dec 2025) and an assumed usage of **1,000–10,000 queries per month**, with about **1,000 tokens** (question + answer) per query. Actual costs will vary with real usage and future price changes.
 >
-> For technical details on how token usage is calculated and how to tune it, see [`docs/architecture/token-usage-guide.md`](architecture/token-usage-guide.md).
+> For technical details on how token usage is calculated and how to tune it, see [`docs/architecture/token-usage-guide.md`](../architecture/token-usage-guide.md).
 
 ### 1. Summary at a Glance
 
@@ -10,7 +10,7 @@
 
 - Queries/month: **1,000–10,000** (still being refined).
 
-- Each query uses ~**1,000 tokens** (prompt + answer). See [Token Usage Guide](architecture/token-usage-guide.md) for how this is calculated.
+- Each query uses ~**1,000 tokens** (prompt + answer). See [Token Usage Guide](../architecture/token-usage-guide.md) for how this is calculated.
 
 - Exchange rate: **1 USD ≈ 130 KSh** (2025 average). [Exchange Rates+1](https://www.exchange-rates.org/exchange-rate-history/usd-kes-2025?utm_source=chatgpt.com)
 

@@ -16,7 +16,7 @@ Prefer doc names that match the test module so it’s obvious what they describe
 (Exact mirroring is optional; clarity is the goal.)
 
 ## Current Notes
-- [docs/testing/guides/test_suite_notes/unit/pdf_processing/pdf_to_json_unit_tests.md](docs/testing/guides/test_suite_notes/unit/pdf_processing/pdf_to_json_unit_tests.md)
+- [docs/testing/guides/test_suite_notes/unit/pdf_processing/pdf_to_json_unit_tests.md](unit/pdf_processing/pdf_to_json_unit_tests.md)
 
 ## How To Add a New Note
 For each meaningful test module:
