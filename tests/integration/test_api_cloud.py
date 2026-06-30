@@ -13,12 +13,31 @@ import httpx
 import pytest
 
 
+def _resolve_mode_specific_search_config(search_config, mode):
+    resolved = dict(search_config or {})
+    if mode == "cloud":
+        resolved["generative_model_name"] = (
+            resolved.get("generative_model_name_cloud")
+            or resolved.get("generative_model_name")
+            or "stub-cloud-model"
+        )
+    elif mode == "local":
+        resolved["generative_model_name"] = (
+            resolved.get("generative_model_name_local")
+            or resolved.get("generative_model_name")
+            or "stub-local-model"
+        )
+    return resolved
+
+
 def _load_app_with_dummy_inquirer(make_query_impl, temporal_constraint_impl=None):
     """
     Dynamically load main_api_cloud with a patched cloud_llm.Inquirer that
     uses the provided make_query implementation. Avoids FAISS/LLM downloads.
     """
     dummy_response_ns = types.SimpleNamespace()
+    had_cloud_llm = "statschat.generative.cloud_llm" in sys.modules
+    previous_cloud_llm = sys.modules.get("statschat.generative.cloud_llm")
 
     class DummyInquirer:
         def __init__(self, *args, **kwargs):
@@ -35,6 +54,7 @@ def _load_app_with_dummy_inquirer(make_query_impl, temporal_constraint_impl=None
         # historical queries; tests can override the stub via the
         # temporal_constraint_impl argument.
         has_temporal_constraint=temporal_constraint_impl or (lambda question: False),
+        resolve_mode_specific_search_config=_resolve_mode_specific_search_config,
     )
     sys.modules["statschat.generative.cloud_llm"] = fake_cloud_llm
 
@@ -44,7 +64,13 @@ def _load_app_with_dummy_inquirer(make_query_impl, temporal_constraint_impl=None
         "main_api_cloud", os.path.join(project_root, "fast-api", "main_api_cloud.py")
     )
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if had_cloud_llm:
+            sys.modules["statschat.generative.cloud_llm"] = previous_cloud_llm
+        else:
+            sys.modules.pop("statschat.generative.cloud_llm", None)
     return module.app, dummy_response_ns
 
 
