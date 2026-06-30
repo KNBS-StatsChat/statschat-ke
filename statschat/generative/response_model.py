@@ -8,26 +8,31 @@ class LlmResponse(BaseModel):
         the question, False otherwise."""
     )
     most_likely_answer: Optional[str] = Field(
+        default=None,
         description="""Answer to the question, quoting or only minimally rephrasing
-        the provided text. Empty if answer_provided=False."""
+        the provided text. Empty if answer_provided=False.""",
     )
     highlighting1: List[str] = Field(
+        default=[],
         description="""List of short exact subphrases from the first context document,
         that are most relevant to the question and should therefore be highlighted
-        within the context."""
+        within the context.""",
     )
     highlighting2: List[str] = Field(
+        default=[],
         description="""List of short exact subphrases from the second context document,
         that are most relevant to the question and should therefore be highlighted
-        within the context."""
+        within the context.""",
     )
     highlighting3: List[str] = Field(
+        default=[],
         description="""List of short exact subphrases from the third and any further
         context document, that are most relevant to the question and should therefore
         be highlighted within the context.
-        Empty of the number of context documents is smaller."""
+        Empty of the number of context documents is smaller.""",
     )
     reasoning: Optional[str] = Field(
+        default=None,
         description="""Step by step reasoning why an answer has been selected or could
-        not be provided. Reasoning how highlighted keywords relate to the question."""
+        not be provided. Reasoning how highlighted keywords relate to the question.""",
     )

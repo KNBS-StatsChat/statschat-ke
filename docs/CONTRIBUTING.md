@@ -15,7 +15,7 @@ Thank you for your interest in contributing to KNBS StatsChat! This document pro
 - **Python 3.11** (recommended) or Python 3.10+
 - **pip 25.2** or later
 - **Git**
-- **pyenv** (recommended for Mac users) - see [pyenv Installation Guide](./docs/pyenv_python_installation_guide.md)
+- **pyenv** (recommended for Mac users) - see [pyenv Installation Guide](./guides/setup_guide.md)
 
 ## Development Setup
 
@@ -60,7 +60,7 @@ This installs:
 
 Before running the application, you must set up your API credentials:
 
-**See the [Environment Setup Guide](./environment_setup.md) for detailed instructions** on:
+**See the [Environment Setup Guide](./guides/environment_setup.md) for detailed instructions** on:
 - Creating the `.env` file
 - Getting API keys (OpenRouter, OpenAI, or HuggingFace)
 - Configuring your chosen LLM provider
@@ -94,7 +94,6 @@ trusted-host = pypi.org
 EOF
 ```
 
-For more details, see [SSL Fix Report](./docs/ssl_fix_report.md).
 
 ### setuptools Build Errors
 
@@ -108,16 +107,15 @@ This issue is already fixed in `pyproject.toml`, but you may need to manually in
 
 ### Python Version Management
 
-For Mac users using pyenv, see the comprehensive [pyenv Installation Guide](./docs/pyenv_python_installation_guide.md) which covers:
+For Mac users using pyenv, see the [Setup Guide](./guides/setup_guide.md) which covers:
 - Installing Python with proper SSL support
 - Switching between Python versions
 - Virtual environment management
 
 ### Additional Resources
 
-- [Setup Guide](./setup_guide.md) - Detailed installation for Mac and Windows
-- [Environment Setup Guide](./environment_setup.md) - Configure API credentials and `.env` file
-- [SSL Fix Report](./ssl_fix_report.md) - Complete SSL troubleshooting documentation
+- [Setup Guide](./guides/setup_guide.md) - Detailed installation for Mac and Windows
+- [Environment Setup Guide](./guides/environment_setup.md) - Configure API credentials and `.env` file
 
 ## Running the Application
 
@@ -126,7 +124,7 @@ For Mac users using pyenv, see the comprehensive [pyenv Installation Guide](./do
 Before running the application, ensure you have:
 - Created and activated your virtual environment
 - Installed all dependencies
-- **[Set up your `.env` file with API credentials](./environment_setup.md)**
+- **[Set up your `.env` file with API credentials](./guides/environment_setup.md)**
 
 Then create the vector store:
 
@@ -134,7 +132,7 @@ Then create the vector store:
 python statschat/pdf_runner.py
 ```
 
-Make sure `PDF_FILES_MODE` in `statschat/config/main.toml` is set to `"SETUP"` for initial setup.
+Make sure `mode` in `statschat/config/main.toml` (under `[preprocess]`) is set to `"SETUP"` for initial setup.
 
 ### 2. Run Tests
 
@@ -145,8 +143,8 @@ pytest
 # Run specific test file
 pytest tests/test_filename.py
 
-# Run with coverage
-pytest --cov=statschat
+# Run with verbose output
+pytest -v
 ```
 
 ### 3. Run the Backend API
@@ -161,10 +159,7 @@ The API will be available at `http://127.0.0.1:8000`.
 ### 4. Run Sample Questions
 
 ```bash
-# Using local LLM
-python statschat/generative/local_llm.py
-
-# Using cloud LLM (requires HuggingFace API token)
+# Using cloud LLM (uses the provider/model configured in main.toml)
 python statschat/generative/cloud_llm.py
 ```
 
@@ -172,10 +167,12 @@ python statschat/generative/cloud_llm.py
 
 ### Pre-commit Hooks
 
-Pre-commit hooks automatically run before each commit:
-- Security checks (detect passwords, API keys)
-- File size checks
-- YAML/JSON validation
+Pre-commit hooks run automatically before each commit and enforce:
+- **Security**: detect passwords, API keys, and secrets
+- **File hygiene**: file size limits, trailing whitespace, end-of-file newlines
+- **Python formatting**: `isort` (import ordering), `black` (code style)
+- **Python linting**: `flake8`
+- **Notebook outputs**: `nbstripout` strips cell outputs before committing
 
 ```bash
 # Run manually on all files
@@ -191,66 +188,71 @@ pre-commit run --all-files
 
 ## Making Changes
 
-### 1. Create a Feature Branch
+### Branch Naming
 
 ```bash
-git checkout -b feature/your-feature-name
-# OR
-git checkout -b fix/bug-description
+git checkout -b feature/your-feature-name   # new functionality
+git checkout -b fix/bug-description         # bug fixes
+git checkout -b docs/what-you-are-updating  # documentation only
 ```
 
-### 2. Make Your Changes
+### Commit Messages
 
-- Write clear, concise commit messages
-- Keep commits focused on a single change
-- Add tests for new features
-- Update documentation as needed
+Use a short prefix that describes the type of change:
 
-### 3. Test Your Changes
-
-```bash
-# Run tests
-pytest
-
-# Run pre-commit checks
-pre-commit run --all-files
-
-# Test the application manually
-python statschat/generative/local_llm.py
+```
+feat: add reranker model configuration option
+fix: handle missing url_dict.json gracefully in UPDATE mode
+docs: update OPERATING_MANUAL with API startup instructions
+test: add unit tests for query_policy guardrail
+refactor: extract PDF download retry logic into helper
 ```
 
-### 4. Push and Create a Pull Request
+### Definition of Done
 
-```bash
-git push origin feature/your-feature-name
-```
+Before opening a PR, confirm:
 
-Then create a Pull Request on GitHub.
+- [ ] `pre-commit run --all-files` passes with no failures
+- [ ] `pytest` passes (relevant tests for the change)
+- [ ] If changing retrieval, model config, or the FAISS index: run the accuracy evaluator and compare against the baseline — see [tests/accuracy/README.md](../tests/accuracy/README.md)
+- [ ] Documentation updated if behaviour has changed
+- [ ] No secrets, credentials, or large data files committed
+
+### Pull Request Process
+
+1. Push your branch and open a PR against `main` (or the relevant feature branch)
+2. Describe *what* the change does and *why* — link any related issue
+3. If accuracy metrics are affected, include before/after benchmark numbers
+4. A reviewer should approve before merging; the author should not self-merge
+5. Squash or rebase to keep history clean — avoid merge commits within a feature branch
 
 ## Project Structure
 
+See [docs/reference/repo_structure.md](./reference/repo_structure.md) for a full annotated directory tree.
+
 ```
 statschat-ke/
-├── statschat/              # Main package
-│   ├── config/            # Configuration files (TOML)
-│   ├── embedding/         # Document embedding and preprocessing
-│   ├── generative/        # LLM integration (local and cloud)
-│   ├── model_evaluation/  # Model evaluation tools
-│   └── pdf_processing/    # PDF scraping and processing
-├── fast-api/              # FastAPI backend
-├── docs/                  # Documentation
-├── data/                  # Data storage (gitignored)
-│   ├── pdf_downloads/    # Downloaded PDF files
-│   └── db_langchain/     # Vector store databases
-├── tests/                 # Test files
-└── pyproject.toml        # Project dependencies and configuration
+├── statschat/          # Core Python package
+│   ├── config/         # main.toml and configuration helpers
+│   ├── embedding/      # FAISS index building and latest-flag helpers
+│   ├── generative/     # Cloud and local LLM integration, prompts, guardrails
+│   ├── model_evaluation/  # Answer scoring helpers
+│   └── pdf_processing/ # PDF scraping, conversion, auditing
+├── fast-api/           # FastAPI backend entrypoints (cloud and local)
+├── flask-app/          # Lightweight browser demo frontend
+├── docs/               # Documentation
+├── tests/              # Unit, integration, e2e, and accuracy tests
+├── data/               # Local build artifacts — not in git
+│   ├── pdf_downloads/       # Downloaded PDFs and url_dict.json
+│   └── db_langchain_rebuild_v1/  # FAISS vector index (April 2026 rebuild)
+└── pyproject.toml      # Package metadata and dependencies
 ```
 
 ## Getting Help
 
-- **Documentation:** Check the [docs/](./docs/) folder
+- **Documentation:** Check the [docs/README.md](./README.md) for a full index
 - **Issues:** Search or create [GitHub Issues](https://github.com/KNBS-StatsChat/statschat-ke/issues)
-- **Setup Problems:** See [Setup Guide](./docs/setup_guide.md)
+- **Setup Problems:** See [Setup Guide](./guides/setup_guide.md)
 
 ## License
 

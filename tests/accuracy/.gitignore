@@ -1,0 +1,15 @@
+__pycache__/
+.DS_Store
+StatsChat_QA_Auto*.xlsx
+StatsChat_QA_Set_*.xlsx
+StatsChat_QA_Set_*.csv
+StatsChat_QA_Codex.csv
+StatsChat_QA_With_Answers.xlsx
+*_With_Answers.xlsx
+accuracy_results.csv
+accuracy_results_*.csv
+qa_data_issues.csv
+qa_data_issues_*.csv
+statschat_qa_verified_audit_tmp.csv
+verified_examples_doc_alignment_report.csv
+runs/
