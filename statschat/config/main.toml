@@ -1,5 +1,5 @@
 [db]
-faiss_db_root = "data/db_langchain" # only effects cloud_llm.py previously "db_langchain"
+faiss_db_root = "data/db_langchain_rebuild_v1"
 embedding_model_name = "sentence-transformers/all-mpnet-base-v2" #all-mpnet-base-v2" #all-MiniLM-L6-v2" #"sentence-transformers/all-mpnet-base-v2"  # "textembedding-gecko@001" "sentence-transformers/paraphrase-MiniLM-L3-v2"
 
 [preprocess]
@@ -7,21 +7,28 @@ mode = "SETUP" # "SETUP" or "UPDATE"
 data_dir = "data/"
 download_dir = "pdf_downloads"
 directory = "json_conversions"
-split_directory = "json_split"
-split_length = 2000
-split_overlap = 200
+split_directory = "json_split_rebuild_v1"
+split_length = 1000
+split_overlap = 150
 latest_only = false
 
 [search]
-generative_model_name = "mistralai/Mistral-7B-Instruct-v0.3"  # "text-unicorn" "text-bison@001" "google/flan-t5-large" "lmsys/fastchat-t5-3b-v1.0" "google/flan-t5-large" "google/flan-ul2"
-k_docs = 2
+generative_model_name = "mistralai/Mistral-7B-Instruct-v0.3"  # Legacy fallback if mode-specific keys are absent.
+generative_model_name_local = "mistralai/Mistral-7B-Instruct-v0.3"
+generative_model_name_cloud = "openai/gpt-5.4-mini"
+# Note: mistral-small-3.1-24b-instruct is broken on OpenRouter as of May 2026
+# (returns finish_reason=None after 9 tokens regardless of max_tokens).
+# Use mistral-small-24b-instruct-2501 as substitute:
+# generative_model_name_cloud = "mistralai/mistral-small-24b-instruct-2501"
+k_docs = 8
 k_contexts = 5
 similarity_threshold = 2.0     # Threshold score below which a document is returned in a search
 llm_temperature = 0.0
-llm_max_tokens = 1024
-answer_threshold = 0.5 # Threshold score below which a answer is returned in a search
+llm_max_tokens = 2048
+answer_threshold = 1.1
 document_threshold = 0.9 # Threshold score below which a document is returned in a search
 provider = "openrouter"  # or "openai", "huggingface_inference"
+reranker_model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # cross-encoder reranker for local LLM path
 
 [app]
 latest_max = 2    # Takes value int >= 0, commonly 0, 1 or 2

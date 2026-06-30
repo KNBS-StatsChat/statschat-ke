@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html xml:lang="en" lang="en"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<title> Search - StatsChat-KE </title>
+<meta name="description" content="">
+<meta charset="utf-8">
+<meta content="width=device-width,initial-scale=1.0,user-scalable=1" name="viewport">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#58595B">
+<meta name="apple-mobile-web-app-status-bar-style" content="#58595B">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='ons_files/main.css') }}">
+<link rel="shortcut icon" href="{{ url_for('static', filename='ons_files/favicon.ico') }}">
+
+</head>
+
+<body>
+<header>
+<div class="ons-container">
+<div class="ons-phase-banner">
+<div class="ons-grid ons-grid__col ">
+<span class="default-line-height ons-u-fs-s ">
+    <strong class="ons-phase-banner__badge">EXPERIMENTAL</strong>
+    This is a restored semantic search interface for StatsChat-KE.
+</span>
+</div>
+</div>
+</div>
+<div id="pagePath" class="hide">/search?latest_filter={{latest_filter}}?q=</div>
+<div class="wrapper">
+<div class="header col-wrap">
+<div class="col col--lg-one-third col--md-one-third">
+<a id="logo-link" href="/">
+<div style="padding-top: 12px; color: #003c57;">
+<div style="font-size: 14px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">StatsChat-KE</div>
+<div style="font-size: 28px; font-weight: 700; line-height: 1.1;">KNBS Semantic Search</div>
+</div>
+</a>
+</div>
+<div class="secondary-nav col col--lg-two-thirds col--md-two-thirds print--hide">
+
+<a class="secondary-nav__list  secondary-nav__link "
+href="https://github.com/KNBS-StatsChat/statschat-ke">
+            About this project</a>
+            </div>
+            <div class="secondary-nav col col--lg-two-thirds col--md-two-thirds print--hide">
+      <a class="secondary-nav__list  secondary-nav__link  "
+      href="https://www.knbs.or.ke/">About KNBS</a>
+
+</div>
+</div>
+</div>
+<form action="/search">
+    <div class="search print--hide" id="searchBar">
+        <div class="wrapper" role="search">
+        <div class="col-wrap search__form" >
+        <label class="search__label col col--md-23 col--lg-24" for="nav-search">Ask us a question:
+
+        </label>
+        <input type="search" autocomplete="off" class="search__input col col--md-21 col--lg-300" id="nav-search" name="q" value="{{ question }}">
+        <input type="hidden" name="latest_filter" value={{latest_filter}}>
+        <button type="submit" class="search__button col--md-3 col--lg-3" id="nav-search-submit">
+        <span class="visuallyhidden">Search</span>
+        <span class="icon icon-search--light">
+        <svg class="ons-svg-icon ons-svg-icon--m" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" fill="currentColor">
+        <path d="M11.86 10.23 8.62 6.99a4.63 4.63 0 1 0-6.34 1.64 4.55 4.55 0 0 0 2.36.64 4.65 4.65 0 0 0 2.33-.65l3.24 3.23a.46.46 0 0
+            0 .65 0l1-1a.48.48 0 0 0 0-.62Zm-5-3.32a3.28 3.28 0 0 1-2.31.93 3.22 3.22 0 1 1 2.35-.93Z"></path>
+        </svg>
+        </span>
+        </button>
+        </div>
+        </div>
+    </div>
+    </form>
+    <div class="primary-nav print--hide">
+        <nav aria-label="Site navigation">
+        <script src="https://code.jquery.com/jquery-3.6.0.js" integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk=" crossorigin="anonymous"></script>
+        <ul class="wrapper  primary-nav__list" id="nav-primary" aria-expanded="true">
+        {% if latest_filter == "on" %}
+        <li class="primary-nav__item  js-nav  old-ie--display-block primary-nav__item--active" aria-expanded="true">
+            <a class="primary-nav__link"  id = "link-one">Latest Bulletins</a>
+        </li>
+        <li class="primary-nav__item  js-nav  old-ie--display-block">
+            <a class="primary-nav__link" href="/search?q={{question}}&latest_filter=off"  id = "link-two">All publications</a>
+        </li>
+        {% else %}
+        <li class="primary-nav__item  js-nav  old-ie--display-block" aria-expanded="true">
+            <a class="primary-nav__link" href="/search?q={{question}}&latest_filter=on"  id = "link-one">Latest Bulletins</a>
+        </li>
+        <li class="primary-nav__item  js-nav  old-ie--display-block primary-nav__item--active">
+            <a class="primary-nav__link"  id = "link-two">All publications</a>
+        </li>
+        {% endif %}
+        <li class="primary-nav__item  js-nav  old-ie--display-block">
+            <a class="primary-nav__link"></a>
+        </li>
+        </ul>
+        </nav>
+    </div>
+
+    </header>
+
+
+
+<main id="main" role="main" tabindex="-1">
+<div class="ons-container search__container">
+<div class="ons-grid">
+<div class="ons-grid__col ons-col-12@m">
+<section role="contentinfo" aria-label="Search results">
+<div class="search__results">
+<div id="results">
+
+{% block results %} {% endblock %}
+
+</div>
+</div>
+
+</section>
+</div>
+</div>
+</div>
+</main>
+<footer class="print--hide padding-top--13">
+<section>
+<div class="footer">
+<div class="wrapper">
+<div class="footer-license">
+<p class="footer-license__text margin-left-sm--0">
+Experimental restored interface for StatsChat-KE. Answers are grounded in KNBS publications surfaced by the configured StatsChat backend.
+</p>
+</div>
+</div>
+</div>
+</section>
+</footer>
+
+</div>
+
+</body></html>

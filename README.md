@@ -1,141 +1,47 @@
-# `KNBS StatsChat`
+# KNBS StatsChat
 
 [![Stability](https://img.shields.io/badge/stability-experimental-orange.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#experimental)
 [![Shared under the MIT License](https://img.shields.io/badge/license-MIT-green)](https://github.com/datasciencecampus/Statschat/blob/main/LICENSE)
 [![Mac-OS compatible](https://shields.io/badge/MacOS--9cf?logo=Apple&style=social)]()
 
-## Code state
-
 > [!WARNING]
-> Please be aware that for development purposes, these experiments use
-> experimental Large Language Models (LLM's) not intended for production. They
-> can present inaccurate information, hallucinated statements and offensive
-> text by random chance or through malevolent prompts.
+> StatsChat-KE is under active development and not yet in production. It uses Large Language Models (LLMs) which can produce inaccurate, incomplete, or hallucinated answers. All responses should be verified against the cited source documents before being relied upon. The system depends on external LLM APIs which may change or become unavailable.
 
-- **Under development** / **Experimental**
-- **Tested on macOS only**
-- **Peer-reviewed**
-- **Depends on external API's**
+## What it is
 
-## Introduction
+StatsChat-KE is a retrieval-augmented generation (RAG) tool that helps users find answers in [KNBS statistical publications](https://www.knbs.or.ke/all-reports/). Users ask a natural-language question, then the system retrieves the most relevant pages from the indexed corpus and uses an LLM to produce a grounded answer with source references.
 
-This is an experimental application for semantic search of KNBS [statistical publications](https://www.knbs.or.ke/all-reports/).
-It uses LangChain to implement a fairly simple Retriaval Augmented Generation (RAG) using embedding search
-and QA information retrieval process.
+Its primary use case is speeding up the process of searching through PDFs — helping staff locate the right document, page, and extract faster, while they continue to verify the cited source before relying on the answer.
 
-Upon receiving a query, documents are returned as search results
-using embedding similarity to score relevance.
-Next, the relevant text is passed to a Large Language Model (LLM),
-which is prompted to write an answer to the original question, if it can,
-using only the information contained within the documents.
+<img width="1661" height="580" alt="System architecture overview" src="https://github.com/user-attachments/assets/34eb5fbd-0965-48f8-acd3-bcc7ee945de2" />
 
-For this prototype, relevant web pages with PDF's are scraped and the data stored in `data/pdf_downloads`,
-the docstore / embedding store that is created is likewise and stored in `data/db_langchain` after SETUP and then
-also in `data/db_langchain_latest` after UPDATE. The LLM is either run locally with `local_llm.py` or an 
-API with `main_api_local.py` (both backend).
+## Quick start
 
-## Overview
-<img width="1661" height="580" alt="image" src="https://github.com/user-attachments/assets/34eb5fbd-0965-48f8-acd3-bcc7ee945de2" />
+1. **Set up your environment** — install dependencies and configure API credentials: [docs/guides/setup_guide.md](docs/guides/setup_guide.md) · [docs/guides/environment_setup.md](docs/guides/environment_setup.md)
+2. **Build the vector store** — run `python statschat/pdf_runner.py` with `mode = "SETUP"` in `statschat/config/main.toml`: [docs/guides/OPERATING_MANUAL.md](docs/guides/OPERATING_MANUAL.md)
+3. **Start the API** — `uvicorn fast-api.main_api_cloud:app --reload` then open `http://127.0.0.1:8000/docs`
+4. **Ask a question** — `http://127.0.0.1:8000/search?q=what+was+inflation+in+december+2023`
 
-
-## Step 1: Environment Configuration
-> [!IMPORTANT]
-> **Before running the application, you must:**
-> 1. **[Create a virtual or conda environment](./docs/setup_guide.md)**
-> 2. **[Set up your `.env` file with API credentials](./docs/environment_setup.md)**
-
-## Step 2: Vector store
-> [!NOTE]
-> **Ensure the environment has been configured before setting up or updating the vector store.**
-
-Before running `pdf_runner.py` in an integrated development environment (IDE) ensure that the PDF_FILES_MODE (in `main.toml`) 
-is set to the desired option. It can also be run in the command line as below.
-
-    ```shell
-    python3 statschat/pdf_runner.py
-    ```
+> [!TIP]
+> To use a different model locally without changing the shared config, set `STATSCHAT_GENERATIVE_MODEL` in your `.env` file (e.g. `STATSCHAT_GENERATIVE_MODEL=mistralai/mistral-nemo`). Remove it to revert to the repo default.
 
 > [!NOTE]
-> If the above doesn't work then use `python statschat/pdf_runner.py`
+> Running the local LLM (`main_api_local.py` or `local_llm.py`) requires ~16 GB RAM and 3–5 minutes per query. The cloud API is faster and recommended for most use.
 
-This script will webscrape PDF documents from the KNBS website, convert them to JSON files and either append or replace the vector store - based on the `PDF_FILES_MODE` parameter.
+## Documentation
 
-`PDF_FILES_MODE = "SETUP"` -> Will scrape all pdf files from the KNBS website and reset the vector store, creating a new one from the PDF documents that are scraped and processed into JSON files. This will only need to be done `once` as afterwards it will just need updating. 
+| Document | Description |
+|---|---|
+| [docs/SPECIFICATION.md](docs/SPECIFICATION.md) | What the project is, its current status, known limitations, and recommended next steps |
+| [docs/guides/setup_guide.md](docs/guides/setup_guide.md) | Environment and dependency installation |
+| [docs/guides/environment_setup.md](docs/guides/environment_setup.md) | API keys and `.env` configuration |
+| [docs/guides/OPERATING_MANUAL.md](docs/guides/OPERATING_MANUAL.md) | Running the data pipeline and API; troubleshooting |
+| [docs/reference/api-reference.md](docs/reference/api-reference.md) | HTTP endpoint reference (`/health`, `/search`, `/feedback`) |
+| [docs/reference/config_guide.md](docs/reference/config_guide.md) | All `main.toml` configuration options and current values |
+| [docs/architecture/README.md](docs/architecture/README.md) | Technical pipeline architecture |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Branching, PR workflow, and code quality standards |
+| [docs/README.md](docs/README.md) | Full documentation index |
 
-`PDF_FILES_MODE = "UPDATE"` -> Will only scrape the latest 5 pages of PDF files from the KNBS website, compare existing PDF files in the vector store with those downloaded and only process new files - appending these to the database and "flushing" the latest data folders ready for a new run. This will need to be done as new PDFs are added to the KNBS website.
+## License
 
-## Step 3: Usage
-
-#### Run the sample questions manually (backend)
-
-This assumes the [vector store](https://github.com/KNBS-StatsChat/statschat-ke/blob/readme_docs_update/docs/api/setup_guide.md) has already been created otherwise this will need to be done before.
-Make sure that you're terminal is running from **`statschat-ke`**. Then use the **`cloud_llm.py`** 
-(requires huggingface api token) or **`local_llm.py`** script and change the **question** parameter 
-with the desired question:
-
-![image](https://github.com/user-attachments/assets/36ec03e4-2d6a-4814-9220-8cc478196e52)
-
-The answer, context and response will be output in the terminal.
-
-#### Run interactive Statschat API
-This main module statschat can be either called directly or deployed as an API (using fastapi).
-A lightweight flask front end is implemented separately in a subfolder and relies on the API running.
-
-
-In order to run the interactive Statschat API you will need to make sure you have:
-
-**`uvicorn`**: This is a bit of software to locally replicate a server
-
-**`fastapi`**: This is a Python library to generate the API functionality
-
-To get these in your machine simply run: 
-
-```
-pip install fastapi uvicorn
-```
-
-Then you will need to make sure your terminal is on the **`statschat-ke`** folder.
-From there, you can generate the synthetic "server" locally from your terminal:
-
-```shell
-uvicorn fast-api.main_api_local:app --reload
-```
-
-or
-
-```shell
-uvicorn fast-api.main_api_cloud:app --reload
-```
-
-The fastapi is set to respond to http requests on a particular port.
-You will see this in your terminal line, something like:
-
- ```shell
- Uvicorn running on http://127.0.0.1:8000
- ```
-
-> [!NOTE]
-> **Your port might be slightly different to 127.0.0.1:8000**
-
-After a few seconds you should be able to go to your browser and ask questions.
-On the search bar type something like:
-
-```
-http://127.0.0.1:8000/search?q=what+was+inflation+in+december+2023
-```
-
-This should produce a response text that is displayed on your browser.
-
-The generic formula to ask a question is:
-
-```
-<API_URL>/search?q=<your_question>
-```
-
-# License
-
-<!-- Unless stated otherwise, the codebase is released under [the MIT Licence][mit]. -->
-
-The code, unless otherwise stated, is released under [the MIT License][mit].
-
-[mit]: LICENSE
+The code, unless otherwise stated, is released under the [MIT License](LICENSE).

@@ -1,12 +1,11 @@
 # %%
 # import modules
 import os
-import PyPDF2
 import json
 import re
 from pathlib import Path
 import numpy as np
-from typing import List
+from typing import Callable, List
 from tqdm import tqdm
 from bs4 import BeautifulSoup
 from urllib.request import Request, urlopen
@@ -21,6 +20,14 @@ DATA_DIR = Path.cwd().joinpath("data/pdf_downloads")
 LATEST_DATA_DIR = Path.cwd().joinpath("data/latest_pdf_downloads")
 JSON_DIR = Path.cwd().joinpath("data/json_conversions")
 LATEST_JSON_DIR = Path.cwd().joinpath("data/latest_json_conversions")
+
+PDFPLUMBER_PREFERRED_FILENAME_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bkenya housing survey\b", re.IGNORECASE),
+    re.compile(
+        r"\bkenya demographic and health survey kdhs 2022 summary report\b",
+        re.IGNORECASE,
+    ),
+)
 
 
 def load_config(config_path: Path) -> dict:
@@ -79,18 +86,21 @@ def generate_latest_dir(original_dir: Path) -> Path:
 
 
 def get_name_and_meta(pdf_file_path):
-    """Extracts file name and metadata from PDF
+    """Extracts file name and metadata from PDF using PyMuPDF
 
     Args:
         file_path (path): file path for PDF file
 
     Returns:
         file_name: file for PDF file
-        pdf_metadata: metadata for PDF (dates etc)
+        pdf_metadata: metadata dictionary for PDF (dates etc)
     """
+    import fitz  # PyMuPDF
+
     file_name = pdf_file_path.name
-    pdf_metadata = PyPDF2.PdfReader(pdf_file_path)
-    pdf_metadata = pdf_metadata.metadata
+    doc = fitz.open(pdf_file_path)
+    pdf_metadata = doc.metadata
+    doc.close()
 
     return (file_name, pdf_metadata)
 
@@ -128,7 +138,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
     date from metadata, or the current system date as a final fallback.
 
     Args:
-        metadata: PDF metadata dictionary from PyPDF2.PdfReader (can be None).
+        metadata: PDF metadata dictionary from PyMuPDF (can be None).
         filename (str): The filename from which to extract a year if needed.
         counter (int): A running count of files that lack reliable date information.
 
@@ -140,7 +150,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
     pdf_creation_date = None  # Initialize variable to store the extracted date.
 
     def preprocess_date(date_str: str) -> str:
-        """Extracts only the YYYYMMDD portion from a PyPDF2 date string."""
+        """Extracts only the YYYYMMDD portion from a PDF date string (handles both pypdf and PyMuPDF formats)."""
         if date_str and date_str.startswith("D:"):
             date_str = date_str[2:10]  # Extract only YYYYMMDD
         return (
@@ -149,7 +159,8 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
 
     # Ensure metadata is not None before accessing it
     if metadata:
-        raw_date = metadata.get("/CreationDate") if isinstance(metadata, dict) else None
+        # PyMuPDF uses 'creationDate' (camelCase, no slash)
+        raw_date = metadata.get("creationDate") or metadata.get("/CreationDate")
         cleaned_date = preprocess_date(str(raw_date)) if raw_date else None
 
         if cleaned_date:
@@ -169,7 +180,7 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
 
     # Assign the current system date if no valid date is found.
     if not pdf_creation_date:
-        pdf_creation_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        pdf_creation_date = datetime.now().strftime("%Y-%m-%d")
         counter += (
             1  # Increment counter since the system date is being used as a fallback.
         )
@@ -181,11 +192,11 @@ def extract_pdf_creation_date(metadata, filename: str, counter: int) -> tuple[st
 def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
     """
     Extracts the modification date from PDF metadata if available. If the modification
-    date is more than 10 years earlier than the creation date, defaults to the creation
+    date is more than 5 years earlier than the creation date, defaults to the creation
     date.
 
     Args:
-        metadata: PDF metadata object from PyPDF2.PdfReader.
+        metadata: PDF metadata dictionary from PyMuPDF.
         pdf_creation_date (str): The creation date to use as a fallback if
         modification date is missing or invalid.
 
@@ -199,21 +210,88 @@ def extract_pdf_modification_date(metadata, pdf_creation_date: str) -> str:
         '2019-04-24'  # Fallback to creation date
     """
     try:
-        # Extract modification date from metadata
-        pdf_modification_date = str(metadata.modification_date)[:10]
+        # Extract modification date from metadata - PyMuPDF uses 'modDate' key
+        raw_mod_date = metadata.get("modDate") or metadata.get("/ModDate")
 
-        # Parse the dates into datetime objects
-        creation_date_obj = datetime.strptime(pdf_creation_date, "%Y-%m-%d")
-        modification_date_obj = datetime.strptime(pdf_modification_date, "%Y-%m-%d")
+        if raw_mod_date:
+            # Parse the PDF date format (D:YYYYMMDDHHmmSS...)
+            if raw_mod_date.startswith("D:"):
+                date_str = raw_mod_date[2:10]  # Extract YYYYMMDD
+                if len(date_str) == 8 and date_str.isdigit():
+                    pdf_modification_date = (
+                        f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                    )
+                else:
+                    return pdf_creation_date
+            else:
+                return pdf_creation_date
 
-        # Check if the modification date is >5 years earlier than the creation date
-        if (modification_date_obj - creation_date_obj).days > 1825:  # ~5 years in days
-            return pdf_creation_date  # Default to creation date
+            # Parse the dates into datetime objects
+            creation_date_obj = datetime.strptime(pdf_creation_date, "%Y-%m-%d")
+            modification_date_obj = datetime.strptime(pdf_modification_date, "%Y-%m-%d")
 
-        return pdf_modification_date
-    except (AttributeError, ValueError):
+            # Check if the modification date is >5 years earlier than the creation date
+            # (some PDFs have incorrect ModDate values far in the past).
+            if (creation_date_obj - modification_date_obj).days > 1825:  # ~5 years
+                return pdf_creation_date
+
+            return pdf_modification_date
+        else:
+            return pdf_creation_date
+
+    except (AttributeError, ValueError, KeyError):
         # Fallback to creation date if modification date is unavailable or invalid
         return pdf_creation_date
+
+
+def _default_id_factory() -> str:
+    return str(np.random.randint(1000000, 9999999))
+
+
+def assemble_pdf_info(
+    *,
+    file_name: str,
+    pdf_metadata: dict,
+    pdf_add_metadata: dict,
+    pdf_url: str,
+    pdf_creation_date: str,
+    content: list,
+    id_factory: Callable[[], str] = _default_id_factory,
+) -> dict:
+    """Pure helper: assemble the JSON payload for a single PDF.
+
+    This is separated from `build_json()` so unit tests can validate schema and
+    invariants without needing network/PDF parsing.
+    """
+
+    title = file_name.replace(".pdf", "").replace("-", " ")
+    if not title:
+        title = str(pdf_metadata.get("title", ""))
+
+    pdf_info = {
+        "id": id_factory(),
+        "title": title,
+        "release_date": pdf_creation_date,
+        "modification_date": extract_pdf_modification_date(
+            pdf_metadata, pdf_creation_date
+        ),
+        "overview": pdf_add_metadata.get("overview", ""),
+        "theme": pdf_add_metadata.get("publication_theme", ""),
+        "release_type": pdf_add_metadata.get("publication_type", ""),
+        "url": pdf_url,
+        "latest": True,
+        "url_keywords": extract_url_keywords_from_filename(file_name),
+        "contact_name": "Kenya National Bureau of Statistics",
+        "contact_link": "datarequest@knbs.or.ke",
+        "content": content,
+    }
+
+    # Keep this legacy invariant: if the overview is just the title + trailing
+    # space, blank it out.
+    if pdf_info["overview"] == pdf_info["title"] + " ":
+        pdf_info["overview"] = " "
+
+    return pdf_info
 
 
 def extract_pdf_metadata(pdf_file_path: Path) -> tuple:
@@ -236,9 +314,75 @@ def extract_pdf_metadata(pdf_file_path: Path) -> tuple:
     return file_name, pdf_metadata
 
 
+def normalize_page_text(raw_text: str) -> str:
+    """
+    Preserve line structure while cleaning per-line whitespace.
+
+    This is intentionally conservative for PDF/table-heavy content: we keep
+    newline boundaries instead of flattening pages into one long string.
+    """
+    if not raw_text:
+        return ""
+
+    text = raw_text.replace("\r\n", "\n").replace("\r", "\n").replace("\x0c", "\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+
+    normalized_lines: list[str] = []
+    previous_blank = False
+    for line in lines:
+        if not line:
+            if not previous_blank and normalized_lines:
+                normalized_lines.append("")
+            previous_blank = True
+            continue
+        normalized_lines.append(line)
+        previous_blank = False
+
+    return "\n".join(normalized_lines).strip()
+
+
+def _normalize_pdf_identifier(pdf_file_path: Path) -> str:
+    """Return a normalized filename identifier for family-level matching."""
+
+    return re.sub(r"[^a-z0-9]+", " ", pdf_file_path.stem.lower()).strip()
+
+
+def should_prefer_pdfplumber(pdf_file_path: Path) -> bool:
+    """Return True for PDF families where pdfplumber extracts better text.
+
+    This is intentionally narrow and driven by the investigation in
+    docs/investigations/2026-04-08-pdf-extraction-vs-page-recall-on-cloud-failures.md.
+    """
+
+    if os.environ.get("STATSCHAT_PDFPLUMBER_PREFERRED_FAMILIES", "1") != "1":
+        return False
+
+    normalized_identifier = _normalize_pdf_identifier(pdf_file_path)
+    return any(
+        pattern.search(normalized_identifier)
+        for pattern in PDFPLUMBER_PREFERRED_FILENAME_PATTERNS
+    )
+
+
+def _extract_pdfplumber_page_text(
+    pdf_file_path: Path,
+    page_num: int,
+    plumber_doc,
+) -> tuple[str, object]:
+    """Extract normalized text for a page using pdfplumber."""
+
+    import pdfplumber
+
+    if plumber_doc is None:
+        plumber_doc = pdfplumber.open(pdf_file_path)
+
+    page = plumber_doc.pages[page_num - 1]
+    return normalize_page_text(page.extract_text() or ""), plumber_doc
+
+
 def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
     """
-    Extracts text content from each page of a PDF file.
+    Extracts text content from each page of a PDF file using PyMuPDF.
 
     Args:
         pdf_file_path (Path): The path to the PDF file.
@@ -248,25 +392,166 @@ def extract_pdf_text(pdf_file_path: Path, pdf_url: str) -> list:
         list: A list of dictionaries containing page number, URL, and extracted text.
     """
 
-    pages_text = []
-    with open(pdf_file_path, "rb") as pdf_file:
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
+    pages_text: list[dict] = []
+    extraction_errors: list[dict] = []
+    plumber_doc = None
+    prefer_pdfplumber = should_prefer_pdfplumber(pdf_file_path)
 
-        for page_num, page in enumerate(pdf_reader.pages, start=1):
-            text = page.extract_text()
-            if text:
-                text = text.replace("\n", "")
+    try:
+        import fitz  # PyMuPDF
 
+        doc = fitz.open(pdf_file_path)
+    except Exception as exc:  # PyMuPDF raises various RuntimeError / fitz.* errors
+        print(f"ERROR: Failed to open PDF for extraction: {pdf_file_path} ({exc})")
+        extraction_errors.append(
+            {
+                "pdf": str(pdf_file_path),
+                "page": None,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            }
+        )
+        _maybe_persist_extraction_errors(extraction_errors)
+        return pages_text
+
+    try:
+        for page_num in range(1, len(doc) + 1):
             page_link = f"{pdf_url}#page={page_num}"
+            text = ""
+            fitz_text = ""
+            fitz_error = None
+            try:
+                page = doc[page_num - 1]  # PyMuPDF uses 0-based indexing
+                extracted = page.get_text()
+                if extracted:
+                    fitz_text = normalize_page_text(extracted)
+            except Exception as exc:
+                fitz_error = exc
+                # MuPDF shading/colorspace errors tend to surface here.
+                print(
+                    "WARNING: Text extraction failed for "
+                    f"{pdf_file_path.name} page {page_num}: {exc}"
+                )
+                extraction_errors.append(
+                    {
+                        "pdf": str(pdf_file_path),
+                        "page": page_num,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    }
+                )
+
+            text = fitz_text
+
+            # For specific table-heavy families, prefer pdfplumber when it has
+            # usable text. Otherwise keep fitz as the default extractor and only
+            # use pdfplumber as the existing exception fallback.
+            if (
+                prefer_pdfplumber
+                and os.environ.get("STATSCHAT_PDFPLUMBER_FALLBACK", "1") == "1"
+            ):
+                try:
+                    plumber_text, plumber_doc = _extract_pdfplumber_page_text(
+                        pdf_file_path, page_num, plumber_doc
+                    )
+                    if plumber_text:
+                        text = plumber_text
+                except ImportError as import_exc:
+                    extraction_errors.append(
+                        {
+                            "pdf": str(pdf_file_path),
+                            "page": page_num,
+                            "error": str(import_exc),
+                            "error_type": type(import_exc).__name__,
+                            "fallback": "pdfplumber_preferred",
+                        }
+                    )
+                except Exception as fallback_exc:
+                    extraction_errors.append(
+                        {
+                            "pdf": str(pdf_file_path),
+                            "page": page_num,
+                            "error": str(fallback_exc),
+                            "error_type": type(fallback_exc).__name__,
+                            "fallback": "pdfplumber_preferred",
+                        }
+                    )
+            elif (
+                fitz_error
+                and os.environ.get("STATSCHAT_PDFPLUMBER_FALLBACK", "1") == "1"
+            ):
+                # Best-effort fallback to pdfplumber (pdfminer) for this page.
+                try:
+                    text, plumber_doc = _extract_pdfplumber_page_text(
+                        pdf_file_path, page_num, plumber_doc
+                    )
+                except ImportError as import_exc:
+                    extraction_errors.append(
+                        {
+                            "pdf": str(pdf_file_path),
+                            "page": page_num,
+                            "error": str(import_exc),
+                            "error_type": type(import_exc).__name__,
+                            "fallback": "pdfplumber",
+                        }
+                    )
+                except Exception as fallback_exc:
+                    extraction_errors.append(
+                        {
+                            "pdf": str(pdf_file_path),
+                            "page": page_num,
+                            "error": str(fallback_exc),
+                            "error_type": type(fallback_exc).__name__,
+                            "fallback": "pdfplumber",
+                        }
+                    )
+
             pages_text.append(
                 {
                     "page_number": page_num,
                     "page_url": page_link,
-                    "page_text": text or "",
+                    "page_text": text,
                 }
             )
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+        if plumber_doc is not None:
+            try:
+                plumber_doc.close()
+            except Exception:
+                pass
+
+    _maybe_persist_extraction_errors(extraction_errors)
 
     return pages_text
+
+
+def _maybe_persist_extraction_errors(errors: list[dict]) -> None:
+    """Persist extraction errors to outputs when explicitly enabled.
+
+    Disabled by default to avoid writing artifacts during normal runs.
+    """
+
+    if not errors:
+        return
+
+    if os.environ.get("STATSCHAT_WRITE_EXTRACTION_WARNINGS") != "1":
+        return
+
+    try:
+        outputs_dir = Path.cwd() / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        out_path = outputs_dir / "pdf_text_extraction_warnings.jsonl"
+        with out_path.open("a", encoding="utf-8") as f:
+            for item in errors:
+                f.write(json.dumps(item) + "\n")
+    except Exception:
+        # Never let reporting break extraction
+        return
 
 
 def get_abstract_metadata(url: str) -> dict:  # noqa: C901
@@ -414,8 +699,16 @@ def convert_to_date(date_str: str) -> str:
 
 
 def build_json(
-    pdf_file_path: Path, pdf_website_url: str, report_page: str, JSON_DIR: Path
-) -> int:
+    pdf_file_path: Path,
+    pdf_website_url: str,
+    report_page: str,
+    JSON_DIR: Path,
+    *,
+    abstract_metadata_getter: Callable[[str], dict] | None = None,
+    metadata_extractor: Callable[[Path], tuple[str, dict]] | None = None,
+    text_extractor: Callable[[Path, str], list] | None = None,
+    id_factory: Callable[[], str] | None = None,
+) -> Path:
     """
     Processes a PDF file, extracts metadata and content, then saves it as JSON.
 
@@ -423,23 +716,31 @@ def build_json(
         pdf_file_path (Path): The path to the PDF file.
         pdf_website_url (str): The URL of the PDF document.
         report_page (str): The URL of the report page.
-        counter (int): A running count of files missing reliable date information.
         JSON_DIR (Path): The path to the chosen json folder - latest or old
 
     Returns:
-        int: Updated counter for files missing an explicit creation date.
+        Path: Path to the generated JSON file.
     """
 
     # Notify which file is being processed
     # print(f"Processing: {pdf_file_path.name}")
 
+    if abstract_metadata_getter is None:
+        abstract_metadata_getter = get_abstract_metadata
+    if metadata_extractor is None:
+        metadata_extractor = extract_pdf_metadata
+    if text_extractor is None:
+        text_extractor = extract_pdf_text
+    if id_factory is None:
+        id_factory = _default_id_factory
+
     # Extract Metadata & Pre-Process
-    file_name, pdf_metadata = extract_pdf_metadata(pdf_file_path)
+    file_name, pdf_metadata = metadata_extractor(pdf_file_path)
 
     # Construct the document's URL
     pdf_url = pdf_website_url
     # Obtain additional metadata from pdf report page
-    pdf_add_metadata = get_abstract_metadata(report_page)
+    pdf_add_metadata = abstract_metadata_getter(report_page)
     try:
         pdf_creation_date = convert_to_date(pdf_add_metadata["date"])
     except Exception:
@@ -447,32 +748,15 @@ def build_json(
         pdf_creation_date, _ = extract_pdf_creation_date(pdf_metadata, file_name, 0)
         print("Defaulting to PDF metadata or filename for creation date.")
 
-    # Construct Ordered Metadata Dictionary
-    pdf_info = {
-        "id": str(np.random.randint(1000000, 9999999)),  # Unique ID first
-        "title": file_name.replace(".pdf", "").replace("-", " ")
-        or pdf_metadata.title,  # Title next
-        "release_date": pdf_creation_date,  # Release date field
-        "modification_date": extract_pdf_modification_date(
-            pdf_metadata, pdf_creation_date
-        ),
-        "overview": pdf_add_metadata["overview"],  # Overview of the document
-        "theme": pdf_add_metadata["publication_theme"],  # Publication theme
-        "release_type": pdf_add_metadata["publication_type"],  # Report, Survey, etc.
-        "url": pdf_url,  # URL for document access
-        "latest": True,  # Boolean flag for latest version
-        "url_keywords": extract_url_keywords_from_filename(
-            file_name
-        ),  # Extracted keywords
-        "contact_name": "Kenya National Bureau of Statistics",  # Contact details
-        "contact_link": "datarequest@knbs.or.ke",
-        "content": extract_pdf_text(
-            pdf_file_path, pdf_url
-        ),  # Extracted text at the end
-    }
-    # check if overview is equal to the title
-    if pdf_info["overview"] == pdf_info["title"] + " ":
-        pdf_info["overview"] = " "  # Set overview to empty string
+    pdf_info = assemble_pdf_info(
+        file_name=file_name,
+        pdf_metadata=pdf_metadata,
+        pdf_add_metadata=pdf_add_metadata,
+        pdf_url=pdf_url,
+        pdf_creation_date=pdf_creation_date,
+        content=text_extractor(pdf_file_path, pdf_url),
+        id_factory=id_factory,
+    )
 
     # Export JSON
     JSON_DIR.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
@@ -481,7 +765,7 @@ def build_json(
     with open(json_file_path, "w") as json_file:
         json.dump(pdf_info, json_file, indent=4)
 
-    return None
+    return json_file_path
 
 
 def normalize_dict_keys(file_dict: dict) -> dict:
@@ -549,6 +833,7 @@ def process_pdfs(mode: str, config: dict):
 
     # Process PDFs
     count = 0
+    failures: list[dict] = []
     for pdf in tqdm(
         pdf_list,
         desc="Converting PDF file(s) to json(s)",
@@ -565,8 +850,28 @@ def process_pdfs(mode: str, config: dict):
         report_page = url_dict.get(f"{pdf}.pdf", {}).get(
             "report_page", "Unknown Overview URL"
         )
-        build_json(pdf_path, pdf_url, report_page, json_dir)
-        count += 1
+        try:
+            build_json(pdf_path, pdf_url, report_page, json_dir)
+            count += 1
+        except Exception as exc:
+            failures.append(
+                {
+                    "pdf": str(pdf_path),
+                    "pdf_url": pdf_url,
+                    "report_page": report_page,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                }
+            )
+            print(f"ERROR: Failed to convert {pdf_path.name} to JSON: {exc}")
+
+    if failures:
+        outputs_dir = Path.cwd() / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        failure_path = outputs_dir / f"pdf_to_json_failures_{mode.lower()}_{ts}.json"
+        failure_path.write_text(json.dumps(failures, indent=2))
+        print(f"Wrote {len(failures)} conversion failures to {failure_path}")
 
     print(f"Processed {count} PDFs. JSON files saved to {json_dir}.")
 
