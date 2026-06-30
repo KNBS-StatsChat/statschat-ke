@@ -1,0 +1,162 @@
+"""End-to-end smoke tests for the cloud FastAPI app.
+
+Loads the cloud API in-process with a stubbed provider to avoid network/API
+credentials and verifies /search and /feedback responses. It also checks
+OpenAPI exposure, root redirects, debug behavior, and content-type fallback.
+"""
+
+import importlib.util
+import sys
+from pathlib import Path
+from types import ModuleType
+
+import httpx
+import pytest
+
+
+def _resolve_mode_specific_search_config(search_config, mode):
+    resolved = dict(search_config or {})
+    if mode == "cloud":
+        resolved["generative_model_name"] = (
+            resolved.get("generative_model_name_cloud")
+            or resolved.get("generative_model_name")
+            or "stub-cloud-model"
+        )
+    elif mode == "local":
+        resolved["generative_model_name"] = (
+            resolved.get("generative_model_name_local")
+            or resolved.get("generative_model_name")
+            or "stub-local-model"
+        )
+    return resolved
+
+
+def _load_main_api_cloud(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[2]
+    api_path = repo_root / "fast-api" / "main_api_cloud.py"
+
+    module_name = "fast_api_main_api_cloud_e2e"
+    sys.modules.pop(module_name, None)
+    had_cloud_llm = "statschat.generative.cloud_llm" in sys.modules
+    previous_cloud_llm = sys.modules.get("statschat.generative.cloud_llm")
+
+    class DummyInquirer:
+        def __init__(self, **_kwargs):
+            pass
+
+        def make_query(self, question, latest_filter, latest_weight):
+            class DummyResponse:
+                def __init__(self):
+                    self.raw = "debug"
+
+            return (
+                [
+                    {
+                        "page_url": "https://example.com/doc1.pdf#page=2",
+                        "page_content": "Population context",
+                        "title": "Doc 1",
+                        "score": 0.12,
+                    },
+                    {
+                        "page_url": "https://example.com/doc2.pdf#page=3",
+                        "page_content": "Second context",
+                        "title": "Doc 2",
+                        "score": 0.34,
+                    },
+                ],
+                "Answer",
+                DummyResponse(),
+            )
+
+    sys.modules.pop("statschat.generative.cloud_llm", None)
+    cloud_llm_stub = ModuleType("statschat.generative.cloud_llm")
+    cloud_llm_stub.Inquirer = DummyInquirer
+    cloud_llm_stub.has_temporal_constraint = lambda question: False
+    cloud_llm_stub.resolve_mode_specific_search_config = (
+        _resolve_mode_specific_search_config
+    )
+    sys.modules["statschat.generative.cloud_llm"] = cloud_llm_stub
+
+    import statschat
+
+    monkeypatch.setattr(
+        statschat,
+        "load_config",
+        lambda name="main": {
+            "db": {},
+            "search": {"provider": "stub"},
+            "app": {"latest_max": 1},
+        },
+    )
+
+    spec = importlib.util.spec_from_file_location(module_name, api_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if had_cloud_llm:
+            sys.modules["statschat.generative.cloud_llm"] = previous_cloud_llm
+        else:
+            sys.modules.pop("statschat.generative.cloud_llm", None)
+    return module
+
+
+def _build_cloud_client(monkeypatch):
+    monkeypatch.delenv("STATSCHAT_API_KEY", raising=False)
+    monkeypatch.delenv("STATSCHAT_RATE_LIMIT_PER_MINUTE", raising=False)
+    main_api_cloud = _load_main_api_cloud(monkeypatch)
+    transport = httpx.ASGITransport(app=main_api_cloud.app)
+    return httpx.AsyncClient(transport=transport, base_url="http://testserver")
+
+
+@pytest.mark.anyio
+async def test_cloud_search_and_feedback(monkeypatch):
+    async with _build_cloud_client(monkeypatch) as client:
+        root_resp = await client.get("/", follow_redirects=False)
+        openapi_resp = await client.get("/openapi.json")
+        search_resp = await client.get("/search", params={"q": "Population"})
+        debug_off_resp = await client.get(
+            "/search", params={"q": "Population", "debug": False}
+        )
+        invalid_type_resp = await client.get(
+            "/search", params={"q": "Population", "content_type": "unknown"}
+        )
+        feedback_resp = await client.post(
+            "/feedback",
+            json={
+                "rating": "1",
+                "rating_comment": "Helpful",
+                "question": "Population",
+                "content_type": "latest",
+                "answer": "Answer",
+            },
+        )
+
+    assert root_resp.status_code == 307
+    assert root_resp.headers["location"] == "/openapi.json"
+
+    assert openapi_resp.status_code == 200
+    openapi_payload = openapi_resp.json()
+    assert "/search" in openapi_payload["paths"]
+    assert "/feedback" in openapi_payload["paths"]
+
+    assert search_resp.status_code == 200
+    payload = search_resp.json()
+    assert payload["question"] == "Population"
+    assert payload["content_type"] == "latest"
+    assert payload["answer"] == "Answer"
+    assert isinstance(payload["references"], list)
+    assert payload["references"][0]["page_url"] == "https://example.com/doc1.pdf#page=2"
+    assert payload["references"][0]["title"] == "Doc 1"
+    assert "debug_response" in payload
+
+    assert debug_off_resp.status_code == 200
+    debug_payload = debug_off_resp.json()
+    assert "debug_response" not in debug_payload
+
+    assert invalid_type_resp.status_code == 200
+    invalid_payload = invalid_type_resp.json()
+    assert invalid_payload["content_type"] == "latest"
+
+    assert feedback_resp.status_code == 202

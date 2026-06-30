@@ -2,13 +2,23 @@
 *
 
 # Allow files and directories
+!/README.md
+!/LICENSE
 !/statschat
+!/statschat/**
 !/log/.gitkeep
-!/notebooks/load_llm_models_docker.py
+!/data
 !/data/db_langchain
+!/data/db_langchain/**
 !/data/db_langchain_latest
+!/data/db_langchain_latest/**
+!/data/db_langchain_rebuild_v1
+!/data/db_langchain_rebuild_v1/**
+!/data/db_langchain_rebuild_v1_latest
+!/data/db_langchain_rebuild_v1_latest/**
 !/pyproject.toml
 !/fast-api
+!/fast-api/**
 
 # ignore python temp
 *.pyc
